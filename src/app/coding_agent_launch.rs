@@ -84,25 +84,13 @@ impl App {
         let gateway_id = gateway.id.clone();
         let gateway_name = gateway.display_name.clone();
         let protocol = selection.protocol();
-
-        let registry = AdapterRegistry::with_builtin_adapters();
-        let environment = ConfiguredEnvironment;
-        let resolver = crate::cli_adapter::GatewayResolver::new(
-            &self.state.gateway_catalog,
-            self.gateway_credentials.as_ref(),
-            &environment,
-        );
-        let planner = LaunchPlanner::new(&registry, resolver, locator);
-        let request = LaunchRequest {
-            gateway_id: Some(gateway_id.clone()),
-            model: Some(model.clone()),
-            mode: LaunchMode::Fresh,
-            passthrough_args: Vec::new(),
-        };
-        let spec = planner
-            .plan(selection.cli, &request)
-            .map_err(|error| error.to_string())?;
-        let (argv, launch_env) = pane_command_parts(spec.into_pane_parts())?;
+        let (argv, launch_env) = self.plan_coding_agent_launch(
+            selection.cli,
+            &gateway_id,
+            &model,
+            LaunchMode::Fresh,
+            locator,
+        )?;
 
         self.spawn_coding_agent_tab(
             &argv,
@@ -173,6 +161,34 @@ impl App {
             "launched coding agent through configured gateway"
         );
         Ok(())
+    }
+
+    pub(super) fn plan_coding_agent_launch(
+        &self,
+        cli: crate::cli_adapter::CodingCli,
+        gateway_id: &str,
+        model: &str,
+        mode: LaunchMode,
+        locator: &dyn ExecutableLocator,
+    ) -> Result<(Vec<String>, PaneLaunchEnv), String> {
+        let registry = AdapterRegistry::with_builtin_adapters();
+        let environment = ConfiguredEnvironment;
+        let resolver = crate::cli_adapter::GatewayResolver::new(
+            &self.state.gateway_catalog,
+            self.gateway_credentials.as_ref(),
+            &environment,
+        );
+        let planner = LaunchPlanner::new(&registry, resolver, locator);
+        let request = LaunchRequest {
+            gateway_id: Some(gateway_id.to_string()),
+            model: Some(model.to_string()),
+            mode,
+            passthrough_args: Vec::new(),
+        };
+        let spec = planner
+            .plan(cli, &request)
+            .map_err(|error| error.to_string())?;
+        pane_command_parts(spec.into_pane_parts())
     }
 }
 
