@@ -194,7 +194,7 @@ pub struct Workspace {
     pub(crate) cached_git_ahead_behind: Option<(usize, usize)>,
     /// Cached derived Git repo metadata for worktree actions and status display.
     pub(crate) cached_git_space: Option<GitSpaceMetadata>,
-    /// Explicit Herdr-managed worktree grouping provenance.
+    /// Explicit GoWild-managed worktree grouping provenance.
     pub worktree_space: Option<WorktreeSpaceMembership>,
     pub(crate) metadata_tokens: crate::metadata_tokens::MetadataTokens,
     pub(crate) metadata_token_sequences: HashMap<String, u64>,
@@ -1670,7 +1670,7 @@ mod tests {
             .expect("clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "herdr-workspace-git-metadata-{}-{stamp}",
+            "gowild-workspace-git-metadata-{}-{stamp}",
             std::process::id()
         ));
         std::fs::create_dir_all(root.join(".git")).expect("create git directory");
@@ -1730,7 +1730,7 @@ mod tests {
             .expect("clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "herdr-workspace-label-cache-{}-{stamp}",
+            "gowild-workspace-label-cache-{}-{stamp}",
             std::process::id()
         ));
         let cwd = root.join("deep/nested");
@@ -1775,14 +1775,14 @@ mod tests {
         let mut terminals = HashMap::new();
         terminals.insert(
             terminal_id.clone(),
-            TerminalState::new(terminal_id, PathBuf::from("/herdr-test/pion")),
+            TerminalState::new(terminal_id, PathBuf::from("/gowild-test/pion")),
         );
         let terminal_runtimes = TerminalRuntimeRegistry::new();
 
         assert_eq!(ws.display_name_from(&terminals, &terminal_runtimes), "pion");
         assert_eq!(
             ws.resolved_identity_cwd_from(&terminals, &terminal_runtimes),
-            Some(PathBuf::from("/herdr-test/pion"))
+            Some(PathBuf::from("/gowild-test/pion"))
         );
     }
 

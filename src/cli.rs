@@ -40,17 +40,17 @@ mod workspace;
 mod worktree;
 
 const TERMINAL_SESSION_OBSERVE_USAGE: &str =
-    "usage: herdr terminal session observe <target> [--cols N] [--rows N]";
+    "usage: gowild terminal session observe <target> [--cols N] [--rows N]";
 const TERMINAL_SESSION_CONTROL_USAGE: &str =
-    "usage: herdr terminal session control <target> [--takeover] [--cols N] [--rows N]";
+    "usage: gowild terminal session control <target> [--takeover] [--cols N] [--rows N]";
 pub(crate) const AGENT_HELP_FOOTER: &str = concat!(
     "Are you an AI? Use these resources ONLY IF your task specifically asks you to:\n",
-    "  Help a human understand or set up Herdr for the first time:\n",
-    "    https://herdr.dev/agent-guide.md\n",
-    "  Debug or investigate a problem with Herdr:\n",
-    "    https://herdr.dev/llms.txt\n",
-    "  Control Herdr panes, agents, or workspaces:\n",
-    "    SKIP if a Herdr skill is already in your context. Otherwise run: herdr --skill",
+    "  Help a human understand or set up GoWild for the first time:\n",
+    "    https://github.com/ianu82/gowild/agent-guide.md\n",
+    "  Debug or investigate a problem with GoWild:\n",
+    "    https://github.com/ianu82/gowild/llms.txt\n",
+    "  Control GoWild panes, agents, or workspaces:\n",
+    "    SKIP if a GoWild skill is already in your context. Otherwise run: gowild --skill",
 );
 
 pub(crate) fn parse_token_assignment(raw: &str) -> Result<(String, Option<String>), String> {
@@ -150,7 +150,7 @@ fn run_channel_command(args: &[String]) -> std::io::Result<i32> {
 
 fn channel_set(args: &[String]) -> std::io::Result<i32> {
     let Some(channel) = parse_channel_set_arg(args) else {
-        eprintln!("usage: herdr channel set <stable|preview>");
+        eprintln!("usage: gowild channel set <stable|preview>");
         return Ok(2);
     };
 
@@ -194,7 +194,7 @@ fn channel_set(args: &[String]) -> std::io::Result<i32> {
     }
     std::fs::write(&path, updated)?;
     println!(
-        "Herdr update channel set to {channel} in {}.",
+        "GoWild update channel set to {channel} in {}.",
         path.display()
     );
 
@@ -211,7 +211,7 @@ fn channel_set(args: &[String]) -> std::io::Result<i32> {
     crate::platform::end_cli_output();
     if let Err(err) = crate::update::self_update(crate::update::SelfUpdateOptions::default()) {
         eprintln!("update failed: {err}");
-        eprintln!("Run `herdr update` to retry.");
+        eprintln!("Run `gowild update` to retry.");
         return Ok(1);
     }
 
@@ -254,9 +254,9 @@ fn channel_set_install_action(
 }
 
 fn print_channel_help() {
-    eprintln!("herdr channel commands:");
-    eprintln!("  herdr channel show                  print the configured update channel");
-    eprintln!("  herdr channel set <stable|preview>  choose the update channel");
+    eprintln!("gowild channel commands:");
+    eprintln!("  gowild channel show                  print the configured update channel");
+    eprintln!("  gowild channel set <stable|preview>  choose the update channel");
 }
 
 fn run_config_command(args: &[String]) -> std::io::Result<i32> {
@@ -283,11 +283,11 @@ fn config_check(args: &[String]) -> std::io::Result<i32> {
     match args {
         [] => {}
         [flag] if matches!(flag.as_str(), "help" | "--help" | "-h") => {
-            eprintln!("usage: herdr config check");
+            eprintln!("usage: gowild config check");
             return Ok(0);
         }
         _ => {
-            eprintln!("usage: herdr config check");
+            eprintln!("usage: gowild config check");
             return Ok(2);
         }
     }
@@ -307,7 +307,7 @@ fn config_check(args: &[String]) -> std::io::Result<i32> {
 
 fn config_reset_keys(args: &[String]) -> std::io::Result<i32> {
     if !args.is_empty() {
-        eprintln!("usage: herdr config reset-keys");
+        eprintln!("usage: gowild config reset-keys");
         return Ok(2);
     }
 
@@ -372,8 +372,8 @@ fn config_reset_keys(args: &[String]) -> std::io::Result<i32> {
         "Removed [keys], [keys.indexed], and [[keys.command]] from {}.",
         path.display()
     );
-    println!("Built-in v2 keybindings will apply after Herdr restarts or reloads config.");
-    println!("If a Herdr server is running, run `herdr server reload-config` to apply this now.");
+    println!("Built-in v2 keybindings will apply after GoWild restarts or reloads config.");
+    println!("If a GoWild server is running, run `gowild server reload-config` to apply this now.");
     println!(
         "To restore: cp {} {}",
         backup_path.display(),
@@ -442,15 +442,15 @@ fn session_attach_help(args: &[String]) -> std::io::Result<i32> {
         args.first().map(String::as_str),
         Some("help" | "--help" | "-h")
     ) {
-        eprintln!("usage: herdr session attach <name>");
+        eprintln!("usage: gowild session attach <name>");
         return Ok(0);
     }
-    eprintln!("usage: herdr session attach <name>");
+    eprintln!("usage: gowild session attach <name>");
     Ok(2)
 }
 
 fn session_list(args: &[String]) -> std::io::Result<i32> {
-    let json = match parse_session_json_only(args, "usage: herdr session list [--json]") {
+    let json = match parse_session_json_only(args, "usage: gowild session list [--json]") {
         Ok(json) => json,
         Err(code) => return Ok(code),
     };
@@ -468,7 +468,7 @@ fn session_list(args: &[String]) -> std::io::Result<i32> {
 
 fn session_stop(args: &[String]) -> std::io::Result<i32> {
     let (name, json) =
-        match parse_session_name_and_json(args, "usage: herdr session stop <name> [--json]") {
+        match parse_session_name_and_json(args, "usage: gowild session stop <name> [--json]") {
             Ok(parsed) => parsed,
             Err(code) => return Ok(code),
         };
@@ -501,7 +501,7 @@ fn session_stop(args: &[String]) -> std::io::Result<i32> {
 
 fn session_delete(args: &[String]) -> std::io::Result<i32> {
     let (name, json) =
-        match parse_session_name_and_json(args, "usage: herdr session delete <name> [--json]") {
+        match parse_session_name_and_json(args, "usage: gowild session delete <name> [--json]") {
             Ok(parsed) => parsed,
             Err(code) => return Ok(code),
         };
@@ -528,7 +528,7 @@ fn session_delete(args: &[String]) -> std::io::Result<i32> {
 fn terminal_attach(args: &[String]) -> std::io::Result<i32> {
     let (terminal_id, takeover) = match parse_attach_target(
         args,
-        "usage: herdr terminal attach <terminal_id> [--takeover]",
+        "usage: gowild terminal attach <terminal_id> [--takeover]",
     ) {
         Ok(parsed) => parsed,
         Err(code) => return Ok(code),
@@ -680,7 +680,7 @@ fn terminal_title(args: &[String]) -> std::io::Result<i32> {
     match args.first().map(|arg| arg.as_str()) {
         Some("set") => {
             if args.len() != 2 {
-                eprintln!("usage: herdr terminal title set <title>");
+                eprintln!("usage: gowild terminal title set <title>");
                 return Ok(2);
             }
             print_response(&send_request(&Request {
@@ -692,7 +692,7 @@ fn terminal_title(args: &[String]) -> std::io::Result<i32> {
         }
         Some("clear") => {
             if args.len() != 1 {
-                eprintln!("usage: herdr terminal title clear");
+                eprintln!("usage: gowild terminal title clear");
                 return Ok(2);
             }
             print_response(&send_request(&Request {
@@ -701,13 +701,13 @@ fn terminal_title(args: &[String]) -> std::io::Result<i32> {
             })?)
         }
         Some("help" | "--help" | "-h") => {
-            eprintln!("usage: herdr terminal title set <title>");
-            eprintln!("       herdr terminal title clear");
+            eprintln!("usage: gowild terminal title set <title>");
+            eprintln!("       gowild terminal title clear");
             Ok(0)
         }
         _ => {
-            eprintln!("usage: herdr terminal title set <title>");
-            eprintln!("       herdr terminal title clear");
+            eprintln!("usage: gowild terminal title set <title>");
+            eprintln!("       gowild terminal title clear");
             Ok(2)
         }
     }
@@ -1013,27 +1013,27 @@ fn print_session_error(code: &str, message: &str) {
 }
 
 fn print_config_help() {
-    eprintln!("herdr config commands:");
-    eprintln!("  herdr config check  validate config.toml and print diagnostics");
-    eprintln!("  herdr config reset-keys  back up config.toml and remove custom keybindings");
+    eprintln!("gowild config commands:");
+    eprintln!("  gowild config check  validate config.toml and print diagnostics");
+    eprintln!("  gowild config reset-keys  back up config.toml and remove custom keybindings");
 }
 
 fn print_terminal_help() {
-    eprintln!("herdr terminal commands:");
-    eprintln!("  herdr terminal attach <terminal_id> [--takeover]");
-    eprintln!("  herdr terminal session control <target> [--takeover] [--cols N] [--rows N]");
-    eprintln!("  herdr terminal session observe <target> [--cols N] [--rows N]");
-    eprintln!("  herdr terminal title set <title>");
-    eprintln!("  herdr terminal title clear");
+    eprintln!("gowild terminal commands:");
+    eprintln!("  gowild terminal attach <terminal_id> [--takeover]");
+    eprintln!("  gowild terminal session control <target> [--takeover] [--cols N] [--rows N]");
+    eprintln!("  gowild terminal session observe <target> [--cols N] [--rows N]");
+    eprintln!("  gowild terminal title set <title>");
+    eprintln!("  gowild terminal title clear");
     eprintln!("  detach from direct attach with ctrl+b q; send literal ctrl+b with ctrl+b ctrl+b");
 }
 
 fn print_session_help() {
-    eprintln!("herdr session commands:");
-    eprintln!("  herdr session list [--json]");
-    eprintln!("  herdr session attach <name>");
-    eprintln!("  herdr session stop <name> [--json]");
-    eprintln!("  herdr session delete <name> [--json]");
+    eprintln!("gowild session commands:");
+    eprintln!("  gowild session list [--json]");
+    eprintln!("  gowild session attach <name>");
+    eprintln!("  gowild session stop <name> [--json]");
+    eprintln!("  gowild session delete <name> [--json]");
     eprintln!("  use 'default' as <name> to target the default session for stop");
 }
 
@@ -1088,15 +1088,15 @@ mod tests {
     #[test]
     fn parse_env_assignment_accepts_empty_values() {
         assert_eq!(
-            super::parse_env_assignment("HERDR_ROLE=").unwrap(),
-            ("HERDR_ROLE".to_string(), String::new())
+            super::parse_env_assignment("GOWILD_ROLE=").unwrap(),
+            ("GOWILD_ROLE".to_string(), String::new())
         );
     }
 
     #[test]
     fn parse_env_assignment_requires_key_value_separator() {
         assert_eq!(
-            super::parse_env_assignment("HERDR_ROLE").unwrap_err(),
+            super::parse_env_assignment("GOWILD_ROLE").unwrap_err(),
             "env must use KEY=VALUE"
         );
     }

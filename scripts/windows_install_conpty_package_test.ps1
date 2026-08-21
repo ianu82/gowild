@@ -32,9 +32,9 @@ foreach ($functionName in @("Prepend-PathEntry", "Update-PathRegistryEntry")) {
     Invoke-Expression $definition.Extent.Text
 }
 
-$pathTestVariable = "HERDR_INSTALLER_PATH_TEST"
+$pathTestVariable = "GOWILD_INSTALLER_PATH_TEST"
 $oldPathTestVariable = [Environment]::GetEnvironmentVariable($pathTestVariable, "Process")
-$testRegistryPath = "Software\HerdrInstallerTests-$([Guid]::NewGuid().ToString('N'))"
+$testRegistryPath = "Software\GoWildInstallerTests-$([Guid]::NewGuid().ToString('N'))"
 $testEnvironmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($testRegistryPath)
 if ($null -eq $testEnvironmentKey) {
     throw "unable to create temporary installer test registry key"
@@ -46,17 +46,17 @@ try {
         "%$pathTestVariable%\bin;C:\existing",
         [Microsoft.Win32.RegistryValueKind]::ExpandString
     )
-    $pathChanged = Update-PathRegistryEntry -EnvironmentKey $testEnvironmentKey -Entry "C:\Herdr\bin"
+    $pathChanged = Update-PathRegistryEntry -EnvironmentKey $testEnvironmentKey -Entry "C:\GoWild\bin"
     if (-not $pathChanged) {
         throw "installer PATH update reported no change"
     }
-    if (Update-PathRegistryEntry -EnvironmentKey $testEnvironmentKey -Entry "C:\Herdr\bin") {
+    if (Update-PathRegistryEntry -EnvironmentKey $testEnvironmentKey -Entry "C:\GoWild\bin") {
         throw "installer PATH update was not idempotent"
     }
 
     $options = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
     $rawPath = $testEnvironmentKey.GetValue("Path", $null, $options)
-    $expectedPath = "C:\Herdr\bin;%$pathTestVariable%\bin;C:\existing"
+    $expectedPath = "C:\GoWild\bin;%$pathTestVariable%\bin;C:\existing"
     if ($rawPath -cne $expectedPath) {
         throw "installer changed raw PATH: expected '$expectedPath', got '$rawPath'"
     }
@@ -70,12 +70,12 @@ try {
 }
 
 $archive = (Resolve-Path -LiteralPath $ArchivePath).Path
-$root = Join-Path $env:RUNNER_TEMP ("herdr-installer-test-" + [Guid]::NewGuid().ToString("N"))
+$root = Join-Path $env:RUNNER_TEMP ("gowild-installer-test-" + [Guid]::NewGuid().ToString("N"))
 $webRoot = Join-Path $root "web"
-$herdrHome = Join-Path $root "home"
+$gowildHome = Join-Path $root "home"
 $installDir = Join-Path $root "bin"
 New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
-Copy-Item -LiteralPath $archive -Destination (Join-Path $webRoot "herdr-windows-x86_64.zip")
+Copy-Item -LiteralPath $archive -Destination (Join-Path $webRoot "gowild-windows-x86_64.zip")
 $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
 
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -88,7 +88,7 @@ $previewManifest = @{
     build_id = "installer-test"
     assets = @{
         "windows-x86_64" = @{
-            url = "http://127.0.0.1:$port/herdr-windows-x86_64.zip"
+            url = "http://127.0.0.1:$port/gowild-windows-x86_64.zip"
             sha256 = $hash
             format = "zip"
         }
@@ -101,7 +101,7 @@ $legacyStableManifest = @{
 $stableManifest = @{
     version = "0.0.1"
     assets = @{
-        "windows-x86_64" = "http://127.0.0.1:$port/herdr-windows-x86_64.zip"
+        "windows-x86_64" = "http://127.0.0.1:$port/gowild-windows-x86_64.zip"
     }
     sha256 = @{
         "windows-x86_64" = $hash
@@ -113,11 +113,11 @@ $previewManifest | Out-File -LiteralPath $previewManifestPath -Encoding utf8
 $legacyStableManifest | Out-File -LiteralPath $stableManifestPath -Encoding utf8
 
 $server = $null
-$oldHerdrHome = $env:HERDR_HOME
+$oldGoWildHome = $env:GOWILD_HOME
 $oldProcessPath = $env:Path
 try {
     $server = Start-Process python -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $webRoot) -PassThru -WindowStyle Hidden
-    $env:HERDR_HOME = Join-Path $root "unused\..\home"
+    $env:GOWILD_HOME = Join-Path $root "unused\..\home"
     $previewManifestUrl = "http://127.0.0.1:$port/preview.json"
     $stableManifestUrl = "http://127.0.0.1:$port/latest.json"
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
@@ -133,7 +133,7 @@ try {
     $freshStableHome = Join-Path $root "fresh-stable-home"
     $freshStableBin = Join-Path $root "fresh-stable-bin"
     $stableManifest | Out-File -LiteralPath $stableManifestPath -Encoding utf8
-    $env:HERDR_HOME = $freshStableHome
+    $env:GOWILD_HOME = $freshStableHome
     $env:Path = $oldProcessPath
     & $installerPath `
         -ManifestUrl $stableManifestUrl `
@@ -146,7 +146,7 @@ try {
     }
 
     $legacyStableManifest | Out-File -LiteralPath $stableManifestPath -Encoding utf8
-    $env:HERDR_HOME = Join-Path $root "unused\..\home"
+    $env:GOWILD_HOME = Join-Path $root "unused\..\home"
     $env:Path = $oldProcessPath
     & $installerPath `
         -ManifestUrl $stableManifestUrl `
@@ -157,7 +157,7 @@ try {
     & $installerPath "preview" $previewManifestUrl $installDir "installer-test" 3
 
     $localInstallDir = Join-Path $root "local-bin"
-    $env:HERDR_HOME = Join-Path $root "local-home"
+    $env:GOWILD_HOME = Join-Path $root "local-home"
     $partialLocalModeRejected = $false
     try {
         & $installerPath `
@@ -183,7 +183,7 @@ try {
             -LocalPackageIdentity "0.0.0-preview.local-package" `
             -LocalPackageSha256 ("0" * 64)
     } catch {
-        if ($_.Exception.Message -notlike "Downloaded Herdr checksum did not match.*") {
+        if ($_.Exception.Message -notlike "Downloaded GoWild checksum did not match.*") {
             throw
         }
         $badLocalChecksumRejected = $true
@@ -199,14 +199,14 @@ try {
         -LocalPackageFormat "zip" `
         -LocalPackageIdentity "0.0.0-preview.local-package" `
         -LocalPackageSha256 $hash
-    if (-not (Test-Path -LiteralPath (Join-Path $localInstallDir "herdr.exe") -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $localInstallDir "gowild.exe") -PathType Leaf)) {
         throw "installer did not activate the verified local package"
     }
-    $env:HERDR_HOME = $herdrHome
+    $env:GOWILD_HOME = $gowildHome
 
     $required = @(
-        "herdr.exe",
-        "conpty\herdr-conpty.json",
+        "gowild.exe",
+        "conpty\gowild-conpty.json",
         "conpty\conpty.dll",
         "conpty\x64\OpenConsole.exe",
         "conpty\arm64\OpenConsole.exe",
@@ -219,7 +219,7 @@ try {
         }
     }
 
-    $releasesDir = Join-Path $herdrHome "packages\standalone\releases"
+    $releasesDir = Join-Path $gowildHome "packages\standalone\releases"
     $releaseDir = Get-ChildItem -LiteralPath $releasesDir -Directory |
         Where-Object { -not $_.Name.StartsWith(".staging.") } |
         Select-Object -First 1
@@ -247,7 +247,7 @@ try {
     if (-not $downloadFailed) {
         throw "installer repair unexpectedly accepted a missing archive"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $releaseDir.FullName "herdr.exe") -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $releaseDir.FullName "gowild.exe") -PathType Leaf)) {
         throw "failed repair removed the existing release"
     }
 
@@ -258,7 +258,7 @@ try {
     $transientLockTimer = New-Object System.Timers.Timer
     $transientLockTimer.Interval = 300
     $transientLockTimer.AutoReset = $false
-    $transientLockSource = "HerdrTransientInstallerLock-$PID"
+    $transientLockSource = "GoWildTransientInstallerLock-$PID"
     $transientLockRelease = Register-ObjectEvent `
         -InputObject $transientLockTimer `
         -EventName Elapsed `
@@ -341,14 +341,14 @@ try {
         if (-not $swapFailed) {
             throw "installer unexpectedly activated a release with a locked staged file"
         }
-        if (-not (Test-Path -LiteralPath (Join-Path $releaseDir.FullName "herdr.exe") -PathType Leaf)) {
+        if (-not (Test-Path -LiteralPath (Join-Path $releaseDir.FullName "gowild.exe") -PathType Leaf)) {
             throw "failed activation did not restore the prior release"
         }
         if (@(Get-ChildItem -LiteralPath $releasesDir -Force -Directory -Filter ".backup.$($releaseDir.Name).*").Count -ne 0) {
             throw "failed activation stranded a release backup"
         }
-        foreach ($junction in @($installDir, (Join-Path $herdrHome "packages\standalone\current"))) {
-            if (-not (Test-Path -LiteralPath (Join-Path $junction "herdr.exe") -PathType Leaf)) {
+        foreach ($junction in @($installDir, (Join-Path $gowildHome "packages\standalone\current"))) {
+            if (-not (Test-Path -LiteralPath (Join-Path $junction "gowild.exe") -PathType Leaf)) {
                 throw "failed activation left an invalid installer junction at $junction"
             }
         }
@@ -404,7 +404,7 @@ try {
         -Channel stable `
         -ManifestUrl $stableManifestUrl `
         -InstallDir $installDir
-    $stableReleaseDir = Get-ChildItem -LiteralPath (Join-Path $herdrHome "packages\standalone\releases") -Directory |
+    $stableReleaseDir = Get-ChildItem -LiteralPath (Join-Path $gowildHome "packages\standalone\releases") -Directory |
         Where-Object { $_.Name.StartsWith("0.0.1-") } |
         Select-Object -First 1
     if ($null -eq $stableReleaseDir) {
@@ -429,11 +429,11 @@ if "%1"=="channel" if "%2"=="show" (
   exit /b 0
 )
 exit /b 1
-'@ | Out-File -LiteralPath (Join-Path $fakeBin "herdr.cmd") -Encoding ascii
+'@ | Out-File -LiteralPath (Join-Path $fakeBin "gowild.cmd") -Encoding ascii
 
     $preserveHome = Join-Path $root "preserve-home"
     $preserveBin = Join-Path $root "preserve-bin"
-    $env:HERDR_HOME = $preserveHome
+    $env:GOWILD_HOME = $preserveHome
     $env:Path = "$fakeBin;$oldProcessPath"
     & "$PSScriptRoot\..\website\install.ps1" `
         -ManifestUrl "http://127.0.0.1:$port/candidate.json" `
@@ -457,7 +457,7 @@ exit /b 1
         throw "explicit stable channel did not override the existing preview channel"
     }
 } finally {
-    $env:HERDR_HOME = $oldHerdrHome
+    $env:GOWILD_HOME = $oldGoWildHome
     $env:Path = $oldProcessPath
     if ($null -ne $server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue

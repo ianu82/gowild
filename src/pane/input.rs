@@ -37,7 +37,7 @@ pub(super) fn ghostty_key_event_from_terminal_key(
     Some(event)
 }
 
-pub(super) fn ghostty_prefers_herdr_text_encoding(key: &crate::input::TerminalKey) -> bool {
+pub(super) fn ghostty_prefers_gowild_text_encoding(key: &crate::input::TerminalKey) -> bool {
     matches!(key.code, crossterm::event::KeyCode::Char(_))
 }
 

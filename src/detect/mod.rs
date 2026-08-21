@@ -295,19 +295,19 @@ pub fn should_skip_state_update(agent: Option<Agent>, screen_content: &str) -> b
 pub(crate) fn full_lifecycle_hook_authority(source: &str, agent_label: &str) -> bool {
     matches!(
         (source, agent_label),
-        ("herdr:pi", "pi")
-            | ("herdr:omp", "omp")
-            | ("herdr:mastracode", "mastracode")
-            | ("herdr:opencode", "opencode")
-            | ("herdr:kilo", "kilo")
-            | ("herdr:kimi", "kimi")
+        ("gowild:pi", "pi")
+            | ("gowild:omp", "omp")
+            | ("gowild:mastracode", "mastracode")
+            | ("gowild:opencode", "opencode")
+            | ("gowild:kilo", "kilo")
+            | ("gowild:kimi", "kimi")
     )
 }
 
 pub(crate) fn session_identity_only_integration(source: &str, agent_label: &str) -> bool {
     matches!(
         (source, agent_label),
-        ("herdr:hermes", "hermes") | ("herdr:qwen", "qwen") | ("herdr:antigravity_cli", "agy")
+        ("gowild:hermes", "hermes") | ("gowild:qwen", "qwen") | ("gowild:antigravity_cli", "agy")
     )
 }
 
@@ -709,7 +709,7 @@ mod tests {
     #[cfg(unix)]
     fn temp_detection_path(name: &str) -> std::path::PathBuf {
         let unique = format!(
-            "herdr-detect-tests-{}-{}-{}",
+            "gowild-detect-tests-{}-{}-{}",
             name,
             std::process::id(),
             std::time::SystemTime::now()
@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn mastracode_is_hook_authority_without_screen_manifest() {
         assert!(full_lifecycle_hook_authority(
-            "herdr:mastracode",
+            "gowild:mastracode",
             "mastracode"
         ));
         assert!(!Agent::SCREEN_MANIFEST_AGENTS.contains(&Agent::Mastracode));
@@ -863,9 +863,9 @@ mod tests {
     #[test]
     fn session_identity_integrations_leave_state_to_screen_detection() {
         for (source, label, agent) in [
-            ("herdr:hermes", "hermes", Agent::Hermes),
-            ("herdr:qwen", "qwen", Agent::Qwen),
-            ("herdr:antigravity_cli", "agy", Agent::Antigravity),
+            ("gowild:hermes", "hermes", Agent::Hermes),
+            ("gowild:qwen", "qwen", Agent::Qwen),
+            ("gowild:antigravity_cli", "agy", Agent::Antigravity),
         ] {
             assert!(!full_lifecycle_hook_authority(source, label));
             assert!(session_identity_only_integration(source, label));
@@ -1113,7 +1113,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
                 ],
             )],
         };
@@ -1133,7 +1133,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\mastracode\\dist\\cli.js",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\mastracode\\dist\\cli.js",
                 ],
             )],
         };
@@ -1153,7 +1153,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\scripts\\build.js",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\scripts\\build.js",
                 ],
             )],
         };
@@ -1173,7 +1173,7 @@ mod tests {
                     "/D",
                     "/S",
                     "/C",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
                 ],
             )],
         };
@@ -1195,7 +1195,7 @@ mod tests {
                     "powershell.exe",
                     "-NoProfile",
                     "-File",
-                    "C:\\Users\\herdr\\Documents\\PowerShell\\Scripts\\claude.ps1",
+                    "C:\\Users\\gowild\\Documents\\PowerShell\\Scripts\\claude.ps1",
                 ],
             )],
         };
@@ -1206,11 +1206,11 @@ mod tests {
         );
     }
 
-    // A plain shell pane launched with herdr's injected prompt integration
+    // A plain shell pane launched with gowild's injected prompt integration
     // must still classify as a shell, not an agent, even though its argv now
     // carries a -Command payload.
     #[test]
-    fn identify_agent_in_job_ignores_herdr_powershell_shell_integration_argv() {
+    fn identify_agent_in_job_ignores_gowild_powershell_shell_integration_argv() {
         let job = crate::platform::ForegroundJob {
             process_group_id: 123,
             processes: vec![foreground_process(

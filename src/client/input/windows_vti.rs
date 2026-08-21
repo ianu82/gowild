@@ -1037,7 +1037,7 @@ fn send_windows_client_input_events(
 
 #[cfg(any(windows, test))]
 fn windows_input_trace_enabled() -> bool {
-    std::env::var_os("HERDR_WINDOWS_INPUT_TRACE").is_some()
+    std::env::var_os("GOWILD_WINDOWS_INPUT_TRACE").is_some()
 }
 
 #[cfg(test)]

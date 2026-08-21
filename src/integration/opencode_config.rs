@@ -182,7 +182,7 @@ mod tests {
 
     fn unique_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "herdr-opencode-config-{}-{}",
+            "gowild-opencode-config-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -218,8 +218,8 @@ mod tests {
         )
         .unwrap();
 
-        add_tui_plugin(&dir, "./herdr-tui-state.js").unwrap();
-        add_tui_plugin(&dir, "./herdr-tui-state.js").unwrap();
+        add_tui_plugin(&dir, "./gowild-tui-state.js").unwrap();
+        add_tui_plugin(&dir, "./gowild-tui-state.js").unwrap();
         let installed_content = fs::read_to_string(&config_path).unwrap();
         assert!(installed_content.contains("// Keep this comment."));
         let installed = parse_config(&config_path);
@@ -229,11 +229,11 @@ mod tests {
             json!([
                 "example",
                 ["configured", {"enabled": true}],
-                "./herdr-tui-state.js"
+                "./gowild-tui-state.js"
             ])
         );
 
-        assert!(remove_tui_plugin(&dir, "./herdr-tui-state.js").unwrap());
+        assert!(remove_tui_plugin(&dir, "./gowild-tui-state.js").unwrap());
         let removed_content = fs::read_to_string(&config_path).unwrap();
         assert!(removed_content.contains("// Keep this comment."));
         let removed = parse_config(&config_path);
@@ -253,7 +253,7 @@ mod tests {
         let legacy_config = "{\n  \"theme\": \"system\"\n}\n";
         fs::write(&legacy_config_path, legacy_config).unwrap();
 
-        let config_path = add_tui_plugin(&dir, "./herdr-tui-state.js").unwrap();
+        let config_path = add_tui_plugin(&dir, "./gowild-tui-state.js").unwrap();
 
         assert_eq!(config_path, dir.join("tui.jsonc"));
         assert!(!dir.join("tui.json").exists());
@@ -263,7 +263,7 @@ mod tests {
         );
         assert_eq!(
             parse_config(&config_path),
-            json!({ "plugin": ["./herdr-tui-state.js"] })
+            json!({ "plugin": ["./gowild-tui-state.js"] })
         );
 
         fs::remove_dir_all(dir).unwrap();
@@ -272,9 +272,9 @@ mod tests {
     #[test]
     fn remove_tui_plugin_leaves_empty_managed_config() {
         let dir = unique_dir();
-        let config_path = add_tui_plugin(&dir, "./herdr-tui-state.js").unwrap();
+        let config_path = add_tui_plugin(&dir, "./gowild-tui-state.js").unwrap();
 
-        assert!(remove_tui_plugin(&dir, "./herdr-tui-state.js").unwrap());
+        assert!(remove_tui_plugin(&dir, "./gowild-tui-state.js").unwrap());
         assert!(config_path.is_file());
         assert_eq!(parse_config(&config_path), json!({}));
 
@@ -286,12 +286,12 @@ mod tests {
         let dir = unique_dir();
         fs::write(
             dir.join(TUI_CONFIG_NAME),
-            r#"{"plugin":[["./herdr-tui-state.js",{"enabled":true}]]}"#,
+            r#"{"plugin":[["./gowild-tui-state.js",{"enabled":true}]]}"#,
         )
         .unwrap();
 
-        assert!(tui_plugin_is_configured(&dir, "./herdr-tui-state.js"));
-        assert!(remove_tui_plugin(&dir, "./herdr-tui-state.js").unwrap());
+        assert!(tui_plugin_is_configured(&dir, "./gowild-tui-state.js"));
+        assert!(remove_tui_plugin(&dir, "./gowild-tui-state.js").unwrap());
 
         fs::remove_dir_all(dir).unwrap();
     }

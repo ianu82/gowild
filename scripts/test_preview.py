@@ -31,7 +31,7 @@ class PreviewNotesTests(unittest.TestCase):
             notes = "Preview notes\n"
             content = preview.build_manifest(
                 output=output,
-                repo="herdrdev/herdr",
+                repo="ianu82/gowild",
                 tag="preview-2026-06-02-abcdef123456",
                 build_id="2026-06-02-abcdef123456",
                 commit="abcdef1234567890",
@@ -54,7 +54,7 @@ class PreviewNotesTests(unittest.TestCase):
             )
             self.assertEqual(
                 data["assets"]["windows-x86_64"]["url"],
-                "https://github.com/herdrdev/herdr/releases/download/preview-2026-06-02-abcdef123456/herdr-windows-x86_64.zip",
+                "https://github.com/ianu82/gowild/releases/download/preview-2026-06-02-abcdef123456/gowild-windows-x86_64.zip",
             )
             self.assertEqual(
                 data["assets"]["windows-x86_64"]["sha256"],
@@ -68,7 +68,7 @@ class PreviewNotesTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "windows-x86_64 requires"):
                 preview.build_manifest(
                     output=Path(tmp) / "preview.json",
-                    repo="herdrdev/herdr",
+                    repo="ianu82/gowild",
                     tag="preview-test",
                     build_id="test",
                     commit="abcdef",
@@ -163,7 +163,7 @@ class PreviewNotesTests(unittest.TestCase):
 
     def test_preview_docs_rewrite_links_to_preview_namespace(self):
         source = """---
-title: Install Herdr
+title: Install GoWild
 ---
 
 import ConfigReference from '../../components/ConfigReference.astro';
@@ -189,13 +189,13 @@ file: ../../../public/assets/logo.svg
 
     def test_version_docs_rewrite_links_and_source_paths(self):
         source = """---
-title: Install Herdr
+title: Install GoWild
 ---
 
 import ConfigReference from '../../components/ConfigReference.astro';
 
 [Install](/docs/install/)
-[Skill](https://github.com/herdrdev/herdr/blob/master/SKILL.md)
+[Skill](https://github.com/ianu82/gowild/blob/master/SKILL.md)
 file: ../../../public/assets/logo.svg
 """
         output = subprocess.check_output(
@@ -212,7 +212,7 @@ file: ../../../public/assets/logo.svg
         self.assertIn("file: ../../../../../public/assets/logo.svg", output)
         self.assertIn("from '../../../../components/ConfigReference.astro'", output)
         self.assertIn("blob/master/docs/versions/0.7.4/website/src/content/docs/index.mdx", output)
-        self.assertIn("blob/v0.7.4/SKILL.md", output)
+        self.assertIn("blob/master/SKILL.md", output)
 
 
 class ConventionalCommitTests(unittest.TestCase):

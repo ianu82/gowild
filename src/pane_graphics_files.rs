@@ -204,7 +204,7 @@ fn runtime_base() -> PathBuf {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .unwrap_or_else(|| PathBuf::from("/var/tmp"));
-        root.join(format!("herdr-pane-graphics-{}", effective_uid()))
+        root.join(format!("gowild-pane-graphics-{}", effective_uid()))
     }
     #[cfg(not(unix))]
     {
@@ -370,7 +370,7 @@ mod tests {
 
     fn store() -> (FileStore, PathBuf) {
         let base = PathBuf::from(format!(
-            "/var/tmp/herdr-graphics-test-{}-{}",
+            "/var/tmp/gowild-graphics-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
