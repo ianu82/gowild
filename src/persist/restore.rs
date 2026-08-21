@@ -503,11 +503,10 @@ fn restore_tab(
             old_id.and_then(|old_id| history.and_then(|history| history.panes.get(old_id)));
         let startup = {
             let mut agent_restore = AgentRestoreState {
-                // Gateway-managed resumes must be rebuilt by the gateway launch
-                // planner. Until that route-aware handoff runs, restore a shell
-                // instead of executing the vendor-default native resume argv.
-                enabled: runtime_context.resume_agents_on_restore
-                    && saved_gateway_agent_route.is_none(),
+                // Gateway-managed resumes retain the ordinary dedupe/session
+                // lifecycle, but the app replaces the raw native argv with a
+                // gateway-planned direct launch before any child starts.
+                enabled: runtime_context.resume_agents_on_restore,
                 resumed_sessions: resumed_agent_sessions,
             };
             pane_restore_startup(saved_agent_session, saved_history, &mut agent_restore)
@@ -1624,11 +1623,14 @@ mod tests {
         );
         let routed_terminal = routed_terminals.values().next().unwrap();
         assert!(
-            routed_terminal.pending_agent_resume_plan.is_none(),
-            "gateway-managed panes must not execute a vendor-default native resume"
+            routed_terminal.pending_agent_resume_plan.is_some(),
+            "gateway-managed panes must remain pending for route-aware resume"
         );
         assert_eq!(routed_terminal.gateway_agent_route, Some(gateway_route));
-        assert_eq!(routed_runtimes.len(), 1);
+        assert!(
+            routed_runtimes.is_empty(),
+            "gateway-managed panes must not start a shell or vendor-default resume before replanning"
+        );
         for (_, runtime) in routed_runtimes.drain() {
             runtime.shutdown();
         }

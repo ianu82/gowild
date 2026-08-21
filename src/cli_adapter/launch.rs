@@ -23,6 +23,14 @@ impl CodingCli {
             Self::Claude => "claude",
         }
     }
+
+    pub(crate) fn from_id(value: &str) -> Option<Self> {
+        match value {
+            "codex" => Some(Self::Codex),
+            "claude" => Some(Self::Claude),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for CodingCli {
@@ -34,10 +42,7 @@ impl fmt::Display for CodingCli {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LaunchMode {
     Fresh,
-    #[allow(dead_code)] // wired by the dedicated resume launch stack
-    Resume {
-        session_ref: String,
-    },
+    Resume { session_ref: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
