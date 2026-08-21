@@ -288,6 +288,9 @@ fn normalize_theme_name(name: &str) -> String {
 
 fn sibling_theme_names(name: &str) -> (String, String) {
     match normalize_theme_name(name).as_str() {
+        "cowork" | "cowork-dark" | "cowork-light" | "gowild" | "gowild-dark" | "gowild-light" => {
+            ("cowork".to_string(), "cowork-light".to_string())
+        }
         "catppuccin" | "catppuccin-mocha" | "catppuccin-latte" | "latte" | "light" => {
             ("catppuccin".to_string(), "catppuccin-latte".to_string())
         }
@@ -321,7 +324,7 @@ fn theme_runtime_config(
         .theme
         .name
         .clone()
-        .unwrap_or_else(|| "catppuccin".to_string());
+        .unwrap_or_else(|| "cowork".to_string());
     let (default_dark, default_light) = sibling_theme_names(&manual_name);
     state::ThemeRuntimeConfig {
         manual_name,
@@ -352,7 +355,7 @@ fn resolve_palette_for_theme_name(
             fallback = fallback_name,
             "unknown theme, falling back"
         );
-        state::Palette::from_name(fallback_name).unwrap_or_else(state::Palette::catppuccin)
+        state::Palette::from_name(fallback_name).unwrap_or_else(state::Palette::cowork)
     });
 
     if let Some(custom) = &runtime.custom {
@@ -371,13 +374,11 @@ fn resolve_effective_theme(
 ) -> (state::Palette, String) {
     let (name, fallback) = if runtime.auto_switch {
         match appearance.unwrap_or(crate::terminal_theme::HostAppearance::Dark) {
-            crate::terminal_theme::HostAppearance::Dark => (&runtime.dark_name, "catppuccin"),
-            crate::terminal_theme::HostAppearance::Light => {
-                (&runtime.light_name, "catppuccin-latte")
-            }
+            crate::terminal_theme::HostAppearance::Dark => (&runtime.dark_name, "cowork"),
+            crate::terminal_theme::HostAppearance::Light => (&runtime.light_name, "cowork-light"),
         }
     } else {
-        (&runtime.manual_name, "catppuccin")
+        (&runtime.manual_name, "cowork")
     };
     (
         resolve_palette_for_theme_name(name, fallback, runtime),
@@ -2879,6 +2880,33 @@ mod tests {
         assert!(!app.state.theme_runtime.auto_switch);
         assert_eq!(app.state.theme_name, "tokyo-night");
         assert_eq!(app.state.palette, state::Palette::tokyo_night());
+    }
+
+    #[test]
+    fn startup_defaults_to_cowork_brand_theme() {
+        let config = Config::default();
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let app = App::new(&config, true, None, api_rx, crate::api::EventHub::default());
+
+        assert_eq!(app.state.theme_name, "cowork");
+        assert_eq!(app.state.palette, state::Palette::cowork());
+        assert_eq!(app.state.theme_runtime.dark_name, "cowork");
+        assert_eq!(app.state.theme_runtime.light_name, "cowork-light");
+    }
+
+    #[test]
+    fn cowork_auto_switch_uses_light_brand_theme() {
+        let mut config = Config::default();
+        config.theme.auto_switch = true;
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(&config, true, None, api_rx, crate::api::EventHub::default());
+
+        assert!(
+            app.set_host_terminal_appearance(crate::terminal_theme::HostAppearance::Light, true)
+        );
+        assert_eq!(app.state.theme_name, "cowork-light");
+        assert_eq!(app.state.palette, state::Palette::cowork_light());
     }
 
     #[test]
