@@ -33,6 +33,12 @@ class ProductBoundaryCheckTests(unittest.TestCase):
     def test_retained_installers_and_crate_publish_fail_closed(self) -> None:
         self.assertEqual(boundary.check_install_boundaries(), [])
 
+    def test_crate_package_retains_provenance_and_excludes_bytecode(self) -> None:
+        manifest = (boundary.REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('"PROVENANCE.md"', manifest)
+        self.assertIn('"!src/**/__pycache__/**"', manifest)
+        self.assertIn('"!src/**/*.pyc"', manifest)
+
     def test_go_wild_brand_assets_replace_imported_user_visible_art(self) -> None:
         self.assertEqual(boundary.check_brand_assets(), [])
 

@@ -12,6 +12,8 @@ keywords = ["terminal", "tui", "ai", "agents", "multiplexer"]
 categories = ["command-line-utilities"]
 include = [
     "src/**/*",
+    "!src/**/__pycache__/**",
+    "!src/**/*.pyc",
     "assets/BRAND.md",
     "assets/logo.png",
     "assets/logo.svg",
@@ -20,6 +22,7 @@ include = [
     "skills/gowild/SKILL.md",
     "website/install.ps1",
     "README.md",
+    "PROVENANCE.md",
     "LICENSE",
     "Cargo.toml",
 ]
