@@ -11,8 +11,15 @@ use super::widgets::{
     render_action_button, render_modal_choice_list, render_panel_shell, ActionButtonSpec,
 };
 use crate::{
-    app::{state::Palette, AppState},
+    app::{
+        state::{
+            GatewayCredentialStatus, GatewayDetailField, GatewayNoticeKind, GatewaySettingsView,
+            Palette,
+        },
+        AppState,
+    },
     config::{StatusIndicatorStyle, ToastDelivery},
+    gateway::{ConnectionStatus, Gateway, GatewayProtocol},
 };
 
 pub(crate) const SETTINGS_POPUP_WIDTH: u16 = 76;
@@ -70,10 +77,10 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                     "● ",
                     Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(section.label()),
+                Span::raw(section.tab_label(inner.width)),
             ])
         } else {
-            Line::from(section.label())
+            Line::from(section.tab_label(inner.width))
         }
     });
     let tabs = Tabs::new(tab_labels)
@@ -103,6 +110,9 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
     let content_area = stack.content;
 
     match app.settings.section {
+        SettingsSection::Gateways => {
+            render_settings_gateways(app, frame, content_area);
+        }
         SettingsSection::Theme => {
             render_settings_theme(app, frame, content_area);
         }
@@ -170,10 +180,10 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
     if let Some(footer_area) = stack.footer {
         let footer_rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
             .areas::<2>(footer_area);
-        let primary_label = settings_primary_button_label(app.settings.section);
+        let primary_label = settings_primary_button_label(app);
+        let close_label = settings_close_button_label(app);
         let show_primary = settings_show_primary_action(app);
-        let (apply_rect, close_rect) =
-            settings_button_rects(inner, app.settings.section, show_primary);
+        let (apply_rect, close_rect) = settings_button_rects(inner, app, show_primary);
         if let Some(apply_rect) = apply_rect {
             render_action_button(
                 frame,
@@ -190,36 +200,74 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
             frame,
             close_rect,
             Some("esc"),
-            "close",
+            close_label,
             Style::default()
                 .fg(p.text)
                 .bg(p.surface0)
                 .add_modifier(Modifier::BOLD),
         );
 
+        let hint = if app.settings.section == SettingsSection::Gateways {
+            match app.settings.gateways.view {
+                GatewaySettingsView::List => " ↑↓ select  ↵ configure  space default  tab section",
+                GatewaySettingsView::Detail if app.settings.gateways.editing_credential => {
+                    " paste or type key  ↵ store securely  esc cancel"
+                }
+                GatewaySettingsView::Detail => " ↑↓ field  ←→ model  ↵ replace key  space default",
+            }
+        } else {
+            " ↑↓ select  tab section"
+        };
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(" ↑↓", Style::default().fg(p.overlay0)),
-                Span::styled(" select  ", Style::default().fg(p.overlay1)),
-                Span::styled("tab", Style::default().fg(p.overlay0)),
-                Span::styled(" section", Style::default().fg(p.overlay1)),
-            ])),
+            Paragraph::new(Span::styled(hint, Style::default().fg(p.overlay1))),
             footer_rows[0],
         );
     }
 }
 
-pub(crate) fn settings_primary_button_label(
-    section: crate::app::state::SettingsSection,
-) -> &'static str {
-    match section {
+pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
+    match app.settings.section {
+        crate::app::state::SettingsSection::Gateways
+            if app.settings.gateways.editing_credential =>
+        {
+            "store"
+        }
+        crate::app::state::SettingsSection::Gateways => "test",
         crate::app::state::SettingsSection::Integrations => "install",
         _ => "apply",
     }
 }
 
+pub(crate) fn settings_close_button_label(app: &AppState) -> &'static str {
+    if app.settings.section == crate::app::state::SettingsSection::Gateways
+        && app.settings.gateways.editing_credential
+    {
+        "cancel"
+    } else if app.settings.section == crate::app::state::SettingsSection::Gateways
+        && app.settings.gateways.view == GatewaySettingsView::Detail
+    {
+        "back"
+    } else {
+        "close"
+    }
+}
+
 pub(crate) fn settings_show_primary_action(app: &AppState) -> bool {
     match app.settings.section {
+        crate::app::state::SettingsSection::Gateways => match app.settings.gateways.view {
+            GatewaySettingsView::List => app
+                .gateway_catalog
+                .gateways
+                .keys()
+                .nth(app.settings.gateways.selected_gateway)
+                .is_some(),
+            GatewaySettingsView::Detail => app
+                .settings
+                .gateways
+                .detail_gateway_id
+                .as_ref()
+                .is_some_and(|id| app.gateway_catalog.gateways.contains_key(id)),
+        },
         crate::app::state::SettingsSection::Integrations => app
             .integration_recommendations
             .iter()
@@ -230,15 +278,16 @@ pub(crate) fn settings_show_primary_action(app: &AppState) -> bool {
 
 pub(crate) fn settings_button_rects(
     inner: Rect,
-    section: crate::app::state::SettingsSection,
+    app: &AppState,
     show_primary: bool,
 ) -> (Option<Rect>, Rect) {
+    let close_label = settings_close_button_label(app);
     if !show_primary {
         let rects = action_button_row_rects(
             inner,
             &[ActionButtonSpec {
                 hint: Some("esc"),
-                label: "close",
+                label: close_label,
             }],
             2,
             inner.height.saturating_sub(1),
@@ -251,17 +300,380 @@ pub(crate) fn settings_button_rects(
         &[
             ActionButtonSpec {
                 hint: Some("↵"),
-                label: settings_primary_button_label(section),
+                label: settings_primary_button_label(app),
             },
             ActionButtonSpec {
                 hint: Some("esc"),
-                label: "close",
+                label: close_label,
             },
         ],
         2,
         inner.height.saturating_sub(1),
     );
     (Some(rects[0]), rects[1])
+}
+
+fn compact_text(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let prefix = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
+}
+
+fn connection_label(status: ConnectionStatus) -> &'static str {
+    match status {
+        ConnectionStatus::NotTested => "○ not tested",
+        ConnectionStatus::Passed => "● connected",
+        ConnectionStatus::Partial => "◐ partial",
+        ConnectionStatus::Failed => "× failed",
+    }
+}
+
+fn protocol_badge(
+    gateway: &Gateway,
+    protocol: GatewayProtocol,
+) -> (&'static str, ConnectionStatus) {
+    let label = match protocol {
+        GatewayProtocol::OpenAiResponses => "Responses",
+        GatewayProtocol::AnthropicMessages => "Messages",
+    };
+    let status = gateway
+        .connection_test
+        .protocols
+        .get(&protocol)
+        .map_or(ConnectionStatus::NotTested, |test| test.status);
+    (label, status)
+}
+
+fn status_color(status: ConnectionStatus, p: &Palette) -> ratatui::style::Color {
+    match status {
+        ConnectionStatus::NotTested => p.overlay1,
+        ConnectionStatus::Passed => p.green,
+        ConnectionStatus::Partial => p.yellow,
+        ConnectionStatus::Failed => p.red,
+    }
+}
+
+fn render_gateway_notice(app: &AppState, frame: &mut Frame, area: Rect) {
+    let Some(notice) = &app.settings.gateways.notice else {
+        return;
+    };
+    let color = match notice.kind {
+        GatewayNoticeKind::Info => app.palette.blue,
+        GatewayNoticeKind::Success => app.palette.green,
+        GatewayNoticeKind::Warning => app.palette.yellow,
+        GatewayNoticeKind::Error => app.palette.red,
+    };
+    frame.render_widget(
+        Paragraph::new(format!(" {}", notice.message))
+            .style(Style::default().fg(color))
+            .wrap(ratatui::widgets::Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_settings_gateways(app: &AppState, frame: &mut Frame, area: Rect) {
+    match app.settings.gateways.view {
+        GatewaySettingsView::List => render_gateway_list(app, frame, area),
+        GatewaySettingsView::Detail => render_gateway_detail(app, frame, area),
+    }
+}
+
+fn render_gateway_list(app: &AppState, frame: &mut Frame, area: Rect) {
+    let p = &app.palette;
+    if area.height == 0 {
+        return;
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " inference gateways",
+                Style::default().fg(p.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  CLI + model independent", Style::default().fg(p.accent)),
+        ])),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    if area.height > 1 {
+        frame.render_widget(
+            Paragraph::new(" choose where Codex and Claude send model requests")
+                .style(Style::default().fg(p.overlay1)),
+            Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+    }
+
+    if app.gateway_catalog.gateways.is_empty() && area.height > 3 {
+        frame.render_widget(
+            Paragraph::new(" No gateways configured.").style(Style::default().fg(p.overlay1)),
+            Rect::new(area.x, area.y + 3, area.width, 1),
+        );
+    }
+
+    for (index, (gateway_id, gateway)) in app.gateway_catalog.gateways.iter().enumerate() {
+        let y = area.y.saturating_add(3 + index as u16 * 3);
+        if y >= area.y.saturating_add(area.height) {
+            break;
+        }
+        let row = Rect::new(
+            area.x,
+            y,
+            area.width,
+            2.min(area.y.saturating_add(area.height).saturating_sub(y)),
+        );
+        let selected = index == app.settings.gateways.selected_gateway;
+        let style = if selected {
+            Style::default().bg(p.surface0).fg(p.text)
+        } else {
+            Style::default().fg(p.subtext0)
+        };
+        let in_flight = app
+            .settings
+            .gateways
+            .test_in_flight
+            .as_ref()
+            .is_some_and(|(_, id)| id == gateway_id);
+        let status_label = connection_label(gateway.connection_test.status);
+        let default = if app.gateway_catalog.default_gateway_id.as_deref() == Some(gateway_id) {
+            "  default"
+        } else {
+            ""
+        };
+        let models = gateway
+            .model_discovery
+            .cached_models
+            .iter()
+            .filter(|model| model.enabled && !model.embedding)
+            .count();
+        let status_label = if in_flight {
+            "◌ testing…"
+        } else {
+            status_label
+        };
+        let status_color = if in_flight {
+            p.blue
+        } else {
+            status_color(gateway.connection_test.status, p)
+        };
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled(if selected { " ▸ " } else { "   " }, style),
+                    Span::styled(&gateway.display_name, style.add_modifier(Modifier::BOLD)),
+                    Span::styled(default, Style::default().fg(p.accent)),
+                    Span::raw("  "),
+                    Span::styled(status_label, Style::default().fg(status_color)),
+                ]),
+                Line::from(vec![
+                    Span::styled("   Responses + Messages", style),
+                    Span::styled(
+                        format!("  {models} models"),
+                        Style::default().fg(p.overlay1),
+                    ),
+                ]),
+            ])
+            .style(style),
+            row,
+        );
+    }
+
+    let notice_y = area.y.saturating_add(area.height.saturating_sub(2));
+    render_gateway_notice(
+        app,
+        frame,
+        Rect::new(area.x, notice_y, area.width, area.height.min(2)),
+    );
+}
+
+fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
+    let p = &app.palette;
+    let Some(gateway_id) = app.settings.gateways.detail_gateway_id.as_deref() else {
+        frame.render_widget(
+            Paragraph::new(" Gateway is no longer available.").style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    };
+    let Some(gateway) = app.gateway_catalog.gateways.get(gateway_id) else {
+        frame.render_widget(
+            Paragraph::new(" Gateway is no longer available.").style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    };
+    let in_flight = app
+        .settings
+        .gateways
+        .test_in_flight
+        .as_ref()
+        .is_some_and(|(_, id)| id == gateway_id);
+    let connection_label = connection_label(gateway.connection_test.status);
+    let connection_label = if in_flight {
+        "◌ testing…"
+    } else {
+        connection_label
+    };
+    let connection_color = if in_flight {
+        p.blue
+    } else {
+        status_color(gateway.connection_test.status, p)
+    };
+    let default = if app.gateway_catalog.default_gateway_id.as_deref() == Some(gateway_id) {
+        "  default"
+    } else {
+        "  space: make default"
+    };
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" {}", gateway.display_name),
+                Style::default().fg(p.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(default, Style::default().fg(p.accent)),
+            Span::raw("  "),
+            Span::styled(connection_label, Style::default().fg(connection_color)),
+        ])),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    if area.height > 1 {
+        frame.render_widget(
+            Paragraph::new(" one gateway · two coding CLIs · any discovered model")
+                .style(Style::default().fg(p.overlay1)),
+            Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+    }
+
+    let credential_status = if app.settings.gateways.editing_credential {
+        if app.settings.gateways.secret_input.is_empty() {
+            "paste or type key  ↵ store"
+        } else {
+            "••••••••••••  ↵ store"
+        }
+    } else {
+        match app
+            .settings
+            .gateways
+            .credential_status
+            .get(gateway_id)
+            .copied()
+            .unwrap_or_default()
+        {
+            GatewayCredentialStatus::Stored => "stored securely  ↵ replace",
+            GatewayCredentialStatus::Missing => "not set  ↵ add API key",
+            GatewayCredentialStatus::Unknown => "status unavailable  ↵ add or replace",
+        }
+    };
+    let codex_model = gateway
+        .default_models
+        .get("codex")
+        .map_or("test to discover models", String::as_str);
+    let claude_model = gateway
+        .default_models
+        .get("claude")
+        .map_or("test to discover models", String::as_str);
+    let model_chars = (area.width as usize).saturating_sub(21).clamp(8, 43);
+    let fields = [
+        (
+            GatewayDetailField::Credential,
+            "API key",
+            credential_status.to_string(),
+        ),
+        (
+            GatewayDetailField::CodexModel,
+            "Codex model",
+            compact_text(codex_model, model_chars),
+        ),
+        (
+            GatewayDetailField::ClaudeModel,
+            "Claude model",
+            compact_text(claude_model, model_chars),
+        ),
+    ];
+    for (index, (field, label, value)) in fields.into_iter().enumerate() {
+        let y = area.y.saturating_add(3 + index as u16);
+        if y >= area.y.saturating_add(area.height) {
+            break;
+        }
+        let selected = field == app.settings.gateways.detail_field;
+        let style = if selected {
+            Style::default()
+                .fg(p.text)
+                .bg(p.surface0)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(p.subtext0)
+        };
+        frame.render_widget(
+            Paragraph::new(format!(
+                " {} {:<13}  {}",
+                if selected { "▸" } else { " " },
+                label,
+                value
+            ))
+            .style(style),
+            Rect::new(area.x, y, area.width, 1),
+        );
+    }
+
+    let protocol_y = area.y.saturating_add(7);
+    if protocol_y < area.y.saturating_add(area.height) {
+        let (responses, responses_status) =
+            protocol_badge(gateway, GatewayProtocol::OpenAiResponses);
+        let (messages, messages_status) =
+            protocol_badge(gateway, GatewayProtocol::AnthropicMessages);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" protocols  ", Style::default().fg(p.overlay1)),
+                Span::styled(
+                    format!("{responses} {}", status_symbol(responses_status)),
+                    Style::default().fg(status_color(responses_status, p)),
+                ),
+                Span::raw("    "),
+                Span::styled(
+                    format!("{messages} {}", status_symbol(messages_status)),
+                    Style::default().fg(status_color(messages_status, p)),
+                ),
+            ])),
+            Rect::new(area.x, protocol_y, area.width, 1),
+        );
+    }
+
+    let diagnostic_y = area.y.saturating_add(8);
+    if diagnostic_y < area.y.saturating_add(area.height) {
+        let diagnostic = gateway.connection_test.diagnostics.first().or_else(|| {
+            gateway
+                .connection_test
+                .protocols
+                .values()
+                .find_map(|test| test.diagnostics.first())
+        });
+        if let Some(diagnostic) = diagnostic {
+            frame.render_widget(
+                Paragraph::new(format!(" {}", compact_text(diagnostic.message(), 67)))
+                    .style(Style::default().fg(p.overlay1)),
+                Rect::new(area.x, diagnostic_y, area.width, 1),
+            );
+        }
+    }
+
+    let notice_y = area.y.saturating_add(area.height.saturating_sub(2));
+    render_gateway_notice(
+        app,
+        frame,
+        Rect::new(area.x, notice_y, area.width, area.height.min(2)),
+    );
+}
+
+fn status_symbol(status: ConnectionStatus) -> &'static str {
+    match status {
+        ConnectionStatus::NotTested => "○",
+        ConnectionStatus::Passed => "✓",
+        ConnectionStatus::Partial => "◐",
+        ConnectionStatus::Failed => "×",
+    }
 }
 
 fn integrations_footer_paragraph(app: &AppState) -> Paragraph<'static> {
@@ -421,4 +833,118 @@ fn render_settings_toggle(
         p,
         1,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use super::*;
+    use crate::{
+        app::state::{GatewayCredentialStatus, GatewaySettingsView, Mode, SettingsSection},
+        gateway::CachedModel,
+    };
+
+    fn rendered_gateway_settings(app: &AppState, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
+        terminal
+            .draw(|frame| render_settings_overlay(app, frame, frame.area()))
+            .expect("gateway settings render");
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    fn gateway_settings_state() -> AppState {
+        let mut app = AppState::test_new();
+        app.mode = Mode::Settings;
+        app.settings.section = SettingsSection::Gateways;
+        let gateway = app
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .expect("built-in MindsHub gateway");
+        gateway.model_discovery.cached_models = vec![CachedModel {
+            id: "provider/model-alpha".into(),
+            label: Some("Model Alpha".into()),
+            provider: Some("provider".into()),
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+        gateway
+            .default_models
+            .insert("codex".into(), "provider/model-alpha".into());
+        app
+    }
+
+    #[test]
+    fn gateway_list_remains_legible_at_supported_and_constrained_sizes() {
+        let app = gateway_settings_state();
+        for (width, height) in [(80, 24), (100, 30), (64, 20)] {
+            let rendered = rendered_gateway_settings(&app, width, height);
+            assert!(rendered.contains("inference gateways"), "{width}×{height}");
+            assert!(rendered.contains("MindsHub Inference"), "{width}×{height}");
+            if width == 64 {
+                assert!(rendered.contains("hooks"), "{width}×{height}");
+            }
+        }
+    }
+
+    #[test]
+    fn gateway_detail_never_renders_credential_contents() {
+        let mut app = gateway_settings_state();
+        app.settings.gateways.view = GatewaySettingsView::Detail;
+        app.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        app.settings.gateways.editing_credential = true;
+        app.settings
+            .gateways
+            .credential_status
+            .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+        app.settings
+            .gateways
+            .secret_input
+            .insert("TOP_SECRET_GATEWAY_KEY");
+
+        for (width, height) in [(80, 24), (64, 20)] {
+            let rendered = rendered_gateway_settings(&app, width, height);
+            assert!(rendered.contains("••••••••••••"), "{width}×{height}");
+            assert!(
+                !rendered.contains("TOP_SECRET_GATEWAY_KEY"),
+                "{width}×{height}"
+            );
+        }
+        assert!(
+            !format!("{:?}", app.settings.gateways.secret_input).contains("TOP_SECRET_GATEWAY_KEY")
+        );
+    }
+
+    #[test]
+    fn empty_credential_editor_invites_input_without_showing_a_false_mask() {
+        let mut app = gateway_settings_state();
+        app.settings.gateways.view = GatewaySettingsView::Detail;
+        app.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        app.settings.gateways.editing_credential = true;
+
+        let rendered = rendered_gateway_settings(&app, 80, 24);
+
+        assert!(rendered.contains("paste or type key"));
+        assert!(!rendered.contains("••••••••••••"));
+        assert!(rendered.contains("store"));
+        assert!(rendered.contains("cancel"));
+    }
+
+    #[test]
+    fn empty_gateway_catalog_has_an_explicit_state() {
+        let mut app = gateway_settings_state();
+        app.gateway_catalog.gateways.clear();
+
+        let rendered = rendered_gateway_settings(&app, 80, 24);
+
+        assert!(rendered.contains("No gateways configured."));
+    }
 }

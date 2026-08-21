@@ -8815,7 +8815,7 @@ next_tab = ""
         assert_eq!(server.app.state.mode, crate::app::Mode::Settings);
         assert_eq!(
             server.app.state.settings.section,
-            crate::app::state::SettingsSection::Integrations
+            crate::app::state::SettingsSection::Gateways
         );
     }
 

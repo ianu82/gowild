@@ -31,6 +31,31 @@ The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
 credentials and common key formats before persistence.
 
+## TUI setup
+
+First-run onboarding continues directly to the **gateways** settings section.
+The same section opens first from the normal settings panel, without hiding the
+existing theme, status, sound, toast, pane-label, or integration controls.
+
+Select **MindsHub Inference** to:
+
+- add or replace its API key through a fixed masked editor;
+- make it the default gateway;
+- run authentication, model discovery, Responses, and Messages checks in a
+  background worker; and
+- choose separate discovered-model defaults for Codex and Claude Code.
+
+The key editor accepts typing and paste, never renders the entered value, and
+clears its zeroizing buffer on save, cancel, section change, or modal close.
+Connection status, per-protocol status, redacted diagnostics, and the discovered
+model count are shown in the gateway detail. Model selection remains disabled
+until a successful discovery has produced a selectable non-embedding model.
+
+Keyboard navigation uses `↑`/`↓` (or `j`/`k`) for rows and fields, `Enter` to
+configure or store, `←`/`→` to change a CLI model, `Space` to set the default,
+and `t` or `r` to test. Gateway rows, fields, and footer actions are also
+mouse-accessible.
+
 ## Connection testing and model discovery
 
 GoWild tests a gateway with the same configured authentication used for a real
