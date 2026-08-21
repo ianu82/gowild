@@ -187,6 +187,11 @@ impl App {
                         return;
                     }
                     Err(error) => {
+                        self.state
+                            .settings
+                            .gateways
+                            .credential_status
+                            .insert(gateway_id.to_string(), GatewayCredentialStatus::Unknown);
                         self.set_gateway_notice(
                             GatewayNoticeKind::Error,
                             format!("Could not read the gateway credential securely: {error}"),
@@ -198,7 +203,7 @@ impl App {
         };
 
         let generation = self.state.settings.gateways.next_test_generation;
-        self.state.settings.gateways.next_test_generation = generation.saturating_add(1).max(1);
+        self.state.settings.gateways.next_test_generation = next_generation(generation);
         self.state.settings.gateways.test_in_flight = Some((generation, gateway_id.to_string()));
         self.set_gateway_notice(
             GatewayNoticeKind::Info,
@@ -233,9 +238,11 @@ impl App {
         gateway_id: String,
         result: Result<Box<GatewayInspection>, crate::gateway::GatewayTesterError>,
     ) {
-        if self.state.settings.gateways.test_in_flight.as_ref()
-            != Some(&(generation, gateway_id.clone()))
-        {
+        if !matches!(
+            self.state.settings.gateways.test_in_flight.as_ref(),
+            Some((active_generation, active_gateway_id))
+                if *active_generation == generation && active_gateway_id == &gateway_id
+        ) {
             return;
         }
         self.state.settings.gateways.test_in_flight = None;
@@ -315,6 +322,13 @@ fn next_model<'a>(available: &'a [String], current: Option<&str>, direction: i8)
     &available[index]
 }
 
+fn next_generation(current: u64) -> u64 {
+    match current.wrapping_add(1) {
+        0 => 1,
+        next => next,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -322,7 +336,7 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
 
-    use super::{next_model, App};
+    use super::{next_generation, next_model, App};
     use crate::{
         config::Config,
         gateway::{
@@ -339,6 +353,8 @@ mod tests {
     struct MockCredentialStore {
         values: Arc<MockCredentialValues>,
     }
+
+    struct FailingCredentialStore;
 
     impl CredentialStore for MockCredentialStore {
         fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError> {
@@ -372,6 +388,20 @@ mod tests {
                 .expect("credential map")
                 .remove(credential_ref);
             Ok(())
+        }
+    }
+
+    impl CredentialStore for FailingCredentialStore {
+        fn get(&self, _: &str) -> Result<Option<Credential>, CredentialStoreError> {
+            Err(CredentialStoreError::SystemStoreUnavailable)
+        }
+
+        fn set(&self, _: &str, _: &Credential) -> Result<CredentialBackend, CredentialStoreError> {
+            Err(CredentialStoreError::SystemStoreUnavailable)
+        }
+
+        fn delete(&self, _: &str) -> Result<(), CredentialStoreError> {
+            Err(CredentialStoreError::SystemStoreUnavailable)
         }
     }
 
@@ -409,6 +439,7 @@ mod tests {
         assert_eq!(next_model(&models, Some("beta"), 1), "alpha");
         assert_eq!(next_model(&models, Some("missing"), 1), "alpha");
         assert_eq!(next_model(&models, Some("missing"), -1), "beta");
+        assert_eq!(next_generation(u64::MAX), 1);
     }
 
     #[test]
@@ -543,6 +574,30 @@ mod tests {
             crate::gateway::ConnectionStatus::Failed
         );
         assert!(!serialized.contains("TOP_SECRET_GATEWAY_KEY"));
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn credential_read_failure_clears_a_stale_stored_status() {
+        let path = temp_gateway_path("credential-read-failure");
+        let mut app = gateway_app(path.clone(), Arc::default());
+        app.gateway_credentials = Box::new(FailingCredentialStore);
+        app.state.settings.gateways.credential_status.insert(
+            "mindshub".into(),
+            crate::app::state::GatewayCredentialStatus::Stored,
+        );
+
+        app.start_gateway_test("mindshub");
+
+        assert_eq!(
+            app.state
+                .settings
+                .gateways
+                .credential_status
+                .get("mindshub"),
+            Some(&crate::app::state::GatewayCredentialStatus::Unknown)
+        );
+        assert!(app.state.settings.gateways.test_in_flight.is_none());
         let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
     }
 }

@@ -564,15 +564,14 @@ impl App {
                     crate::gateway::AuthenticationMode::None => {
                         state::GatewayCredentialStatus::Stored
                     }
-                    _ => gateway
-                        .auth
-                        .credential_ref
-                        .as_deref()
-                        .and_then(|credential_ref| gateway_credentials.get(credential_ref).ok())
-                        .flatten()
-                        .map_or(state::GatewayCredentialStatus::Missing, |_| {
-                            state::GatewayCredentialStatus::Stored
-                        }),
+                    _ => match gateway.auth.credential_ref.as_deref() {
+                        Some(credential_ref) => match gateway_credentials.get(credential_ref) {
+                            Ok(Some(_)) => state::GatewayCredentialStatus::Stored,
+                            Ok(None) => state::GatewayCredentialStatus::Missing,
+                            Err(_) => state::GatewayCredentialStatus::Unknown,
+                        },
+                        None => state::GatewayCredentialStatus::Unknown,
+                    },
                 };
                 gateway_settings
                     .credential_status
@@ -580,7 +579,12 @@ impl App {
             }
             gateway_settings
         };
-        let config_diagnostic = config_diagnostic.or(gateway_config_error);
+        let config_diagnostic = match (config_diagnostic, gateway_config_error) {
+            (Some(config), Some(gateway)) => Some(format!("{config}; {gateway}")),
+            (Some(config), None) => Some(config),
+            (None, Some(gateway)) => Some(gateway),
+            (None, None) => None,
+        };
 
         let mut state = AppState {
             terminals: std::collections::HashMap::new(),
