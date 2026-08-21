@@ -8,6 +8,8 @@
   models, and choosing independent Codex and Claude Code defaults.
 - Gateway connection tests run outside the render thread and persist only
   redacted diagnostics and non-secret model metadata.
+- Gateway settings can add, edit, and duplicate custom Responses- and
+  Messages-compatible gateways with configurable discovery and authentication.
 
 ### Fixed
 - Windows panes now keep bare `cursor-agent` launches detected after Cursor hands off to its bundled Node process. (#3032)

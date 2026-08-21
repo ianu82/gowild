@@ -264,6 +264,16 @@ impl App {
                 self.state.settings.gateways.secret_input.insert(text);
                 true
             }
+            Mode::Settings
+                if self.state.settings.section == crate::app::state::SettingsSection::Gateways
+                    && self.state.settings.gateways.view
+                        == crate::app::state::GatewaySettingsView::Form =>
+            {
+                if let Some(form) = self.state.settings.gateways.gateway_form.as_mut() {
+                    form.insert(text);
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -436,6 +446,20 @@ impl App {
                             target,
                             direction,
                         } => self.cycle_gateway_model(&gateway_id, target, direction),
+                        SettingsAction::AddCustomGateway(gateway) => {
+                            let gateway_id = gateway.id.clone();
+                            if self.add_custom_gateway(*gateway) {
+                                settings::finish_gateway_form(&mut self.state, &gateway_id);
+                            }
+                        }
+                        SettingsAction::UpdateCustomGateway {
+                            gateway_id,
+                            gateway,
+                        } => {
+                            if self.update_custom_gateway(&gateway_id, *gateway) {
+                                settings::finish_gateway_form(&mut self.state, &gateway_id);
+                            }
+                        }
                     },
                     MouseAction::FocusWorkspace { ws_idx } => {
                         self.focus_workspace_idx_via_api(ws_idx)
@@ -758,7 +782,8 @@ pub(crate) fn modal_paste_target_active(state: &AppState) -> bool {
         Mode::KeybindHelp => state.keybind_help.search_focused,
         Mode::Settings => {
             state.settings.section == crate::app::state::SettingsSection::Gateways
-                && state.settings.gateways.editing_credential
+                && (state.settings.gateways.editing_credential
+                    || state.settings.gateways.view == crate::app::state::GatewaySettingsView::Form)
         }
         Mode::Copy => state
             .copy_mode

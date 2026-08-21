@@ -45,16 +45,27 @@ Select **MindsHub Inference** to:
   background worker; and
 - choose separate discovered-model defaults for Codex and Claude Code.
 
+Choose **add custom** to configure another gateway. The form accepts a stable
+gateway ID, display name, optional OpenAI Responses and Anthropic Messages base
+URLs, an optional model-discovery URL, and bearer, `x-api-key`, custom secret
+header, or unauthenticated access. At least one coding protocol endpoint is
+required. Editing keeps the gateway ID fixed; duplicating starts an independent
+custom definition and never copies the source credential. Save the definition
+first, then add its API key from the gateway detail when authentication requires
+one.
+
 The key editor accepts typing and paste, never renders the entered value, and
 clears its zeroizing buffer on save, cancel, section change, or modal close.
 Connection status, per-protocol status, redacted diagnostics, and the discovered
 model count are shown in the gateway detail. Model selection remains disabled
 until a successful discovery has produced a selectable non-embedding model.
 
-Keyboard navigation uses `↑`/`↓` (or `j`/`k`) for rows and fields, `Enter` to
-configure or store, `←`/`→` to change a CLI model, `Space` to set the default,
-and `t` or `r` to test. Gateway rows, fields, and footer actions are also
-mouse-accessible.
+Keyboard navigation uses `↑`/`↓` (or `j`/`k`) for gateway rows and detail fields,
+`Enter` to configure or store, `←`/`→` to change a CLI model, `Space` to set the
+default, and `t` or `r` to test. In the custom form, arrows or `Tab` move between
+fields, typing and paste append metadata, `Ctrl+U` clears the selected field,
+and `←`/`→` changes authentication. Gateway rows, form fields, inline actions,
+and footer actions are also mouse-accessible.
 
 ## Connection testing and model discovery
 
