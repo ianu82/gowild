@@ -1155,6 +1155,289 @@ pub(crate) enum GatewaySettingsView {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum CustomGatewayFormMode {
+    #[default]
+    Add,
+    Edit,
+    Duplicate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum GatewayFormField {
+    #[default]
+    Id,
+    DisplayName,
+    ResponsesUrl,
+    MessagesUrl,
+    ModelsUrl,
+    Authentication,
+    AuthHeader,
+    AuthPrefix,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+impl GatewayFormField {
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Id,
+        Self::DisplayName,
+        Self::ResponsesUrl,
+        Self::MessagesUrl,
+        Self::ModelsUrl,
+        Self::Authentication,
+        Self::AuthHeader,
+        Self::AuthPrefix,
+    ];
+
+    fn max_chars(self) -> usize {
+        match self {
+            Self::Id => 64,
+            Self::DisplayName => 80,
+            Self::ResponsesUrl | Self::MessagesUrl | Self::ModelsUrl => 2_048,
+            Self::Authentication => 0,
+            Self::AuthHeader => 128,
+            Self::AuthPrefix => 256,
+        }
+    }
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct CustomGatewayFormState {
+    pub(crate) mode: CustomGatewayFormMode,
+    pub(crate) selected_field: GatewayFormField,
+    pub(crate) id: String,
+    pub(crate) display_name: String,
+    pub(crate) responses_url: String,
+    pub(crate) messages_url: String,
+    pub(crate) models_url: String,
+    pub(crate) authentication: crate::gateway::AuthenticationMode,
+    pub(crate) auth_header: String,
+    pub(crate) auth_prefix: String,
+    template: crate::gateway::Gateway,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+impl CustomGatewayFormState {
+    pub(crate) fn add() -> Self {
+        let mut template = crate::gateway::Gateway::mindshub();
+        template.id.clear();
+        template.display_name.clear();
+        template.preset = None;
+        template.custom_headers.clear();
+        Self {
+            mode: CustomGatewayFormMode::Add,
+            selected_field: GatewayFormField::Id,
+            id: String::new(),
+            display_name: String::new(),
+            responses_url: String::new(),
+            messages_url: String::new(),
+            models_url: String::new(),
+            authentication: crate::gateway::AuthenticationMode::BearerToken,
+            auth_header: String::new(),
+            auth_prefix: String::new(),
+            template,
+        }
+    }
+
+    pub(crate) fn edit(gateway: &crate::gateway::Gateway) -> Self {
+        Self::from_gateway(CustomGatewayFormMode::Edit, gateway)
+    }
+
+    pub(crate) fn duplicate(gateway: &crate::gateway::Gateway) -> Self {
+        let mut form = Self::from_gateway(CustomGatewayFormMode::Duplicate, gateway);
+        form.id.clear();
+        form.display_name = format!("{} Copy", gateway.display_name);
+        form.selected_field = GatewayFormField::Id;
+        form
+    }
+
+    fn from_gateway(mode: CustomGatewayFormMode, gateway: &crate::gateway::Gateway) -> Self {
+        Self {
+            mode,
+            selected_field: GatewayFormField::DisplayName,
+            id: gateway.id.clone(),
+            display_name: gateway.display_name.clone(),
+            responses_url: gateway
+                .endpoints
+                .openai_responses
+                .clone()
+                .unwrap_or_default(),
+            messages_url: gateway
+                .endpoints
+                .anthropic_messages
+                .clone()
+                .unwrap_or_default(),
+            models_url: gateway.model_discovery.url.clone().unwrap_or_default(),
+            authentication: gateway.auth.mode,
+            auth_header: gateway.auth.header_name.clone().unwrap_or_default(),
+            auth_prefix: gateway.auth.value_prefix.clone().unwrap_or_default(),
+            template: gateway.clone(),
+        }
+    }
+
+    pub(crate) fn is_editing_existing(&self) -> bool {
+        self.mode == CustomGatewayFormMode::Edit
+    }
+
+    pub(crate) fn original_gateway_id(&self) -> Option<&str> {
+        self.is_editing_existing()
+            .then_some(self.template.id.as_str())
+    }
+
+    pub(crate) fn move_selection(&mut self, direction: i8) {
+        let current = GatewayFormField::ALL
+            .iter()
+            .position(|field| *field == self.selected_field)
+            .unwrap_or_default();
+        let next = if direction.is_negative() {
+            current.saturating_sub(1)
+        } else {
+            (current + 1).min(GatewayFormField::ALL.len() - 1)
+        };
+        self.selected_field = GatewayFormField::ALL[next];
+    }
+
+    pub(crate) fn insert(&mut self, text: &str) {
+        if !self.selected_field_is_editable() {
+            return;
+        }
+        let max_chars = self.selected_field.max_chars();
+        let field = self.selected_text_mut();
+        let remaining = max_chars.saturating_sub(field.chars().count());
+        field.extend(
+            text.chars()
+                .filter(|character| !character.is_control())
+                .take(remaining),
+        );
+    }
+
+    pub(crate) fn backspace(&mut self) {
+        if self.selected_field_is_editable() {
+            self.selected_text_mut().pop();
+        }
+    }
+
+    pub(crate) fn cycle_authentication(&mut self, direction: i8) {
+        use crate::gateway::AuthenticationMode;
+        let modes = [
+            AuthenticationMode::BearerToken,
+            AuthenticationMode::XApiKey,
+            AuthenticationMode::CustomHeader,
+            AuthenticationMode::None,
+        ];
+        let current = modes
+            .iter()
+            .position(|mode| *mode == self.authentication)
+            .unwrap_or_default();
+        let next = if direction.is_negative() {
+            current.checked_sub(1).unwrap_or(modes.len() - 1)
+        } else {
+            (current + 1) % modes.len()
+        };
+        self.authentication = modes[next];
+    }
+
+    pub(crate) fn gateway(&self) -> crate::gateway::Gateway {
+        use crate::gateway::{AuthenticationMode, GatewayFeature, GatewayProtocol};
+
+        let mut gateway = self.template.clone();
+        gateway.id = self.id.clone();
+        gateway.display_name = self.display_name.clone();
+        gateway.preset = None;
+        gateway.endpoints.openai_responses = nonempty(&self.responses_url);
+        gateway.endpoints.anthropic_messages = nonempty(&self.messages_url);
+        gateway.capabilities.protocols.clear();
+        if gateway.endpoints.openai_responses.is_some() {
+            gateway
+                .capabilities
+                .protocols
+                .insert(GatewayProtocol::OpenAiResponses);
+        }
+        if gateway.endpoints.anthropic_messages.is_some() {
+            gateway
+                .capabilities
+                .protocols
+                .insert(GatewayProtocol::AnthropicMessages);
+        }
+        gateway.model_discovery.url = nonempty(&self.models_url);
+        gateway.model_discovery.enabled = gateway.model_discovery.url.is_some();
+        if gateway.model_discovery.enabled {
+            gateway
+                .capabilities
+                .features
+                .insert(GatewayFeature::ModelDiscovery);
+        } else {
+            gateway
+                .capabilities
+                .features
+                .remove(&GatewayFeature::ModelDiscovery);
+        }
+        gateway.auth.mode = self.authentication;
+        gateway.auth.credential_ref = match self.authentication {
+            AuthenticationMode::None => None,
+            _ => Some(format!("gateway:{}", self.id)),
+        };
+        if self.authentication == AuthenticationMode::CustomHeader {
+            gateway.auth.header_name = nonempty(&self.auth_header);
+            gateway.auth.value_prefix = nonempty(&self.auth_prefix);
+        } else {
+            gateway.auth.header_name = None;
+            gateway.auth.value_prefix = None;
+        }
+        gateway
+    }
+
+    fn selected_field_is_editable(&self) -> bool {
+        match self.selected_field {
+            GatewayFormField::Id => !self.is_editing_existing(),
+            GatewayFormField::Authentication => false,
+            GatewayFormField::AuthHeader | GatewayFormField::AuthPrefix => {
+                self.authentication == crate::gateway::AuthenticationMode::CustomHeader
+            }
+            _ => true,
+        }
+    }
+
+    fn selected_text_mut(&mut self) -> &mut String {
+        match self.selected_field {
+            GatewayFormField::Id => &mut self.id,
+            GatewayFormField::DisplayName => &mut self.display_name,
+            GatewayFormField::ResponsesUrl => &mut self.responses_url,
+            GatewayFormField::MessagesUrl => &mut self.messages_url,
+            GatewayFormField::ModelsUrl => &mut self.models_url,
+            GatewayFormField::AuthHeader => &mut self.auth_header,
+            GatewayFormField::AuthPrefix => &mut self.auth_prefix,
+            GatewayFormField::Authentication => unreachable!("authentication is not text input"),
+        }
+    }
+}
+
+impl std::fmt::Debug for CustomGatewayFormState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CustomGatewayFormState")
+            .field("mode", &self.mode)
+            .field("selected_field", &self.selected_field)
+            .field("id", &self.id)
+            .field("display_name", &self.display_name)
+            .field("responses_url", &"[URL]")
+            .field("messages_url", &"[URL]")
+            .field("models_url", &"[URL]")
+            .field("authentication", &self.authentication)
+            .field("auth_header", &self.auth_header)
+            .field("auth_prefix", &"[PREFIX]")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn nonempty(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum GatewayCredentialStatus {
     #[default]
     Unknown,
@@ -1265,6 +1548,8 @@ pub(crate) struct GatewaySettingsState {
     pub(crate) notice: Option<GatewayNotice>,
     pub(crate) test_in_flight: Option<(u64, String)>,
     pub(crate) next_test_generation: u64,
+    #[allow(dead_code)]
+    pub(crate) gateway_form: Option<CustomGatewayFormState>,
 }
 
 impl Default for GatewaySettingsState {
@@ -1280,7 +1565,128 @@ impl Default for GatewaySettingsState {
             notice: None,
             test_in_flight: None,
             next_test_generation: 1,
+            gateway_form: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod custom_gateway_form_tests {
+    use super::{CustomGatewayFormMode, CustomGatewayFormState, GatewayFormField};
+    use crate::gateway::{AuthenticationMode, Gateway, GatewayProtocol};
+
+    #[test]
+    fn add_form_builds_protocols_discovery_and_custom_auth_from_visible_fields() {
+        let mut form = CustomGatewayFormState::add();
+        form.id = "private-hub".into();
+        form.display_name = "Private Hub".into();
+        form.responses_url = "https://gateway.example/v1".into();
+        form.models_url = "https://gateway.example/v1/models".into();
+        form.authentication = AuthenticationMode::CustomHeader;
+        form.auth_header = "X-Gateway-Key".into();
+        form.auth_prefix = "Token ".into();
+
+        let gateway = form.gateway();
+
+        assert_eq!(gateway.id, "private-hub");
+        assert_eq!(gateway.display_name, "Private Hub");
+        assert!(gateway.supports(GatewayProtocol::OpenAiResponses));
+        assert!(!gateway.supports(GatewayProtocol::AnthropicMessages));
+        assert!(gateway.model_discovery.enabled);
+        assert_eq!(
+            gateway.model_discovery.url.as_deref(),
+            Some("https://gateway.example/v1/models")
+        );
+        assert_eq!(gateway.auth.mode, AuthenticationMode::CustomHeader);
+        assert_eq!(gateway.auth.header_name.as_deref(), Some("X-Gateway-Key"));
+        assert_eq!(gateway.auth.value_prefix.as_deref(), Some("Token "));
+        assert_eq!(
+            gateway.auth.credential_ref.as_deref(),
+            Some("gateway:private-hub")
+        );
+        assert!(gateway.validate().is_empty());
+    }
+
+    #[test]
+    fn edit_form_keeps_identity_and_unexposed_non_secret_headers() {
+        let mut gateway = Gateway::mindshub();
+        gateway.id = "existing".into();
+        gateway.display_name = "Existing".into();
+        gateway.preset = None;
+        gateway.auth.credential_ref = Some("gateway:opaque-reference".into());
+        gateway
+            .custom_headers
+            .insert("OpenAI-Beta".into(), "responses=v1".into());
+        let mut form = CustomGatewayFormState::edit(&gateway);
+        assert_eq!(form.mode, CustomGatewayFormMode::Edit);
+        assert_eq!(form.original_gateway_id(), Some("existing"));
+
+        form.selected_field = GatewayFormField::Id;
+        form.backspace();
+        form.insert("-renamed");
+        form.display_name = "Edited".into();
+        let edited = form.gateway();
+
+        assert_eq!(edited.id, "existing");
+        assert_eq!(edited.display_name, "Edited");
+        assert_eq!(
+            edited.custom_headers.get("OpenAI-Beta").map(String::as_str),
+            Some("responses=v1")
+        );
+    }
+
+    #[test]
+    fn duplicate_form_copies_only_non_secret_configuration() {
+        let source = Gateway::mindshub();
+        let mut form = CustomGatewayFormState::duplicate(&source);
+
+        assert_eq!(form.mode, CustomGatewayFormMode::Duplicate);
+        assert!(form.id.is_empty());
+        assert_eq!(form.display_name, "MindsHub Inference Copy");
+        form.id = "mindshub-copy".into();
+        let duplicate = form.gateway();
+        assert_eq!(duplicate.preset, None);
+        assert_eq!(
+            duplicate.auth.credential_ref.as_deref(),
+            Some("gateway:mindshub-copy")
+        );
+        assert_eq!(
+            duplicate.endpoints.openai_responses,
+            source.endpoints.openai_responses
+        );
+        assert_eq!(
+            duplicate.endpoints.anthropic_messages,
+            source.endpoints.anthropic_messages
+        );
+    }
+
+    #[test]
+    fn form_input_is_bounded_sanitized_and_debug_redacts_urls() {
+        let mut form = CustomGatewayFormState::add();
+        form.insert(&format!("{}\nSECRET", "a".repeat(80)));
+        assert_eq!(form.id.chars().count(), 64);
+        assert!(!form.id.contains('\n'));
+        form.selected_field = GatewayFormField::ResponsesUrl;
+        form.insert("https://user:SECRET@example.com/v1");
+        form.auth_prefix = "ACCIDENTAL_SECRET".into();
+
+        let debug = format!("{form:?}");
+        assert!(!debug.contains("SECRET"));
+        assert!(!debug.contains("user:"));
+    }
+
+    #[test]
+    fn form_selection_and_authentication_cycle_stop_and_wrap_predictably() {
+        let mut form = CustomGatewayFormState::add();
+        form.move_selection(-1);
+        assert_eq!(form.selected_field, GatewayFormField::Id);
+        form.move_selection(1);
+        assert_eq!(form.selected_field, GatewayFormField::DisplayName);
+        form.authentication = AuthenticationMode::None;
+        form.cycle_authentication(1);
+        assert_eq!(form.authentication, AuthenticationMode::BearerToken);
+        form.cycle_authentication(-1);
+        assert_eq!(form.authentication, AuthenticationMode::None);
     }
 }
 
