@@ -55,3 +55,32 @@ credential is passed to an adapter as a secret value, rejected if the adapter
 places it in argv or an ordinary environment value, and exposed only to the
 spawned child process. Launch specifications and pane environment diagnostics
 redact all environment values.
+
+## Claude Code adapter
+
+The Claude Code adapter requires an Anthropic Messages-compatible endpoint. It
+sets `ANTHROPIC_BASE_URL`, uses `ANTHROPIC_AUTH_TOKEN` for bearer authentication
+or `ANTHROPIC_API_KEY` for `x-api-key` authentication, and explicitly removes
+the other credential variable. It also removes inherited Bedrock, Vertex, and
+Foundry mode selectors so the chosen gateway cannot be bypassed by the parent
+shell. MindsHub uses the bearer path and the host-only
+`https://api.mindshub.ai` base URL.
+
+When a model is selected, GoWild passes it through Claude's `--model` option
+and exposes it as the custom model-picker entry. Background and subagent work
+is pinned to the same gateway model so a custom catalog cannot fall through to
+an unavailable built-in Anthropic model ID. Gateway model discovery is enabled
+only when the configured catalog is available from the `/v1/models` path
+Claude Code derives from the selected base URL, and resumed sessions add
+`--resume <session-id>` without changing the resolved environment.
+
+Claude Code does not provide a safe way to disable saved Anthropic credentials
+while using either an unauthenticated endpoint or custom-header-only
+authentication in its normal interactive mode. GoWild fails closed for those
+two authentication modes instead of risking a silent provider fallback or
+credential disclosure.
+
+The adapter contract follows the current [Claude Code gateway
+documentation](https://code.claude.com/docs/en/llm-gateway), [Claude Code
+environment reference](https://code.claude.com/docs/en/env-vars), and [MindsHub
+Inference service contract](https://mindshub.ai/inference).

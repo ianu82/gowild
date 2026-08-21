@@ -18,6 +18,6 @@ pub(crate) use credentials::{Credential, CredentialStore};
 #[cfg(test)]
 pub(crate) use credentials::{CredentialBackend, CredentialStoreError};
 pub(crate) use model::{
-    AuthenticationMode, Gateway, GatewayCatalog, GatewayProtocol, ValidationError,
+    AuthenticationMode, Gateway, GatewayCatalog, GatewayFeature, GatewayProtocol, ValidationError,
 };
 pub(crate) use redact::redact;

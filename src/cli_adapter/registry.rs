@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::{CliAdapter, CodingCli};
+use super::{ClaudeAdapter, CliAdapter, CodingCli};
 
 #[derive(Default)]
 pub(crate) struct AdapterRegistry {
@@ -9,6 +9,14 @@ pub(crate) struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
+    pub(crate) fn with_builtin_adapters() -> Self {
+        let mut registry = Self::default();
+        registry
+            .register(ClaudeAdapter)
+            .expect("built-in Claude adapter must be unique");
+        registry
+    }
+
     pub(crate) fn register(
         &mut self,
         adapter: impl CliAdapter + 'static,
@@ -101,6 +109,19 @@ mod tests {
         assert_eq!(
             registry.configured_clis().collect::<Vec<_>>(),
             vec![CodingCli::Codex]
+        );
+    }
+
+    #[test]
+    fn builtins_include_claude() {
+        let registry = AdapterRegistry::with_builtin_adapters();
+        assert_eq!(
+            registry.configured_clis().collect::<Vec<_>>(),
+            vec![CodingCli::Claude]
+        );
+        assert_eq!(
+            registry.get(CodingCli::Claude).unwrap().display_name(),
+            "Claude Code"
         );
     }
 }
