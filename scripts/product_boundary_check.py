@@ -33,6 +33,7 @@ ACTIVE_CODE_FILES = (
     Path("build.rs"),
     Path("flake.nix"),
     Path("justfile"),
+    Path("scripts/source_install_check.py"),
 )
 
 FROZEN_WEBSITE_COMMANDS = ("dev", "test", "build", "build:draft", "preview")
@@ -132,11 +133,39 @@ def check_release_recipes(repo_root: Path = REPO_ROOT) -> list[str]:
     ]
 
 
+def check_install_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
+    errors: list[str] = []
+    unix_installer = (repo_root / "website/install.sh").read_text(encoding="utf-8")
+    windows_installer = (repo_root / "website/install.ps1").read_text(encoding="utf-8")
+    manifest_default = "https://github.com/ianu82/gowild/" + "latest.json"
+    preview_default = "https://github.com/ianu82/gowild/" + "preview.json"
+
+    if 'MANIFEST_URL="${GOWILD_MANIFEST_URL:-}"' not in unix_installer:
+        errors.append("website/install.sh: manifest URL must require explicit release input")
+    if "hosted GoWild installation is disabled" not in unix_installer:
+        errors.append("website/install.sh: missing fail-closed hosted-install message")
+    if manifest_default in unix_installer or "gowild.dev" in unix_installer:
+        errors.append("website/install.sh: contains an unowned public install default")
+
+    if "-not $useLocalPackage -and [string]::IsNullOrWhiteSpace($ManifestUrl)" not in windows_installer:
+        errors.append("website/install.ps1: manifest/local-package gate is missing")
+    if "Hosted GoWild installation is disabled" not in windows_installer:
+        errors.append("website/install.ps1: missing fail-closed hosted-install message")
+    if manifest_default in windows_installer or preview_default in windows_installer:
+        errors.append("website/install.ps1: contains an unreviewed public manifest default")
+
+    cargo_manifest = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    if "publish = false" not in cargo_manifest:
+        errors.append("Cargo.toml: crate publishing must remain disabled")
+    return errors
+
+
 def check(repo_root: Path = REPO_ROOT) -> list[str]:
     return [
         *check_active_surfaces(repo_root),
         *check_frozen_website(repo_root),
         *check_release_recipes(repo_root),
+        *check_install_boundaries(repo_root),
     ]
 
 

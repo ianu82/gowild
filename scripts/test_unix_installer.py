@@ -25,6 +25,7 @@ class UnixInstallerTests(unittest.TestCase):
         self.payload = self.root / "payload"
         self.payload.write_bytes(b"fake-gowild-binary\n")
         self.expected_sha256 = hashlib.sha256(self.payload.read_bytes()).hexdigest()
+        self.curl_calls = self.root / "curl-calls"
 
         for command in REQUIRED_COMMANDS:
             path = shutil.which(command)
@@ -45,6 +46,7 @@ esac
         self._write_executable(
             "curl",
             """#!/bin/sh
+printf '%s\\n' "$*" >> "$CURL_CALLS"
 out=""
 previous=""
 for argument in "$@"; do
@@ -114,7 +116,13 @@ exec {sha256sum} "$@"
         path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return path
 
-    def _run_installer(self, checksum: str | None, tool: str = "sha256sum") -> subprocess.CompletedProcess[str]:
+    def _run_installer(
+        self,
+        checksum: str | None,
+        tool: str = "sha256sum",
+        *,
+        with_manifest: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
         self._select_checksum_tool(tool)
         manifest = self._write_manifest(checksum)
         env = {
@@ -122,8 +130,13 @@ exec {sha256sum} "$@"
             "PATH": str(self.bin_dir),
             "FAKE_MANIFEST": str(manifest),
             "FAKE_PAYLOAD": str(self.payload),
+            "CURL_CALLS": str(self.curl_calls),
             "GOWILD_INSTALL_DIR": str(self.install_dir),
         }
+        if with_manifest:
+            env["GOWILD_MANIFEST_URL"] = "https://example.invalid/latest.json"
+        else:
+            env.pop("GOWILD_MANIFEST_URL", None)
         return subprocess.run(
             ["/bin/sh", str(INSTALLER)],
             env=env,
@@ -131,6 +144,13 @@ exec {sha256sum} "$@"
             text=True,
             check=False,
         )
+
+    def test_missing_explicit_manifest_fails_before_network_access(self) -> None:
+        result = self._run_installer(self.expected_sha256, with_manifest=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hosted GoWild installation is disabled", result.stderr)
+        self.assertFalse(self.curl_calls.exists(), "disabled installer must not invoke curl")
 
     def test_valid_download_uses_each_supported_checksum_tool(self) -> None:
         for tool in ("sha256sum", "shasum", "openssl"):

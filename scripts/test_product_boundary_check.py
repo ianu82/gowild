@@ -30,6 +30,9 @@ class ProductBoundaryCheckTests(unittest.TestCase):
             [],
         )
 
+    def test_retained_installers_and_crate_publish_fail_closed(self) -> None:
+        self.assertEqual(boundary.check_install_boundaries(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

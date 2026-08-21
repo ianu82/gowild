@@ -103,6 +103,11 @@ plugin-marketplace-test:
 real-cli-gateway-routing-test:
     python3 scripts/real_cli_gateway_routing_check.py
 
+# Install into an empty root and execute only the resulting GoWild binary
+[unix]
+source-install-test:
+    python3 scripts/source_install_check.py
+
 # Build the vendored libghostty-vt source dist
 build-libghostty-vt:
     scripts/build_vendored_libghostty_vt.sh

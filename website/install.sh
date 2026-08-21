@@ -2,16 +2,20 @@
 set -eu
 
 BIN="gowild"
-MANIFEST_URL="https://github.com/ianu82/gowild/latest.json"
+MANIFEST_URL="${GOWILD_MANIFEST_URL:-}"
 INSTALL_DIR="${GOWILD_INSTALL_DIR:-$HOME/.local/bin}"
 
 main() {
     echo ""
     echo "      ,ww"
     echo "     wWWWWWWW_)  gowild installer"
-    echo "     \`WWWWWW'    gowild.dev"
+    echo "     \`WWWWWW'    github.com/ianu82/gowild"
     echo "      II  II"
     echo ""
+
+    if [ -z "$MANIFEST_URL" ]; then
+        err "hosted GoWild installation is disabled until a signed release channel exists. See https://github.com/ianu82/gowild/blob/main/docs/next/INSTALL.md"
+    fi
 
     # detect platform
     OS="$(uname -s)"
@@ -34,12 +38,12 @@ main() {
     need curl
     need awk
 
-    # use the same manifest as `gowild update` so installs and updates agree
-    # on the public latest release.
+    # Remote installation is available only to explicit package verification
+    # and future reviewed release automation.
     TARGET="${os}-${arch}"
-    log "fetching latest release manifest..."
+    log "fetching configured release manifest..."
     MANIFEST="$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 20 "$MANIFEST_URL")" \
-        || err "can't reach ${MANIFEST_URL}. Please try again later; gowild.dev might be down. Who let the sheeps out? baaa."
+        || err "can't reach configured manifest ${MANIFEST_URL}"
     URL="$(printf '%s\n' "$MANIFEST" | awk -v target="\"${TARGET}\"" '
         /^[[:space:]]*"assets"[[:space:]]*:/ { in_assets = 1; next }
         in_assets && /^[[:space:]]*}/ { exit }
@@ -139,7 +143,7 @@ err()  { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 need() {
     if ! command -v "$1" >/dev/null 2>&1; then
-        err "requires '$1' — install it first, or download a binary manually from https://github.com/ianu82/gowild/docs/install/"
+        err "requires '$1' — install it first, then follow https://github.com/ianu82/gowild/blob/main/docs/next/INSTALL.md"
     fi
 }
 

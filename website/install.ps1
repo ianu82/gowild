@@ -35,6 +35,9 @@ $useLocalPackage = $localPackageValueCount -eq 4
 if ($useLocalPackage -and $LocalPackageFormat -notin @("zip", "exe")) {
     throw "Local GoWild package has unsupported format '$LocalPackageFormat'."
 }
+if (-not $useLocalPackage -and [string]::IsNullOrWhiteSpace($ManifestUrl)) {
+    throw "Hosted GoWild installation is disabled until a signed release channel exists. See https://github.com/ianu82/gowild/blob/main/docs/next/INSTALL.md"
+}
 
 function Write-Step {
     param([string]$Message)
@@ -673,14 +676,6 @@ if ($useLocalPackage) {
             $Channel = "preview"
         } else {
             $Channel = "stable"
-        }
-    }
-
-    if ([string]::IsNullOrWhiteSpace($ManifestUrl)) {
-        $ManifestUrl = if ($Channel -eq "preview") {
-            "https://github.com/ianu82/gowild/preview.json"
-        } else {
-            "https://github.com/ianu82/gowild/latest.json"
         }
     }
 
