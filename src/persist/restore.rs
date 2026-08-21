@@ -496,12 +496,18 @@ fn restore_tab(
             .and_then(|pane| pane.managed_agent_kind.as_deref())
             .and_then(crate::detect::parse_canonical_agent_label);
         let saved_launch_argv = saved_pane.and_then(|p| p.launch_argv.clone());
+        let saved_gateway_agent_route =
+            saved_pane.and_then(|pane| pane.gateway_agent_route.clone());
         let saved_agent_session = saved_pane.and_then(|p| p.agent_session.as_ref());
         let saved_history =
             old_id.and_then(|old_id| history.and_then(|history| history.panes.get(old_id)));
         let startup = {
             let mut agent_restore = AgentRestoreState {
-                enabled: runtime_context.resume_agents_on_restore,
+                // Gateway-managed resumes must be rebuilt by the gateway launch
+                // planner. Until that route-aware handoff runs, restore a shell
+                // instead of executing the vendor-default native resume argv.
+                enabled: runtime_context.resume_agents_on_restore
+                    && saved_gateway_agent_route.is_none(),
                 resumed_sessions: resumed_agent_sessions,
             };
             pane_restore_startup(saved_agent_session, saved_history, &mut agent_restore)
@@ -537,6 +543,9 @@ fn restore_tab(
             let terminal_id = TerminalId::alloc();
             let mut terminal = TerminalState::new(terminal_id.clone(), cwd.clone())
                 .with_pending_agent_resume_plan(plan);
+            if let Some(route) = saved_gateway_agent_route.clone() {
+                terminal = terminal.with_gateway_agent_route(route);
+            }
             if let Some(label) = saved_label {
                 terminal.set_manual_label(label);
             }
@@ -629,6 +638,9 @@ fn restore_tab(
             Ok(runtime) => {
                 let terminal_id = TerminalId::alloc();
                 let mut terminal = TerminalState::new(terminal_id.clone(), cwd.clone());
+                if let Some(route) = saved_gateway_agent_route.clone() {
+                    terminal = terminal.with_gateway_agent_route(route);
+                }
                 if was_imported {
                     if let Some(argv) = saved_launch_argv {
                         terminal = terminal.with_launch_argv(argv).with_respawn_shell_on_exit();
@@ -1198,6 +1210,7 @@ mod tests {
                                 value: "opencode-session".into(),
                             }),
                             launch_argv: None,
+                            gateway_agent_route: None,
                         },
                     )]),
                     zoomed: false,
@@ -1279,6 +1292,7 @@ mod tests {
                                 managed_agent_kind: None,
                                 agent_session: None,
                                 launch_argv: None,
+                                gateway_agent_route: None,
                             },
                         ),
                         (
@@ -1290,6 +1304,7 @@ mod tests {
                                 managed_agent_kind: None,
                                 agent_session: None,
                                 launch_argv: None,
+                                gateway_agent_route: None,
                             },
                         ),
                     ]),
@@ -1343,6 +1358,7 @@ mod tests {
                     managed_agent_kind: None,
                     agent_session: None,
                     launch_argv: None,
+                    gateway_agent_route: None,
                 },
             )
         };
@@ -1358,6 +1374,7 @@ mod tests {
                 value: "codex-session".into(),
             }),
             launch_argv: None,
+            gateway_agent_route: None,
         };
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
@@ -1481,7 +1498,7 @@ mod tests {
     #[cfg(unix)]
     async fn native_agent_restore_defers_runtime_launch() {
         let cwd = std::env::current_dir().unwrap();
-        let snapshot = SessionSnapshot {
+        let mut snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("workspace".into()),
@@ -1509,6 +1526,7 @@ mod tests {
                                 value: "codex-session".into(),
                             }),
                             launch_argv: None,
+                            gateway_agent_route: None,
                         },
                     )]),
                     zoomed: false,
@@ -1579,6 +1597,41 @@ mod tests {
             handoff_runtimes.is_empty(),
             "handoff restore should not replace pending native agent resume with a shell runtime"
         );
+
+        let gateway_route = crate::terminal::GatewayAgentRoute {
+            cli: "codex".into(),
+            gateway_id: "mindshub".into(),
+            model: "minds/agentic-coding".into(),
+        };
+        snapshot.workspaces[0].tabs[0]
+            .panes
+            .get_mut(&0)
+            .unwrap()
+            .gateway_agent_route = Some(gateway_route.clone());
+        let (events, _event_rx) = mpsc::channel(4);
+        let (_workspaces, routed_terminals, mut routed_runtimes) = restore(
+            &snapshot,
+            None,
+            24,
+            80,
+            0,
+            test_restore_shell(),
+            crate::config::ShellModeConfig::NonLogin,
+            true,
+            events,
+            Arc::new(Notify::new()),
+            Arc::new(RenderSignal::new()),
+        );
+        let routed_terminal = routed_terminals.values().next().unwrap();
+        assert!(
+            routed_terminal.pending_agent_resume_plan.is_none(),
+            "gateway-managed panes must not execute a vendor-default native resume"
+        );
+        assert_eq!(routed_terminal.gateway_agent_route, Some(gateway_route));
+        assert_eq!(routed_runtimes.len(), 1);
+        for (_, runtime) in routed_runtimes.drain() {
+            runtime.shutdown();
+        }
     }
 
     #[tokio::test]
@@ -1670,6 +1723,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                gateway_agent_route: None,
             },
         );
         let history = SessionHistorySnapshot {
