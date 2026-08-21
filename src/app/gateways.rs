@@ -3,13 +3,178 @@ use crate::app::state::{
 };
 use crate::events::AppEvent;
 use crate::gateway::{
-    AuthenticationMode, ConnectionStatus, Credential, CredentialBackend, GatewayCatalog,
+    AuthenticationMode, ConnectionStatus, Credential, CredentialBackend, Gateway, GatewayCatalog,
     GatewayInspection, GatewayTester,
 };
 
 use super::App;
 
 impl App {
+    pub(crate) fn add_custom_gateway(&mut self, gateway: Gateway) -> bool {
+        if self
+            .state
+            .gateway_catalog
+            .gateways
+            .contains_key(&gateway.id)
+        {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "A gateway with that ID already exists.",
+            );
+            return false;
+        }
+        self.persist_custom_gateway(gateway, None)
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "wired into custom gateway forms next")
+    )]
+    pub(crate) fn update_custom_gateway(&mut self, gateway_id: &str, gateway: Gateway) -> bool {
+        if gateway.id != gateway_id {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "A gateway ID cannot be changed after creation.",
+            );
+            return false;
+        }
+        let Some(existing) = self.state.gateway_catalog.gateways.get(gateway_id).cloned() else {
+            self.set_gateway_notice(GatewayNoticeKind::Error, "That gateway no longer exists.");
+            return false;
+        };
+        if existing.preset.is_some() {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "Built-in gateway presets cannot be edited.",
+            );
+            return false;
+        }
+        self.persist_custom_gateway(gateway, Some(existing))
+    }
+
+    fn persist_custom_gateway(&mut self, mut gateway: Gateway, existing: Option<Gateway>) -> bool {
+        if gateway.preset.is_some() {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "Custom gateways cannot claim a built-in preset.",
+            );
+            return false;
+        }
+        normalize_custom_gateway_auth(&mut gateway, existing.as_ref());
+        let connection_settings_changed = existing
+            .as_ref()
+            .is_none_or(|existing| gateway_connection_settings_changed(existing, &gateway));
+        if connection_settings_changed {
+            clear_gateway_runtime_state(&mut gateway);
+        } else if let Some(existing) = existing.as_ref() {
+            gateway.model_discovery.cached_models = existing.model_discovery.cached_models.clone();
+            gateway.model_discovery.refreshed_at = existing.model_discovery.refreshed_at.clone();
+            gateway.default_models = existing.default_models.clone();
+            gateway.connection_test = existing.connection_test.clone();
+        }
+
+        let gateway_id = gateway.id.clone();
+        let credential_status = if gateway.auth.mode == AuthenticationMode::None {
+            None
+        } else {
+            Some(
+                self.gateway_credentials
+                    .get(
+                        gateway
+                            .auth
+                            .credential_ref
+                            .as_deref()
+                            .expect("authenticated custom gateway credential reference"),
+                    )
+                    .map(|credential| {
+                        if credential.is_some() {
+                            GatewayCredentialStatus::Stored
+                        } else {
+                            GatewayCredentialStatus::Missing
+                        }
+                    })
+                    .unwrap_or(GatewayCredentialStatus::Unknown),
+            )
+        };
+        let mut candidate = self.state.gateway_catalog.clone();
+        candidate.gateways.insert(gateway_id.clone(), gateway);
+        let message = if existing.is_some() {
+            "Custom gateway updated."
+        } else {
+            "Custom gateway added."
+        };
+        if !self.persist_gateway_catalog(candidate, GatewayNoticeKind::Success, message) {
+            return false;
+        }
+        if connection_settings_changed
+            && self
+                .state
+                .settings
+                .gateways
+                .test_in_flight
+                .as_ref()
+                .is_some_and(|(_, active_gateway_id)| active_gateway_id == &gateway_id)
+        {
+            self.state.settings.gateways.test_in_flight = None;
+        }
+        match credential_status {
+            Some(status) => {
+                self.state
+                    .settings
+                    .gateways
+                    .credential_status
+                    .insert(gateway_id, status);
+            }
+            None => {
+                self.state
+                    .settings
+                    .gateways
+                    .credential_status
+                    .remove(&gateway_id);
+            }
+        }
+        true
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "wired into custom gateway forms next")
+    )]
+    pub(crate) fn duplicate_gateway(
+        &mut self,
+        source_gateway_id: &str,
+        new_gateway_id: &str,
+        display_name: &str,
+    ) -> bool {
+        if self
+            .state
+            .gateway_catalog
+            .gateways
+            .contains_key(new_gateway_id)
+        {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "A gateway with that ID already exists.",
+            );
+            return false;
+        }
+        let Some(mut duplicate) = self
+            .state
+            .gateway_catalog
+            .gateways
+            .get(source_gateway_id)
+            .cloned()
+        else {
+            self.set_gateway_notice(GatewayNoticeKind::Error, "That gateway no longer exists.");
+            return false;
+        };
+        duplicate.id = new_gateway_id.to_string();
+        duplicate.display_name = display_name.to_string();
+        duplicate.preset = None;
+        clear_gateway_runtime_state(&mut duplicate);
+        self.add_custom_gateway(duplicate)
+    }
+
     pub(crate) fn save_default_gateway(&mut self, gateway_id: &str) {
         if !self.state.gateway_catalog.gateways.contains_key(gateway_id) {
             self.set_gateway_notice(GatewayNoticeKind::Error, "That gateway no longer exists.");
@@ -306,6 +471,37 @@ impl App {
     }
 }
 
+fn normalize_custom_gateway_auth(gateway: &mut Gateway, existing: Option<&Gateway>) {
+    match gateway.auth.mode {
+        AuthenticationMode::None => gateway.auth.credential_ref = None,
+        _ => {
+            gateway.auth.credential_ref = existing
+                .and_then(|gateway| gateway.auth.credential_ref.clone())
+                .or_else(|| Some(custom_gateway_credential_ref(&gateway.id)));
+        }
+    }
+}
+
+fn custom_gateway_credential_ref(gateway_id: &str) -> String {
+    format!("gateway:{gateway_id}")
+}
+
+fn gateway_connection_settings_changed(existing: &Gateway, candidate: &Gateway) -> bool {
+    existing.endpoints != candidate.endpoints
+        || existing.capabilities != candidate.capabilities
+        || existing.auth != candidate.auth
+        || existing.custom_headers != candidate.custom_headers
+        || existing.model_discovery.enabled != candidate.model_discovery.enabled
+        || existing.model_discovery.url != candidate.model_discovery.url
+}
+
+fn clear_gateway_runtime_state(gateway: &mut Gateway) {
+    gateway.model_discovery.cached_models.clear();
+    gateway.model_discovery.refreshed_at = None;
+    gateway.default_models.clear();
+    gateway.connection_test = Default::default();
+}
+
 fn next_model<'a>(available: &'a [String], current: Option<&str>, direction: i8) -> &'a str {
     let current_index = current.and_then(|current| available.iter().position(|id| id == current));
     let index = match (current_index, direction.is_negative()) {
@@ -336,7 +532,7 @@ mod tests {
         config::Config,
         gateway::{
             CachedModel, Credential, CredentialBackend, CredentialStore, CredentialStoreError,
-            GatewayRepository,
+            Gateway, GatewayRepository,
         },
     };
 
@@ -425,6 +621,15 @@ mod tests {
         app.gateway_repository = GatewayRepository::new(path);
         app.gateway_credentials = Box::new(MockCredentialStore { values });
         app
+    }
+
+    fn custom_gateway(id: &str) -> Gateway {
+        let mut gateway = Gateway::mindshub();
+        gateway.id = id.into();
+        gateway.display_name = format!("{id} gateway");
+        gateway.preset = None;
+        gateway.auth.credential_ref = Some(format!("gateway:{id}"));
+        gateway
     }
 
     #[test]
@@ -593,6 +798,133 @@ mod tests {
             Some(&crate::app::state::GatewayCredentialStatus::Unknown)
         );
         assert!(app.state.settings.gateways.test_in_flight.is_none());
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn custom_gateway_add_and_edit_preserve_only_current_runtime_state() {
+        let path = temp_gateway_path("custom-save");
+        let mut app = gateway_app(path.clone(), Arc::default());
+        let mut gateway = custom_gateway("local-proxy");
+        gateway.model_discovery.cached_models = vec![CachedModel {
+            id: "stale-on-create".into(),
+            label: None,
+            provider: None,
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+
+        assert!(app.add_custom_gateway(gateway));
+        assert!(app.state.gateway_catalog.gateways["local-proxy"]
+            .model_discovery
+            .cached_models
+            .is_empty());
+        let mut colliding_add = custom_gateway("local-proxy");
+        colliding_add.display_name = "Must not overwrite".into();
+        assert!(!app.add_custom_gateway(colliding_add));
+        assert_eq!(
+            app.state.gateway_catalog.gateways["local-proxy"].display_name,
+            "local-proxy gateway"
+        );
+
+        let saved = app
+            .state
+            .gateway_catalog
+            .gateways
+            .get_mut("local-proxy")
+            .expect("custom gateway");
+        saved.model_discovery.cached_models = vec![CachedModel {
+            id: "tested-model".into(),
+            label: None,
+            provider: None,
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+        saved
+            .default_models
+            .insert("codex".into(), "tested-model".into());
+        saved.connection_test.status = crate::gateway::ConnectionStatus::Passed;
+        saved.auth.credential_ref = Some("gateway:legacy-reference".into());
+
+        let mut display_only_edit = saved.clone();
+        display_only_edit.display_name = "Local Proxy".into();
+        assert!(app.update_custom_gateway("local-proxy", display_only_edit));
+        let saved = &app.state.gateway_catalog.gateways["local-proxy"];
+        assert_eq!(saved.model_discovery.cached_models[0].id, "tested-model");
+        assert_eq!(
+            saved.auth.credential_ref.as_deref(),
+            Some("gateway:legacy-reference")
+        );
+        assert_eq!(
+            saved.connection_test.status,
+            crate::gateway::ConnectionStatus::Passed
+        );
+
+        let mut connection_edit = saved.clone();
+        connection_edit.endpoints.openai_responses = Some("https://example.com/v2".into());
+        app.state.settings.gateways.test_in_flight = Some((9, "local-proxy".into()));
+        assert!(app.update_custom_gateway("local-proxy", connection_edit));
+        let saved = &app.state.gateway_catalog.gateways["local-proxy"];
+        assert!(saved.model_discovery.cached_models.is_empty());
+        assert!(saved.default_models.is_empty());
+        assert_eq!(
+            saved.connection_test.status,
+            crate::gateway::ConnectionStatus::NotTested
+        );
+        assert!(app.state.settings.gateways.test_in_flight.is_none());
+
+        let reloaded = GatewayRepository::new(path.clone())
+            .load()
+            .expect("saved custom gateway catalog");
+        assert_eq!(reloaded.gateways["local-proxy"], *saved);
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn duplicate_gets_an_independent_credential_reference_without_copying_the_secret() {
+        let path = temp_gateway_path("custom-duplicate");
+        let values = Arc::new(MockCredentialValues::default());
+        values
+            .values
+            .lock()
+            .expect("credential map")
+            .insert("gateway:mindshub".into(), "SOURCE_SECRET".into());
+        let mut app = gateway_app(path.clone(), values.clone());
+        app.state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .expect("MindsHub preset")
+            .connection_test
+            .status = crate::gateway::ConnectionStatus::Passed;
+
+        assert!(app.duplicate_gateway("mindshub", "private-hub", "Private Hub"));
+
+        let duplicate = &app.state.gateway_catalog.gateways["private-hub"];
+        assert_eq!(duplicate.preset, None);
+        assert_eq!(
+            duplicate.auth.credential_ref.as_deref(),
+            Some("gateway:private-hub")
+        );
+        assert_eq!(
+            duplicate.connection_test.status,
+            crate::gateway::ConnectionStatus::NotTested
+        );
+        assert!(!values
+            .values
+            .lock()
+            .expect("credential map")
+            .contains_key("gateway:private-hub"));
+        assert_eq!(
+            app.state
+                .settings
+                .gateways
+                .credential_status
+                .get("private-hub"),
+            Some(&crate::app::state::GatewayCredentialStatus::Missing)
+        );
         let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
     }
 }

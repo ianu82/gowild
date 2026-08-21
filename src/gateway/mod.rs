@@ -4,8 +4,8 @@
 //! credential storage. CLI-specific launch translation belongs in adapters,
 //! not here.
 
-// Custom-gateway CRUD lands in the next stack. Keep currently dormant model
-// fields available without weakening warnings in the rest of the application.
+// Custom-gateway forms land in the next stack. Keep the model fields they will
+// expose available without weakening warnings in the rest of the application.
 #![allow(dead_code)]
 
 mod credentials;
