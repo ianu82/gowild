@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::{ClaudeAdapter, CliAdapter, CodingCli};
+use super::{ClaudeAdapter, CliAdapter, CodexAdapter, CodingCli};
 
 #[derive(Default)]
 pub(crate) struct AdapterRegistry {
@@ -11,6 +11,9 @@ pub(crate) struct AdapterRegistry {
 impl AdapterRegistry {
     pub(crate) fn with_builtin_adapters() -> Self {
         let mut registry = Self::default();
+        registry
+            .register(CodexAdapter)
+            .expect("built-in Codex adapter must be unique");
         registry
             .register(ClaudeAdapter)
             .expect("built-in Claude adapter must be unique");
@@ -113,11 +116,15 @@ mod tests {
     }
 
     #[test]
-    fn builtins_include_claude() {
+    fn builtins_include_codex_and_claude() {
         let registry = AdapterRegistry::with_builtin_adapters();
         assert_eq!(
             registry.configured_clis().collect::<Vec<_>>(),
-            vec![CodingCli::Claude]
+            vec![CodingCli::Codex, CodingCli::Claude]
+        );
+        assert_eq!(
+            registry.get(CodingCli::Codex).unwrap().display_name(),
+            "Codex CLI"
         );
         assert_eq!(
             registry.get(CodingCli::Claude).unwrap().display_name(),
