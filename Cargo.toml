@@ -53,8 +53,12 @@ schemars = { version = "1.2.1", features = ["derive"] }
 [patch.crates-io]
 portable-pty = { path = "vendor/portable-pty" }
 
+[target.'cfg(not(windows))'.dependencies]
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls", "system-proxy"] }
+
 [target.'cfg(windows)'.dependencies]
 # UTF-16 SDDL input for interprocess security descriptors.
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "native-tls", "system-proxy"] }
 widestring = "1.2"
 wmi = { version = "0.18.4", default-features = false }
 windows-sys = { version = "0.61.2", features = [

@@ -118,12 +118,18 @@ pub(crate) struct CachedModel {
     pub(crate) provider: Option<String>,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) embedding: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) reasoning_efforts: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -334,10 +340,21 @@ impl Gateway {
             AuthenticationMode::CustomHeader => {
                 validate_credential_ref(&self.auth.credential_ref, &mut errors);
                 match self.auth.header_name.as_deref() {
-                    Some(name) if valid_header_name(name) => {}
+                    Some(name) if valid_header_name(name) && !is_transport_controlled_header(name) => {
+                        if self
+                            .custom_headers
+                            .keys()
+                            .any(|custom| custom.eq_ignore_ascii_case(name))
+                        {
+                            errors.push(ValidationError::new(
+                                "custom_headers",
+                                "cannot override the configured authentication header",
+                            ));
+                        }
+                    }
                     _ => errors.push(ValidationError::new(
                         "auth.header_name",
-                        "custom header authentication requires a valid HTTP header name",
+                        "custom header authentication requires a valid non-transport-controlled HTTP header name",
                     )),
                 }
                 if self
@@ -371,6 +388,12 @@ impl Gateway {
                 errors.push(ValidationError::new(
                     "custom_headers",
                     "a credential-bearing header must be configured through authentication instead",
+                ));
+            }
+            if is_transport_controlled_header(name) {
+                errors.push(ValidationError::new(
+                    "custom_headers",
+                    "transport-controlled HTTP headers cannot be overridden",
                 ));
             }
             if value.len() > 4_096 || contains_unsafe_header_value(value) {
@@ -617,6 +640,21 @@ fn validate_url(field: &str, value: &str, errors: &mut Vec<ValidationError>) {
     if !matches!(parsed.scheme(), "http" | "https") {
         errors.push(ValidationError::new(field, "must use http or https"));
     }
+    if parsed.scheme() == "http"
+        && !parsed
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("localhost"))
+        && !parsed.host().is_some_and(|host| match host {
+            url::Host::Ipv4(address) => address.is_loopback(),
+            url::Host::Ipv6(address) => address.is_loopback(),
+            url::Host::Domain(_) => false,
+        })
+    {
+        errors.push(ValidationError::new(
+            field,
+            "must use https unless the gateway is on the loopback interface",
+        ));
+    }
     if parsed.host_str().is_none() {
         errors.push(ValidationError::new(field, "must include a host"));
     }
@@ -662,6 +700,21 @@ fn is_sensitive_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "authorization" | "proxy-authorization" | "x-api-key" | "api-key" | "apikey"
+    )
+}
+
+fn is_transport_controlled_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "connection"
+            | "content-length"
+            | "host"
+            | "keep-alive"
+            | "proxy-connection"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
     )
 }
 
@@ -733,6 +786,20 @@ mod tests {
     }
 
     #[test]
+    fn remote_http_endpoints_are_rejected_but_loopback_is_allowed() {
+        let mut gateway = Gateway::mindshub();
+        gateway.endpoints.openai_responses = Some("http://gateway.example/v1".into());
+        assert!(gateway.validate().iter().any(|error| {
+            error.field == "endpoints.openai_responses" && error.message.contains("must use https")
+        }));
+
+        gateway.endpoints.openai_responses = Some("http://127.0.0.1:8080/v1".into());
+        gateway.endpoints.anthropic_messages = Some("http://[::1]:8080".into());
+        gateway.model_discovery.url = Some("http://localhost:8080/v1/models".into());
+        assert!(gateway.validate().is_empty());
+    }
+
+    #[test]
     fn validation_rejects_endpoint_whitespace_instead_of_silently_trimming() {
         let mut gateway = Gateway::mindshub();
         gateway.endpoints.openai_responses = Some(" https://api.mindshub.ai/v1 ".into());
@@ -753,6 +820,39 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.message.contains("configured through authentication")));
+    }
+
+    #[test]
+    fn validation_rejects_a_custom_header_that_overrides_authentication() {
+        let mut gateway = Gateway::mindshub();
+        gateway.auth.mode = AuthenticationMode::CustomHeader;
+        gateway.auth.header_name = Some("X-Gateway-Token".into());
+        gateway.auth.value_prefix = Some("Token ".into());
+        gateway
+            .custom_headers
+            .insert("x-gateway-token".into(), "non-secret".into());
+
+        assert!(gateway.validate().iter().any(|error| {
+            error.field == "custom_headers" && error.message.contains("authentication header")
+        }));
+    }
+
+    #[test]
+    fn validation_rejects_transport_controlled_custom_headers() {
+        let mut gateway = Gateway::mindshub();
+        gateway
+            .custom_headers
+            .insert("Content-Length".into(), "4".into());
+        assert!(gateway.validate().iter().any(|error| {
+            error.field == "custom_headers" && error.message.contains("transport-controlled")
+        }));
+
+        gateway.custom_headers.clear();
+        gateway.auth.mode = AuthenticationMode::CustomHeader;
+        gateway.auth.header_name = Some("Host".into());
+        assert!(gateway.validate().iter().any(|error| {
+            error.field == "auth.header_name" && error.message.contains("transport-controlled")
+        }));
     }
 
     #[test]

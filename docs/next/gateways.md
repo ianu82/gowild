@@ -16,7 +16,9 @@ GoWild validates each advertised protocol against a corresponding endpoint and
 rejects URLs containing embedded credentials. Authentication is represented as
 bearer token, `x-api-key`, a configurable secret-bearing header, or none.
 Additional headers are non-secret; credential-bearing header names are rejected
-there so keys cannot be written into normal configuration by mistake.
+there so keys cannot be written into normal configuration by mistake. GoWild
+also rejects transport-controlled names such as `Host`, `Content-Length`, and
+`Transfer-Encoding` in both custom and secret-bearing header configuration.
 
 Credentials are addressed by an opaque reference such as `gateway:mindshub`.
 GoWild first uses the operating system credential store (Keychain Services,
@@ -28,6 +30,23 @@ cannot establish an owner-only ACL there.
 The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
 credentials and common key formats before persistence.
+
+## Connection testing and model discovery
+
+GoWild tests a gateway with the same configured authentication used for a real
+launch. It first performs authenticated model discovery when enabled, then
+sends one bounded generation probe for each advertised protocol. MindsHub is
+tested with `GET /v1/models`, `POST /v1/responses`, and `POST /v1/messages`.
+Redirects are disabled so a credential cannot be forwarded to another host,
+responses are capped at 2 MiB, and remote endpoints must use HTTPS. Plain HTTP
+is accepted only for a loopback gateway such as `localhost`.
+
+If authenticated discovery fails, GoWild stops immediately and does not send
+generation probes. A successful catalog refresh replaces the cached model
+metadata and records whether each model is enabled, whether it is an embedding
+model, and any advertised reasoning-effort levels. Protocol probes never select
+disabled or embedding models. The saved connection report distinguishes full,
+partial, and failed checks and contains only redacted diagnostics.
 
 ## Launch resolution
 
