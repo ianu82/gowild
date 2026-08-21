@@ -1,84 +1,34 @@
-# herdr
+# GoWild 未发布文档
 
+[English](README.md)
 
-<p align="center">
-  <img src="assets/logo.png" alt="herdr" width="100" />
-</p>
+本目录是尚未作为稳定版本发布的 GoWild 行为的文档来源。
 
-<p align="center">
-  <a href="https://herdr.dev">herdr.dev</a> · <a href="#安装">安装</a> · <a href="https://herdr.dev/zh-cn/docs/quick-start/">快速开始</a> · <a href="https://herdr.dev/zh-cn/docs/">文档</a></p>
+## 产品模型
 
-<p align="center">
-  <a href="README.md">English</a> · 简体中文
-</p>
+GoWild 将三个选择彼此分离：
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-666666?labelColor=333333" alt="Apache 2.0 license" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases"><img src="https://img.shields.io/github/downloads/herdrdev/herdr/total?labelColor=333333&color=666666" alt="total GitHub release downloads" /></a>
-  <a href="https://github.com/herdrdev/herdr/stargazers"><img src="https://img.shields.io/github/stars/herdrdev/herdr?labelColor=333333&color=666666&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases/latest"><img src="https://img.shields.io/github/v/release/herdrdev/herdr?label=release&labelColor=333333&color=666666" alt="latest stable release" /></a>
-  <a href="https://formulae.brew.sh/formula/herdr"><img src="https://img.shields.io/homebrew/v/herdr?label=homebrew&labelColor=333333&color=666666" alt="Homebrew version" /></a>
-  <a href="https://x.com/herdrdev"><img src="https://img.shields.io/badge/follow-%40herdrdev-000000?logo=x&logoColor=white" alt="follow @herdrdev on X" /></a>
-</p>
+1. **编程 CLI** — 首先支持 Codex CLI 和 Claude Code。
+2. **网关** — MindsHub Inference 或自定义协议兼容端点。
+3. **模型** — 所选网关以该 CLI 可兼容方式公开的任意模型。
 
----
+GoWild 在持久化、由服务器拥有的终端中启动用户实际安装的 CLI。它为每次启动提供独立路由，而不修改用户常规的 Codex 或 Claude 配置。路由在不包含凭据的情况下保存，并在恢复智能体时重新应用。
 
-https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
+## 当前指南
 
-**智能体复用器，住在你的终端里。**
+- [从源代码安装并验证（英文）](INSTALL.md)
+- [网关配置与 CLI 路由（英文）](gateways.md)
+- [Socket API 模式](api/gowild-api.schema.json)
+- [未发布变更](CHANGELOG.md)
 
-- **每个智能体一目了然**——`blocked`、`working`、`done`。真实的终端视图，而不是包装过的转述。
-- **分离后智能体继续运行**——从任意终端重新连接，或通过 ssh。会话在重启后依然保留。
-- **智能体也能使用 herdr**——纯 socket api：智能体可以创建窗格、读取输出、互相等待。[智能体技能 →](https://herdr.dev/zh-cn/docs/agent-skill/)
-- **键盘和鼠标都是一等公民**——tmux 风格的前缀键，*以及*点击、拖动、分割。按当下的场景选择，而不是被工具锁死。
-- **插件**——扩展窗格和工作流。[浏览插件市场 →](https://herdr.dev/plugins/)
-- **单个 rust 二进制，没有 electron**——运行在你已经在用的任何终端里。
+首次运行及 **设置 → 网关** 中均可进行网关配置。当前支持 MindsHub 预设、自定义网关、安全凭据替换、协议测试、模型发现、每个 CLI 的默认模型，以及受管理的启动和恢复。
 
----
+## 发布状态
 
-## 安装
+GoWild 尚无公开二进制版本、托管安装程序、网站或更新通道。目前仅支持本目录中的源代码安装方式。在 GoWild 自有制品、签名、清单和干净安装流程通过审查之前，所有继承的发布路径都会保持禁用。
 
-```bash
-curl -fsSL https://herdr.dev/install.sh | sh
-```
+## 历史文档
 
-或者 `brew install herdr` · `mise use -g herdr` · Windows：`powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [二进制文件](https://github.com/herdrdev/herdr/releases)
+嵌套的 `website/` 树以及同级的 `docs/preview` 和 `docs/versions` 树是冻结的源代码导入记录。它们描述的是被导入的产品，而不是 GoWild，绝不能作为 GoWild 文档构建或发布。请参阅 [`docs/README.md`](../README.md) 和 [`PROVENANCE.md`](../../PROVENANCE.md)。
 
-然后在工作所在的目录启动它：
-
-```bash
-herdr
-```
-
-运行你的智能体、分割窗格，然后安心离开。`ctrl+b q` 分离，`herdr` 重新连接。[快速开始 →](https://herdr.dev/zh-cn/docs/quick-start/)
-
-## 文档
-
-所有文档都在 [herdr.dev/docs](https://herdr.dev/zh-cn/docs/)：[快速开始](https://herdr.dev/zh-cn/docs/quick-start/) · [核心概念](https://herdr.dev/zh-cn/docs/concepts/) · [受支持的智能体](https://herdr.dev/zh-cn/docs/agents/) · [键盘](https://herdr.dev/zh-cn/docs/keyboard/) · [配置](https://herdr.dev/zh-cn/docs/configuration/) · [会话状态](https://herdr.dev/zh-cn/docs/session-state/) · [远程访问](https://herdr.dev/zh-cn/docs/persistence-remote/) · [集成](https://herdr.dev/zh-cn/docs/integrations/) · [插件](https://herdr.dev/zh-cn/docs/plugins/) · [socket api](https://herdr.dev/zh-cn/docs/socket-api/)
-
-## 致谢
-
-<a href="https://terminaltrove.com/"><img src="assets/sponsors/terminal-trove.png" alt="Terminal Trove" width="200" /></a>
-
-[Terminal Trove](https://terminaltrove.com/) 以及 [SPONSORS.md](./SPONSORS.md) 中列出的每一位支持者——谢谢 🐑
-
-企业/合作：hey@herdr.dev
-
-## 智能体须知
-
-如果你是协助本仓库的 AI 智能体：在改动代码前阅读 [`AGENTS.md`](./AGENTS.md)，在创建 issue 或 PR 前阅读 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。
-
-## 开发
-
-```bash
-git clone https://github.com/herdrdev/herdr
-cd herdr
-cargo build --release
-
-just test        # 单元测试
-just check       # 格式检查、测试和维护性检查
-```
-
-## 许可证
-
-herdr 基于 [Apache License 2.0](LICENSE) 许可证发布。
+所有 GoWild 工作仅属于 [`ianu82/gowild`](https://github.com/ianu82/gowild)。不得向源代码出处项目发送代码、issue、PR、请求或同步自动化。

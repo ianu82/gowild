@@ -1,15 +1,13 @@
 {
-  "name": "herdr-website",
+  "name": "gowild-frozen-imported-website",
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare-docs": "node scripts/prepare-docs.mjs",
-    "prepare-llms": "node scripts/patch-starlight-llms.mjs",
-    "dev": "bun run prepare-llms && node scripts/prepare-docs.mjs --draft && astro dev",
-    "test": "bun test",
-    "build": "bun run test && bun run prepare-llms && node scripts/prepare-docs.mjs && astro build && node scripts/check-built-docs.mjs",
-    "build:draft": "bun run prepare-llms && node scripts/prepare-docs.mjs --draft && astro build && node scripts/check-built-docs.mjs",
-    "preview": "astro preview"
+    "dev": "node scripts/product-boundary-disabled.mjs",
+    "test": "node scripts/product-boundary-disabled.mjs",
+    "build": "node scripts/product-boundary-disabled.mjs",
+    "build:draft": "node scripts/product-boundary-disabled.mjs",
+    "preview": "node scripts/product-boundary-disabled.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.2",
