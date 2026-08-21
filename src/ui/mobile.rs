@@ -1418,13 +1418,18 @@ mod tests {
         assert_eq!(mobile_switcher_workspace_doc_range(&app, 0).start, 7);
 
         let viewport = mobile_switcher_areas(&app).viewport;
-        app.mobile_switcher_scroll = 100;
-        let agent_hit = mobile_switcher_target_at(&app, viewport.x + 2, viewport.y + 1);
+        let scroll = mobile_switcher_max_scroll_for_height(&app, viewport.height);
+        app.mobile_switcher_scroll = scroll;
+        let agent_doc_row = mobile_agents_block_height(&app) - 1;
+        let agent_row = viewport.y + agent_doc_row.saturating_sub(scroll) as u16;
+        let agent_hit = mobile_switcher_target_at(&app, viewport.x + 2, agent_row);
         assert!(matches!(
             agent_hit,
             Some(MobileSwitcherTarget::Agent { .. })
         ));
-        let workspace_hit = mobile_switcher_target_at(&app, viewport.x + 2, viewport.y + 7);
+        let workspace_doc_row = mobile_switcher_workspace_doc_range(&app, 0).start;
+        let workspace_row = viewport.y + workspace_doc_row.saturating_sub(scroll) as u16;
+        let workspace_hit = mobile_switcher_target_at(&app, viewport.x + 2, workspace_row);
         assert_eq!(workspace_hit, Some(MobileSwitcherTarget::Workspace(0)));
     }
 

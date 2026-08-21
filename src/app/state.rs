@@ -9,7 +9,7 @@ use crate::detect::AgentState;
 use crate::layout::{PaneId, PaneInfo, SplitBorder};
 use crate::selection::Selection;
 
-pub(crate) use super::coding_agent_launch::CodingAgentLaunchState;
+pub(crate) use super::coding_agent_launch::{CodingAgentLaunchField, CodingAgentLaunchState};
 
 pub(crate) type InstalledPluginRegistry =
     std::collections::HashMap<String, crate::api::schema::InstalledPluginInfo>;
@@ -843,6 +843,7 @@ pub enum Mode {
     ConfirmClose,
     ContextMenu,
     Settings,
+    CodingAgentLaunch,
     GlobalMenu,
     KeybindHelp,
     Navigator,
@@ -874,6 +875,7 @@ impl Mode {
                 | Mode::ConfirmClose
                 | Mode::ConfirmRemoveWorktree
                 | Mode::ContextMenu
+                | Mode::CodingAgentLaunch
                 | Mode::GlobalMenu
                 | Mode::KeybindHelp
         )

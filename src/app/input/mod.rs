@@ -112,6 +112,7 @@ impl App {
                     self.handle_context_menu_key_via_api(key_event);
                 }
                 Mode::Settings => self.handle_settings_key(key_event),
+                Mode::CodingAgentLaunch => self.handle_coding_agent_launch_key(key_event),
                 Mode::GlobalMenu => handle_global_menu_key(&mut self.state, key_event),
                 Mode::KeybindHelp => handle_keybind_help_key(&mut self.state, key),
                 Mode::Navigator => {
@@ -414,6 +415,7 @@ impl App {
                     .handle_mouse(&mut self.terminal_runtimes, source_id, mouse)
             {
                 match action {
+                    MouseAction::LaunchCodingAgent => self.launch_selected_coding_agent(),
                     MouseAction::NewWorkspace => {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }

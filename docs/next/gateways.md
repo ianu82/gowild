@@ -76,6 +76,26 @@ fields, typing and paste append metadata, `Ctrl+U` clears the selected field,
 and `←`/`→` changes authentication. Gateway rows, form fields, inline actions,
 and footer actions are also mouse-accessible.
 
+## Starting a managed agent
+
+Choose **launch agent** from GoWild's global menu, or from the switcher on a
+narrow terminal. The launch screen makes the complete child-process route
+visible before anything starts: coding CLI, gateway, protocol, and model. Use
+`↑`/`↓` to select a row, `←`/`→` to change its value, and `Enter` to launch. The
+same controls are mouse-accessible. Gateway settings remain one key away with
+`s`.
+
+This is GoWild's managed launch path. It starts the CLI directly in a new tab,
+without an intermediate interactive shell, and applies the adapter's argv and
+secret child environment to that process. A missing model, credential,
+compatible protocol, configured gateway, or CLI executable leaves the launch
+screen open with an error; GoWild does not start a vendor-default fallback.
+
+Typing `codex` or `claude` yourself in an ordinary shell remains an unmanaged
+shell command and uses that CLI's own configuration. GoWild does not rewrite
+arbitrary terminal input. Use **launch agent** whenever the selected gateway
+must be enforced.
+
 ## Connection testing and model discovery
 
 GoWild tests a gateway with the same configured authentication used for a real
@@ -97,28 +117,20 @@ partial, and failed checks and contains only redacted diagnostics.
 
 Every coding CLI declares the protocol it needs. GoWild resolves the selected
 gateway before invoking the adapter and refuses to launch when that gateway
-does not advertise a matching endpoint. Fresh and resumed sessions use the same
-resolution path, so resume cannot silently fall back to a proprietary service.
+does not advertise a matching endpoint. Fresh launches persist their non-secret
+CLI, gateway, and model route for future resume planning. Until a restored
+session has been replanned through that route, GoWild suppresses the legacy raw
+vendor resume command and opens a shell instead of risking a proprietary
+fallback.
 
-Selection uses the following precedence:
-
-1. An explicit per-launch gateway or model.
-2. A GoWild process environment override.
-3. The saved gateway and per-CLI model defaults.
-
-The supported process overrides are:
-
-- `GOWILD_GATEWAY`
-- `GOWILD_MODEL`
-- `GOWILD_API_KEY`
-- `GOWILD_RESPONSES_BASE_URL`
-- `GOWILD_MESSAGES_BASE_URL`
-
-`GOWILD_API_KEY` is an ephemeral override and is never persisted. The resolved
-credential is passed to an adapter as a secret value, rejected if the adapter
-places it in argv or an ordinary environment value, and exposed only to the
-spawned child process. Launch specifications and pane environment diagnostics
-redact all environment values.
+The managed launch screen starts from the saved gateway and per-CLI model
+defaults, then records any choices there as explicit per-launch values. Parent
+process environment variables cannot silently replace the route shown in the
+screen. The resolved credential is passed to an adapter as a secret value,
+rejected if the adapter places it in argv or an ordinary environment value, and
+exposed only to the spawned child process. Launch specifications, pane
+environment diagnostics, and the structured route log redact all environment
+values.
 
 ## Claude Code adapter
 
