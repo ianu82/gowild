@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
 use std::process::Command;
 
 use crate::gateway::{redact, Credential, GatewayProtocol};
@@ -33,7 +34,10 @@ impl fmt::Display for CodingCli {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LaunchMode {
     Fresh,
-    Resume { session_ref: String },
+    #[allow(dead_code)] // wired by the dedicated resume launch stack
+    Resume {
+        session_ref: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +61,7 @@ impl Default for LaunchRequest {
 
 pub(crate) trait CliAdapter {
     fn cli(&self) -> CodingCli;
+    #[allow(dead_code)]
     fn display_name(&self) -> &'static str;
     fn executable_candidates(&self) -> &'static [&'static str];
     fn required_protocol(&self) -> GatewayProtocol;
@@ -101,6 +106,7 @@ pub(crate) enum ChildEnvironmentValue {
 }
 
 impl ChildEnvironmentValue {
+    #[cfg(test)]
     fn expose(&self) -> &str {
         match self {
             Self::Plain(value) => value,
@@ -161,6 +167,7 @@ impl ChildEnvironment {
         Ok(())
     }
 
+    #[cfg(test)]
     fn apply_to(&self, command: &mut Command) {
         for key in &self.remove {
             command.env_remove(key);
@@ -238,6 +245,7 @@ impl LaunchSpec {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn command(&self) -> Command {
         let mut command = Command::new(&self.executable);
         command.args(&self.args);
@@ -495,7 +503,8 @@ mod tests {
     #[cfg(unix)]
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use crate::cli_adapter::{Environment, ENV_API_KEY};
+    use crate::cli_adapter::resolver::ENV_API_KEY;
+    use crate::cli_adapter::Environment;
     use crate::gateway::{
         CredentialBackend, CredentialStore, CredentialStoreError, GatewayCatalog,
     };

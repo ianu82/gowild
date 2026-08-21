@@ -36,6 +36,7 @@ impl AdapterRegistry {
         self.adapters.get(&cli).map(Box::as_ref)
     }
 
+    #[cfg(test)]
     pub(crate) fn configured_clis(&self) -> impl Iterator<Item = CodingCli> + '_ {
         self.adapters.keys().copied()
     }
