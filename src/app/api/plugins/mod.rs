@@ -744,17 +744,20 @@ mod tests {
             .to_string()
     }
 
-    /// Wait for non-empty contents at `path`. Shell `>` creates the file empty
-    /// before the command writes, so waiting on existence alone can read EOF.
+    /// Wait for stable, non-empty contents at `path`. Shell `>` creates the file
+    /// before the command finishes writing, so existence or the first bytes do
+    /// not prove the capture is complete.
     /// `pump` advances any event loop the command depends on.
     fn read_capture_when_ready(path: &std::path::Path, mut pump: impl FnMut()) -> String {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut previous = None;
         loop {
             pump();
             if let Ok(contents) = std::fs::read_to_string(path) {
-                if !contents.is_empty() {
+                if !contents.is_empty() && previous.as_ref() == Some(&contents) {
                     return contents;
                 }
+                previous = (!contents.is_empty()).then_some(contents);
             }
             assert!(
                 std::time::Instant::now() < deadline,

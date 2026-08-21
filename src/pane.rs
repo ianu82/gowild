@@ -80,10 +80,44 @@ fn apply_pane_terminal_env(cmd: &mut CommandBuilder) {
     cmd.env("COLORTERM", PANE_COLORTERM);
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub(crate) struct PaneLaunchEnv {
-    extra: Vec<(String, String)>,
+    extra: Vec<(String, PaneEnvValue)>,
+    remove: Vec<String>,
     identity: PaneLaunchIdentity,
+}
+
+#[derive(Clone)]
+pub(crate) enum PaneEnvValue {
+    Plain(String),
+    Secret(crate::gateway::Credential),
+}
+
+impl PaneEnvValue {
+    fn expose(&self) -> &str {
+        match self {
+            Self::Plain(value) => value,
+            Self::Secret(value) => value.expose(),
+        }
+    }
+}
+
+impl std::fmt::Debug for PaneLaunchEnv {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PaneLaunchEnv")
+            .field(
+                "extra",
+                &self
+                    .extra
+                    .iter()
+                    .map(|(key, _)| (key, "[REDACTED]"))
+                    .collect::<Vec<_>>(),
+            )
+            .field("remove", &self.remove)
+            .field("identity", &self.identity)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -101,7 +135,19 @@ enum PaneLaunchIdentity {
 impl PaneLaunchEnv {
     pub(crate) fn from_extra(extra: Vec<(String, String)>) -> Self {
         Self {
+            extra: extra
+                .into_iter()
+                .map(|(key, value)| (key, PaneEnvValue::Plain(value)))
+                .collect(),
+            remove: Vec::new(),
+            identity: PaneLaunchIdentity::Inherit,
+        }
+    }
+
+    pub(crate) fn from_changes(extra: Vec<(String, PaneEnvValue)>, remove: Vec<String>) -> Self {
+        Self {
             extra,
+            remove,
             identity: PaneLaunchIdentity::Inherit,
         }
     }
@@ -127,13 +173,16 @@ impl PaneLaunchEnv {
 }
 
 fn apply_pane_launch_env(cmd: &mut CommandBuilder, launch_env: &PaneLaunchEnv) {
-    cmd.env_remove("CODEX_THREAD_ID");
-    for (key, value) in &launch_env.extra {
-        cmd.env(key, value);
-    }
-    cmd.env(crate::GOWILD_ENV_VAR, crate::GOWILD_ENV_VALUE);
     crate::integration::apply_pane_base_env(cmd);
     crate::platform::apply_pane_runtime_marker(cmd);
+    cmd.env_remove("CODEX_THREAD_ID");
+    for key in &launch_env.remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in &launch_env.extra {
+        cmd.env(key, value.expose());
+    }
+    cmd.env(crate::GOWILD_ENV_VAR, crate::GOWILD_ENV_VALUE);
     match &launch_env.identity {
         PaneLaunchIdentity::Inherit => {}
         PaneLaunchIdentity::Managed {
@@ -3102,6 +3151,27 @@ mod tests {
         apply_pane_launch_env(&mut cmd, &PaneLaunchEnv::default());
 
         assert!(cmd.get_env("CODEX_THREAD_ID").is_none());
+    }
+
+    #[test]
+    fn pane_launch_env_applies_secret_values_without_debugging_them() {
+        let credential = crate::gateway::Credential::new("fake-child-secret").unwrap();
+        let launch_env = PaneLaunchEnv::from_changes(
+            vec![("FAKE_API_KEY".into(), PaneEnvValue::Secret(credential))],
+            vec!["INHERITED_API_KEY".into()],
+        );
+        let debug = format!("{launch_env:?}");
+        assert!(!debug.contains("fake-child-secret"));
+
+        let mut cmd = CommandBuilder::new("shell");
+        cmd.env("INHERITED_API_KEY", "outer-secret");
+        apply_pane_launch_env(&mut cmd, &launch_env);
+
+        assert_eq!(
+            cmd.get_env("FAKE_API_KEY"),
+            Some(std::ffi::OsStr::new("fake-child-secret"))
+        );
+        assert!(cmd.get_env("INHERITED_API_KEY").is_none());
     }
 
     #[tokio::test]
