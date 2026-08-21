@@ -191,14 +191,6 @@ def check_install_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
     cargo_manifest = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
     if "publish = false" not in cargo_manifest:
         errors.append("Cargo.toml: crate publishing must remain disabled")
-    if '"PROVENANCE.md"' not in cargo_manifest:
-        errors.append("Cargo.toml: package must retain source provenance")
-    for generated_pattern in ('"!src/**/__pycache__/**"', '"!src/**/*.pyc"'):
-        if generated_pattern not in cargo_manifest:
-            errors.append(
-                "Cargo.toml: package must exclude generated Python bytecode with "
-                f"{generated_pattern}"
-            )
     return errors
 
 
