@@ -157,10 +157,10 @@ const DEFAULT_CONFIG: &str = r##"# gowild configuration
 # so existing preview installs stay there until explicitly switched.
 # channel = "stable"
 
-# Check gowild.dev for new GoWild versions in the background.
+# Check the configured GoWild-owned release channel for new versions.
 # version_check = true
 
-# Check gowild.dev for remote agent-detection manifest updates in the background.
+# Check the configured GoWild-owned channel for agent-detection manifest updates.
 # manifest_check = true
 
 [keys]
