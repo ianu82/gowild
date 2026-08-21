@@ -55,6 +55,12 @@ pub(crate) enum CredentialBackend {
     RestrictedFile,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CredentialRemoval {
+    Keep,
+    Delete,
+}
+
 pub(crate) trait CredentialStore: Send + Sync {
     fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError>;
     fn set(

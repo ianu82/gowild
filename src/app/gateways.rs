@@ -3,8 +3,8 @@ use crate::app::state::{
 };
 use crate::events::AppEvent;
 use crate::gateway::{
-    AuthenticationMode, ConnectionStatus, Credential, CredentialBackend, Gateway, GatewayCatalog,
-    GatewayInspection, GatewayTester,
+    AuthenticationMode, ConnectionStatus, Credential, CredentialBackend, CredentialRemoval,
+    Gateway, GatewayCatalog, GatewayInspection, GatewayTester,
 };
 
 use super::App;
@@ -173,6 +173,103 @@ impl App {
         duplicate.preset = None;
         clear_gateway_runtime_state(&mut duplicate);
         self.add_custom_gateway(duplicate)
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "wired into custom gateway forms next")
+    )]
+    pub(crate) fn delete_custom_gateway(
+        &mut self,
+        gateway_id: &str,
+        credential_removal: CredentialRemoval,
+    ) -> bool {
+        let Some(gateway) = self.state.gateway_catalog.gateways.get(gateway_id) else {
+            self.set_gateway_notice(GatewayNoticeKind::Error, "That gateway no longer exists.");
+            return false;
+        };
+        if gateway.preset.is_some() {
+            self.set_gateway_notice(
+                GatewayNoticeKind::Error,
+                "Built-in gateway presets cannot be deleted.",
+            );
+            return false;
+        }
+        let credential_ref = gateway
+            .auth
+            .credential_ref
+            .clone()
+            .or_else(|| Some(custom_gateway_credential_ref(gateway_id)));
+        let mut candidate = self.state.gateway_catalog.clone();
+        candidate.gateways.remove(gateway_id);
+        if candidate.default_gateway_id.as_deref() == Some(gateway_id) {
+            candidate.default_gateway_id = None;
+        }
+        let credential_is_shared = credential_ref.as_deref().is_some_and(|credential_ref| {
+            candidate
+                .gateways
+                .values()
+                .any(|gateway| gateway.auth.credential_ref.as_deref() == Some(credential_ref))
+        });
+        if !self.persist_gateway_catalog(
+            candidate,
+            GatewayNoticeKind::Success,
+            "Custom gateway deleted.",
+        ) {
+            return false;
+        }
+
+        self.state
+            .settings
+            .gateways
+            .credential_status
+            .remove(gateway_id);
+        let gateway_count = self.state.gateway_catalog.gateways.len();
+        self.state.settings.gateways.selected_gateway = self
+            .state
+            .settings
+            .gateways
+            .selected_gateway
+            .min(gateway_count.saturating_sub(1));
+        if self.state.settings.gateways.detail_gateway_id.as_deref() == Some(gateway_id) {
+            self.state.settings.gateways.secret_input.clear();
+            self.state.settings.gateways.editing_credential = false;
+            self.state.settings.gateways.detail_gateway_id = None;
+            self.state.settings.gateways.view = crate::app::state::GatewaySettingsView::List;
+        }
+        if self
+            .state
+            .settings
+            .gateways
+            .test_in_flight
+            .as_ref()
+            .is_some_and(|(_, active_gateway_id)| active_gateway_id == gateway_id)
+        {
+            self.state.settings.gateways.test_in_flight = None;
+        }
+
+        if credential_removal == CredentialRemoval::Delete {
+            if credential_is_shared {
+                self.set_gateway_notice(
+                    GatewayNoticeKind::Warning,
+                    "Gateway deleted. Its credential was kept because another gateway uses it.",
+                );
+            } else if let Some(credential_ref) = credential_ref {
+                match self.gateway_credentials.delete(&credential_ref) {
+                    Ok(()) => self.set_gateway_notice(
+                        GatewayNoticeKind::Success,
+                        "Gateway and its stored credential deleted.",
+                    ),
+                    Err(error) => self.set_gateway_notice(
+                        GatewayNoticeKind::Warning,
+                        format!(
+                            "Gateway deleted, but its stored credential could not be removed: {error}"
+                        ),
+                    ),
+                }
+            }
+        }
+        true
     }
 
     pub(crate) fn save_default_gateway(&mut self, gateway_id: &str) {
@@ -531,8 +628,8 @@ mod tests {
     use crate::{
         config::Config,
         gateway::{
-            CachedModel, Credential, CredentialBackend, CredentialStore, CredentialStoreError,
-            Gateway, GatewayRepository,
+            AuthenticationMode, CachedModel, Credential, CredentialBackend, CredentialRemoval,
+            CredentialStore, CredentialStoreError, Gateway, GatewayRepository,
         },
     };
 
@@ -925,6 +1022,123 @@ mod tests {
                 .get("private-hub"),
             Some(&crate::app::state::GatewayCredentialStatus::Missing)
         );
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn custom_gateway_delete_makes_credential_retention_an_explicit_choice() {
+        let path = temp_gateway_path("custom-delete");
+        let values = Arc::new(MockCredentialValues::default());
+        let mut app = gateway_app(path.clone(), values.clone());
+        assert!(app.add_custom_gateway(custom_gateway("keep-secret")));
+        assert!(app.add_custom_gateway(custom_gateway("delete-secret")));
+        let mut no_auth = custom_gateway("no-auth-secret");
+        no_auth.auth.mode = AuthenticationMode::None;
+        assert!(app.add_custom_gateway(no_auth));
+        {
+            let mut stored = values.values.lock().expect("credential map");
+            stored.insert("gateway:keep-secret".into(), "KEEP_ME".into());
+            stored.insert("gateway:delete-secret".into(), "DELETE_ME".into());
+            stored.insert("gateway:no-auth-secret".into(), "ORPHANED_SECRET".into());
+        }
+        app.state.gateway_catalog.default_gateway_id = Some("delete-secret".into());
+        app.state.settings.gateways.detail_gateway_id = Some("delete-secret".into());
+        app.state.settings.gateways.view = crate::app::state::GatewaySettingsView::Detail;
+        app.state.settings.gateways.editing_credential = true;
+        app.state
+            .settings
+            .gateways
+            .secret_input
+            .insert("UNSAVED_SECRET");
+        app.state.settings.gateways.test_in_flight = Some((7, "delete-secret".into()));
+
+        assert!(app.delete_custom_gateway("keep-secret", CredentialRemoval::Keep));
+        assert!(app.delete_custom_gateway("delete-secret", CredentialRemoval::Delete));
+        assert!(app.delete_custom_gateway("no-auth-secret", CredentialRemoval::Delete));
+
+        let stored = values.values.lock().expect("credential map");
+        assert!(stored.contains_key("gateway:keep-secret"));
+        assert!(!stored.contains_key("gateway:delete-secret"));
+        assert!(!stored.contains_key("gateway:no-auth-secret"));
+        drop(stored);
+        assert_eq!(app.state.gateway_catalog.default_gateway_id, None);
+        assert_eq!(app.state.settings.gateways.detail_gateway_id, None);
+        assert_eq!(
+            app.state.settings.gateways.view,
+            crate::app::state::GatewaySettingsView::List
+        );
+        assert!(!app.state.settings.gateways.editing_credential);
+        assert!(app.state.settings.gateways.secret_input.is_empty());
+        assert!(app.state.settings.gateways.test_in_flight.is_none());
+        let reloaded = GatewayRepository::new(path.clone())
+            .load()
+            .expect("catalog after deletion");
+        assert_eq!(reloaded.default_gateway_id, None);
+        assert!(!reloaded.gateways.contains_key("keep-secret"));
+        assert!(!reloaded.gateways.contains_key("delete-secret"));
+        assert!(!reloaded.gateways.contains_key("no-auth-secret"));
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn deleting_a_shared_or_builtin_credential_fails_safe() {
+        let path = temp_gateway_path("custom-delete-safe");
+        let values = Arc::new(MockCredentialValues::default());
+        let mut app = gateway_app(path.clone(), values.clone());
+        let shared_ref = "gateway:shared";
+        let mut first = custom_gateway("shared-one");
+        first.auth.credential_ref = Some(shared_ref.into());
+        let mut second = custom_gateway("shared-two");
+        second.auth.credential_ref = Some(shared_ref.into());
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(first.id.clone(), first);
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(second.id.clone(), second);
+        values
+            .values
+            .lock()
+            .expect("credential map")
+            .insert(shared_ref.into(), "SHARED_SECRET".into());
+
+        assert!(app.delete_custom_gateway("shared-one", CredentialRemoval::Delete));
+        assert!(values
+            .values
+            .lock()
+            .expect("credential map")
+            .contains_key(shared_ref));
+        assert!(!app.delete_custom_gateway("mindshub", CredentialRemoval::Delete));
+        assert!(app.state.gateway_catalog.gateways.contains_key("mindshub"));
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn failed_gateway_metadata_delete_never_removes_the_credential_first() {
+        let path = temp_gateway_path("custom-delete-metadata-failure");
+        std::fs::create_dir_all(&path).expect("create a directory where the config file belongs");
+        let values = Arc::new(MockCredentialValues::default());
+        values
+            .values
+            .lock()
+            .expect("credential map")
+            .insert("gateway:durable".into(), "DURABLE_SECRET".into());
+        let mut app = gateway_app(path.clone(), values.clone());
+        let gateway = custom_gateway("durable");
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(gateway.id.clone(), gateway);
+
+        assert!(!app.delete_custom_gateway("durable", CredentialRemoval::Delete));
+        assert!(app.state.gateway_catalog.gateways.contains_key("durable"));
+        assert!(values
+            .values
+            .lock()
+            .expect("credential map")
+            .contains_key("gateway:durable"));
         let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
     }
 }

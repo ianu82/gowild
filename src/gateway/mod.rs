@@ -17,7 +17,7 @@ mod service;
 #[cfg(test)]
 pub(crate) use credentials::CredentialStoreError;
 pub(crate) use credentials::{
-    Credential, CredentialBackend, CredentialStore, SystemCredentialStore,
+    Credential, CredentialBackend, CredentialRemoval, CredentialStore, SystemCredentialStore,
 };
 #[cfg(test)]
 pub(crate) use model::CachedModel;
