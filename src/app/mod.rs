@@ -14,6 +14,7 @@ mod api_helpers;
 pub(crate) use api_helpers::limit_snapshot_lines;
 mod config_io;
 mod creation;
+mod gateways;
 mod git_refresh;
 mod ids;
 mod input;
@@ -99,6 +100,9 @@ impl PaneClickState {
 
 pub struct App {
     pub state: AppState,
+    pub(crate) gateway_repository: crate::gateway::GatewayRepository,
+    #[allow(dead_code)] // First read by the immediately stacked gateway settings TUI.
+    pub(crate) gateway_credentials: Box<dyn crate::gateway::CredentialStore>,
     pub(crate) pane_graphics: pane_graphics::Runtime,
     pub(crate) pane_graphics_files: Arc<crate::pane_graphics_files::FileStore>,
     pub(crate) direct_graphics_available: bool,
@@ -536,6 +540,48 @@ impl App {
         let theme_runtime = theme_runtime_config(config, true);
         let (theme_palette, theme_name) = resolve_effective_theme(&theme_runtime, None);
 
+        let gateway_repository = crate::gateway::GatewayRepository::in_default_config_dir();
+        let gateway_credentials: Box<dyn crate::gateway::CredentialStore> = Box::new(
+            crate::gateway::SystemCredentialStore::new(&crate::config::config_dir()),
+        );
+        #[cfg(not(test))]
+        let (gateway_catalog, gateway_config_error) = match gateway_repository.load() {
+            Ok(catalog) => (catalog, None),
+            Err(error) => (
+                crate::gateway::GatewayCatalog::with_builtin_presets(),
+                Some(format!("failed to load gateways: {error}")),
+            ),
+        };
+        #[cfg(test)]
+        let (gateway_catalog, gateway_config_error) =
+            (crate::gateway::GatewayCatalog::with_builtin_presets(), None);
+        let gateway_settings = state::GatewaySettingsState::default();
+        #[cfg(not(test))]
+        let gateway_settings = {
+            let mut gateway_settings = gateway_settings;
+            for (gateway_id, gateway) in &gateway_catalog.gateways {
+                let status = match gateway.auth.mode {
+                    crate::gateway::AuthenticationMode::None => {
+                        state::GatewayCredentialStatus::Stored
+                    }
+                    _ => gateway
+                        .auth
+                        .credential_ref
+                        .as_deref()
+                        .and_then(|credential_ref| gateway_credentials.get(credential_ref).ok())
+                        .flatten()
+                        .map_or(state::GatewayCredentialStatus::Missing, |_| {
+                            state::GatewayCredentialStatus::Stored
+                        }),
+                };
+                gateway_settings
+                    .credential_status
+                    .insert(gateway_id.clone(), status);
+            }
+            gateway_settings
+        };
+        let config_diagnostic = config_diagnostic.or(gateway_config_error);
+
         let mut state = AppState {
             terminals: std::collections::HashMap::new(),
             direct_attach_resize_locks: std::collections::HashSet::new(),
@@ -688,7 +734,9 @@ impl App {
                 list: state::SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,
+                gateways: gateway_settings,
             },
+            gateway_catalog,
             integration_recommendations: crate::integration::integration_recommendations(),
             agent_manifest_summaries,
             agent_manifest_update_status: crate::detect::manifest_update::load_status(),
@@ -747,6 +795,8 @@ impl App {
             copy_feedback_deadline: None,
             last_api_notification_at: None,
             state,
+            gateway_repository,
+            gateway_credentials,
             pane_graphics: pane_graphics::Runtime::default(),
             pane_graphics_files: Arc::new(crate::pane_graphics_files::FileStore::default()),
             direct_graphics_available: false,

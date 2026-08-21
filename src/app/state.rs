@@ -1125,6 +1125,119 @@ pub struct SettingsState {
     pub original_palette: Option<Palette>,
     /// The theme name before opening settings.
     pub original_theme: Option<String>,
+    /// Gateway credential-entry and background connection-test state.
+    pub gateways: GatewaySettingsState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum GatewayCredentialStatus {
+    #[default]
+    Unknown,
+    Missing,
+    Stored,
+}
+
+#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GatewayModelTarget {
+    Codex,
+    Claude,
+}
+
+#[allow(dead_code)]
+impl GatewayModelTarget {
+    pub(crate) fn config_key(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Claude => "claude",
+        }
+    }
+
+    pub(crate) fn protocol(self) -> crate::gateway::GatewayProtocol {
+        match self {
+            Self::Codex => crate::gateway::GatewayProtocol::OpenAiResponses,
+            Self::Claude => crate::gateway::GatewayProtocol::AnthropicMessages,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GatewayNoticeKind {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GatewayNotice {
+    pub(crate) kind: GatewayNoticeKind,
+    pub(crate) message: String,
+}
+
+#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
+pub(crate) struct SecretInput {
+    value: zeroize::Zeroizing<String>,
+}
+
+#[allow(dead_code)]
+impl SecretInput {
+    const MAX_CHARS: usize = 16_384;
+
+    pub(crate) fn insert(&mut self, text: &str) {
+        let remaining = Self::MAX_CHARS.saturating_sub(self.value.chars().count());
+        self.value
+            .extend(text.chars().filter(|ch| !ch.is_control()).take(remaining));
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.value.clear();
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        self.value.as_str()
+    }
+}
+
+impl Default for SecretInput {
+    fn default() -> Self {
+        Self {
+            value: zeroize::Zeroizing::new(String::new()),
+        }
+    }
+}
+
+impl std::fmt::Debug for SecretInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SecretInput([REDACTED])")
+    }
+}
+
+#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
+pub(crate) struct GatewaySettingsState {
+    pub(crate) editing_credential: bool,
+    pub(crate) secret_input: SecretInput,
+    pub(crate) credential_status: std::collections::BTreeMap<String, GatewayCredentialStatus>,
+    pub(crate) notice: Option<GatewayNotice>,
+    pub(crate) test_in_flight: Option<(u64, String)>,
+    pub(crate) next_test_generation: u64,
+}
+
+impl Default for GatewaySettingsState {
+    fn default() -> Self {
+        Self {
+            editing_credential: false,
+            secret_input: SecretInput::default(),
+            credential_status: std::collections::BTreeMap::new(),
+            notice: None,
+            test_in_flight: None,
+            next_test_generation: 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1529,6 +1642,8 @@ pub struct AppState {
     pub host_terminal_appearance_explicit: bool,
     /// Settings panel state.
     pub settings: SettingsState,
+    /// Non-secret gateway metadata loaded from GoWild's gateway repository.
+    pub(crate) gateway_catalog: crate::gateway::GatewayCatalog,
     /// Cached integration recommendations for onboarding/settings UI.
     pub integration_recommendations: Vec<crate::integration::IntegrationRecommendation>,
     /// Cached detection manifest source/version summaries for runtime/API status.
@@ -1918,7 +2033,9 @@ impl AppState {
                 list: SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,
+                gateways: GatewaySettingsState::default(),
             },
+            gateway_catalog: crate::gateway::GatewayCatalog::with_builtin_presets(),
             integration_recommendations: Vec::new(),
             agent_manifest_summaries: Vec::new(),
             agent_manifest_update_status:

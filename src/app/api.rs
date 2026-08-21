@@ -197,6 +197,16 @@ impl App {
             return Vec::new();
         }
 
+        if let AppEvent::GatewayTestFinished {
+            generation,
+            gateway_id,
+            result,
+        } = ev
+        {
+            self.finish_gateway_test(generation, gateway_id, result);
+            return Vec::new();
+        }
+
         if let AppEvent::WorktreeAddFinished(result) = ev {
             self.handle_worktree_add_finished(*result);
             return Vec::new();
