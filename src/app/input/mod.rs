@@ -460,6 +460,15 @@ impl App {
                                 settings::finish_gateway_form(&mut self.state, &gateway_id);
                             }
                         }
+                        SettingsAction::DeleteCustomGateway {
+                            gateway_id,
+                            credential_removal,
+                        } => {
+                            if self.delete_custom_gateway(&gateway_id, credential_removal) {
+                                self.state.settings.gateways.credential_removal =
+                                    crate::gateway::CredentialRemoval::Keep;
+                            }
+                        }
                     },
                     MouseAction::FocusWorkspace { ws_idx } => {
                         self.focus_workspace_idx_via_api(ws_idx)

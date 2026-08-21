@@ -171,10 +171,6 @@ impl App {
         self.add_custom_gateway(duplicate)
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "wired into custom gateway forms next")
-    )]
     pub(crate) fn delete_custom_gateway(
         &mut self,
         gateway_id: &str,

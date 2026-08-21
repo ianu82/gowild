@@ -72,8 +72,9 @@ pub(crate) use self::{
         remove_worktree_popup_rect, rename_button_rects,
     },
     settings::{
-        gateway_add_button_rect, gateway_detail_button_rects, settings_button_rects,
-        settings_popup_height, settings_show_primary_action, SETTINGS_POPUP_WIDTH,
+        gateway_add_button_rect, gateway_detail_button_rects, gateway_detail_delete_button_rect,
+        settings_button_rects, settings_popup_height, settings_show_primary_action,
+        SETTINGS_POPUP_WIDTH,
     },
     sidebar::{
         agent_entry_gap, agent_entry_height_in_body, agent_panel_body_rect, agent_panel_entries,

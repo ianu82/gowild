@@ -19,7 +19,7 @@ use crate::{
         AppState,
     },
     config::{StatusIndicatorStyle, ToastDelivery},
-    gateway::{AuthenticationMode, ConnectionStatus, Gateway, GatewayProtocol},
+    gateway::{AuthenticationMode, ConnectionStatus, CredentialRemoval, Gateway, GatewayProtocol},
 };
 
 pub(crate) const SETTINGS_POPUP_WIDTH: u16 = 76;
@@ -185,6 +185,8 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
         let show_primary = settings_show_primary_action(app);
         let (apply_rect, close_rect) = settings_button_rects(inner, app, show_primary);
         if let Some(apply_rect) = apply_rect {
+            let destructive = app.settings.section == SettingsSection::Gateways
+                && app.settings.gateways.view == GatewaySettingsView::DeleteConfirm;
             render_action_button(
                 frame,
                 apply_rect,
@@ -192,7 +194,7 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                 primary_label,
                 Style::default()
                     .fg(panel_contrast_fg(p))
-                    .bg(p.accent)
+                    .bg(if destructive { p.red } else { p.accent })
                     .add_modifier(Modifier::BOLD),
             );
         }
@@ -222,13 +224,16 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                         .and_then(|id| app.gateway_catalog.gateways.get(id))
                         .is_some_and(|gateway| gateway.preset.is_none());
                     if custom {
-                        " ↑↓ field  ←→ model  e edit  d duplicate"
+                        " ↑↓ field  ←→ model  e edit  d duplicate  x delete"
                     } else {
                         " ↑↓ field  ←→ model  d duplicate  space default"
                     }
                 }
                 GatewaySettingsView::Form => {
                     " ↑↓ field  type/paste  ^u clear  ←→ auth  ↵ save  esc cancel"
+                }
+                GatewaySettingsView::DeleteConfirm => {
+                    " ←→ choose key handling  ↵ delete gateway  esc cancel"
                 }
             }
         } else {
@@ -263,6 +268,11 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
                 _ => "add",
             }
         }
+        crate::app::state::SettingsSection::Gateways
+            if app.settings.gateways.view == GatewaySettingsView::DeleteConfirm =>
+        {
+            "delete gateway"
+        }
         crate::app::state::SettingsSection::Gateways => "test",
         crate::app::state::SettingsSection::Integrations => "install",
         _ => "apply",
@@ -271,8 +281,10 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
 
 pub(crate) fn settings_close_button_label(app: &AppState) -> &'static str {
     if app.settings.section == crate::app::state::SettingsSection::Gateways
-        && (app.settings.gateways.view == GatewaySettingsView::Form
-            || app.settings.gateways.editing_credential)
+        && (matches!(
+            app.settings.gateways.view,
+            GatewaySettingsView::Form | GatewaySettingsView::DeleteConfirm
+        ) || app.settings.gateways.editing_credential)
     {
         "cancel"
     } else if app.settings.section == crate::app::state::SettingsSection::Gateways
@@ -300,6 +312,13 @@ pub(crate) fn settings_show_primary_action(app: &AppState) -> bool {
                 .as_ref()
                 .is_some_and(|id| app.gateway_catalog.gateways.contains_key(id)),
             GatewaySettingsView::Form => app.settings.gateways.gateway_form.is_some(),
+            GatewaySettingsView::DeleteConfirm => app
+                .settings
+                .gateways
+                .detail_gateway_id
+                .as_ref()
+                .and_then(|id| app.gateway_catalog.gateways.get(id))
+                .is_some_and(|gateway| gateway.preset.is_none()),
         },
         crate::app::state::SettingsSection::Integrations => app
             .integration_recommendations
@@ -426,6 +445,7 @@ fn render_settings_gateways(app: &AppState, frame: &mut Frame, area: Rect) {
         GatewaySettingsView::List => render_gateway_list(app, frame, area),
         GatewaySettingsView::Detail => render_gateway_detail(app, frame, area),
         GatewaySettingsView::Form => render_gateway_form(app, frame, area),
+        GatewaySettingsView::DeleteConfirm => render_gateway_delete_confirm(app, frame, area),
     }
 }
 
@@ -459,6 +479,21 @@ pub(crate) fn gateway_detail_button_rects(area: Rect, show_edit: bool) -> (Optio
         )
     });
     (edit, duplicate)
+}
+
+pub(crate) fn gateway_detail_delete_button_rect(area: Rect, show_delete: bool) -> Option<Rect> {
+    let (edit, duplicate) = gateway_detail_button_rects(area, show_delete);
+    show_delete.then(|| {
+        let anchor = edit.unwrap_or(duplicate);
+        let gap = 1;
+        let width = 10.min(anchor.x.saturating_sub(area.x + gap));
+        Rect::new(
+            anchor.x.saturating_sub(width + gap),
+            anchor.y,
+            width,
+            anchor.height,
+        )
+    })
 }
 
 fn gateway_protocol_summary(gateway: &Gateway) -> &'static str {
@@ -645,8 +680,8 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
             Paragraph::new(" one gateway · two coding CLIs").style(Style::default().fg(p.overlay1)),
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
-        let (edit_rect, duplicate_rect) =
-            gateway_detail_button_rects(area, gateway.preset.is_none());
+        let custom = gateway.preset.is_none();
+        let (edit_rect, duplicate_rect) = gateway_detail_button_rects(area, custom);
         if let Some(edit_rect) = edit_rect {
             render_action_button(
                 frame,
@@ -663,6 +698,15 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
             "duplicate",
             Style::default().fg(p.text).bg(p.surface0),
         );
+        if let Some(delete_rect) = gateway_detail_delete_button_rect(area, custom) {
+            render_action_button(
+                frame,
+                delete_rect,
+                Some("x"),
+                "delete",
+                Style::default().fg(p.text).bg(p.surface0),
+            );
+        }
     }
 
     let credential_status = if gateway.auth.mode == AuthenticationMode::None {
@@ -781,6 +825,102 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
                 Paragraph::new(format!(" {}", compact_text(diagnostic.message(), 67)))
                     .style(Style::default().fg(p.overlay1)),
                 Rect::new(area.x, diagnostic_y, area.width, 1),
+            );
+        }
+    }
+
+    let notice_y = area.y.saturating_add(area.height.saturating_sub(2));
+    render_gateway_notice(
+        app,
+        frame,
+        Rect::new(area.x, notice_y, area.width, area.height.min(2)),
+    );
+}
+
+fn render_gateway_delete_confirm(app: &AppState, frame: &mut Frame, area: Rect) {
+    let p = &app.palette;
+    let Some(gateway_id) = app.settings.gateways.detail_gateway_id.as_deref() else {
+        frame.render_widget(
+            Paragraph::new(" Gateway is no longer available.").style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    };
+    let Some(gateway) = app.gateway_catalog.gateways.get(gateway_id) else {
+        frame.render_widget(
+            Paragraph::new(" Gateway is no longer available.").style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    };
+    if gateway.preset.is_some() {
+        frame.render_widget(
+            Paragraph::new(" Built-in gateway presets cannot be deleted.")
+                .style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    }
+
+    let lines = [
+        Line::from(Span::styled(
+            " delete custom gateway",
+            Style::default().fg(p.red).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::styled(" remove  ", Style::default().fg(p.overlay1)),
+            Span::styled(&gateway.display_name, Style::default().fg(p.text)),
+        ]),
+        Line::from(Span::styled(
+            " This removes the gateway definition and its CLI model defaults.",
+            Style::default().fg(p.subtext0),
+        )),
+        Line::from(Span::styled(
+            " Choose what happens to its stored credential:",
+            Style::default().fg(p.subtext0),
+        )),
+    ];
+    for (index, line) in lines.into_iter().enumerate() {
+        let y = area.y.saturating_add(index as u16);
+        if y < area.y.saturating_add(area.height) {
+            frame.render_widget(Paragraph::new(line), Rect::new(area.x, y, area.width, 1));
+        }
+    }
+
+    let choices = [
+        (
+            CredentialRemoval::Keep,
+            "keep stored credential",
+            "recommended; delete only the definition",
+        ),
+        (
+            CredentialRemoval::Delete,
+            "delete stored credential too",
+            "shared credentials are retained automatically",
+        ),
+    ];
+    for (index, (choice, label, description)) in choices.into_iter().enumerate() {
+        let y = area.y.saturating_add(5 + index as u16 * 2);
+        if y >= area.y.saturating_add(area.height) {
+            break;
+        }
+        let selected = app.settings.gateways.credential_removal == choice;
+        let style = if selected {
+            Style::default()
+                .fg(p.text)
+                .bg(p.surface0)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(p.subtext0)
+        };
+        frame.render_widget(
+            Paragraph::new(format!(" {} {}", if selected { "▸" } else { " " }, label)).style(style),
+            Rect::new(area.x, y, area.width, 1),
+        );
+        if y + 1 < area.y.saturating_add(area.height) {
+            frame.render_widget(
+                Paragraph::new(format!("   {description}")).style(Style::default().fg(p.overlay1)),
+                Rect::new(area.x, y + 1, area.width, 1),
             );
         }
     }
@@ -1292,5 +1432,53 @@ mod tests {
         assert!(detail.contains("not required"));
         assert!(detail.contains("edit"));
         assert!(detail.contains("duplicate"));
+    }
+
+    #[test]
+    fn custom_gateway_delete_confirmation_is_explicit_and_presets_have_no_delete_action() {
+        let mut app = gateway_settings_state();
+        app.settings.gateways.view = GatewaySettingsView::Detail;
+        app.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        let preset = rendered_gateway_settings(&app, 80, 24);
+        assert!(!preset.contains("delete"));
+
+        let mut custom = Gateway::mindshub();
+        custom.id = "private-hub".into();
+        custom.display_name = "Private Hub".into();
+        custom.preset = None;
+        app.gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        app.settings.gateways.detail_gateway_id = Some("private-hub".into());
+        let detail = rendered_gateway_settings(&app, 80, 24);
+        assert!(detail.contains("delete"));
+
+        app.settings.gateways.view = GatewaySettingsView::DeleteConfirm;
+        app.settings.gateways.credential_removal = CredentialRemoval::Keep;
+        for (width, height) in [(80, 24), (100, 30), (64, 20)] {
+            let rendered = rendered_gateway_settings(&app, width, height);
+            assert!(
+                rendered.contains("delete custom gateway"),
+                "{width}×{height}"
+            );
+            assert!(rendered.contains("Private Hub"), "{width}×{height}");
+            assert!(
+                rendered.contains("keep stored credential"),
+                "{width}×{height}"
+            );
+            assert!(
+                rendered.contains("delete stored credential too"),
+                "{width}×{height}"
+            );
+            assert!(rendered.contains("delete gateway"), "{width}×{height}");
+            assert!(rendered.contains("cancel"), "{width}×{height}");
+        }
+
+        app.settings.gateways.notice = Some(crate::app::state::GatewayNotice {
+            kind: GatewayNoticeKind::Error,
+            message: "Could not save gateway settings".into(),
+        });
+        let failed = rendered_gateway_settings(&app, 80, 24);
+        assert!(failed.contains("Could not save gateway settings"));
     }
 }

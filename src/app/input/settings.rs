@@ -11,6 +11,7 @@ use crate::{
         App, Mode,
     },
     config::{StatusIndicatorStyle, ToastDelivery},
+    gateway::CredentialRemoval,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +36,10 @@ pub(super) enum SettingsAction {
     UpdateCustomGateway {
         gateway_id: String,
         gateway: Box<crate::gateway::Gateway>,
+    },
+    DeleteCustomGateway {
+        gateway_id: String,
+        credential_removal: CredentialRemoval,
     },
 }
 
@@ -77,6 +82,14 @@ impl App {
                 } => {
                     if self.update_custom_gateway(&gateway_id, *gateway) {
                         finish_gateway_form(&mut self.state, &gateway_id);
+                    }
+                }
+                SettingsAction::DeleteCustomGateway {
+                    gateway_id,
+                    credential_removal,
+                } => {
+                    if self.delete_custom_gateway(&gateway_id, credential_removal) {
+                        self.state.settings.gateways.credential_removal = CredentialRemoval::Keep;
                     }
                 }
             }
@@ -154,6 +167,7 @@ fn cancel_settings(state: &mut AppState) {
     state.settings.gateways.secret_input.clear();
     state.settings.gateways.editing_credential = false;
     state.settings.gateways.gateway_form = None;
+    state.settings.gateways.credential_removal = CredentialRemoval::Keep;
     if let Some(palette) = state.settings.original_palette.take() {
         state.palette = palette;
     }
@@ -238,6 +252,43 @@ fn begin_gateway_duplicate(state: &mut AppState) {
     state.settings.gateways.notice = None;
 }
 
+fn begin_gateway_delete(state: &mut AppState) {
+    let Some(gateway_id) = state.settings.gateways.detail_gateway_id.as_deref() else {
+        return;
+    };
+    let Some(gateway) = state.gateway_catalog.gateways.get(gateway_id) else {
+        return;
+    };
+    if gateway.preset.is_some() {
+        state.settings.gateways.notice = Some(crate::app::state::GatewayNotice {
+            kind: crate::app::state::GatewayNoticeKind::Warning,
+            message: "Built-in gateway presets cannot be deleted.".into(),
+        });
+        return;
+    }
+    state.settings.gateways.secret_input.clear();
+    state.settings.gateways.editing_credential = false;
+    state.settings.gateways.gateway_form = None;
+    state.settings.gateways.credential_removal = CredentialRemoval::Keep;
+    state.settings.gateways.view = GatewaySettingsView::DeleteConfirm;
+    state.settings.gateways.notice = None;
+}
+
+fn cancel_gateway_delete(state: &mut AppState) {
+    state.settings.gateways.credential_removal = CredentialRemoval::Keep;
+    state.settings.gateways.view = GatewaySettingsView::Detail;
+    state.settings.gateways.notice = None;
+}
+
+fn gateway_delete_action(state: &AppState) -> Option<SettingsAction> {
+    let gateway_id = state.settings.gateways.detail_gateway_id.as_ref()?;
+    let gateway = state.gateway_catalog.gateways.get(gateway_id)?;
+    (gateway.preset.is_none()).then(|| SettingsAction::DeleteCustomGateway {
+        gateway_id: gateway_id.clone(),
+        credential_removal: state.settings.gateways.credential_removal,
+    })
+}
+
 fn cancel_gateway_form(state: &mut AppState) {
     let return_to_detail = state
         .settings
@@ -246,6 +297,7 @@ fn cancel_gateway_form(state: &mut AppState) {
         .as_ref()
         .is_some_and(|form| form.mode != CustomGatewayFormMode::Add);
     state.settings.gateways.gateway_form = None;
+    state.settings.gateways.credential_removal = CredentialRemoval::Keep;
     state.settings.gateways.notice = None;
     state.settings.gateways.view = if return_to_detail {
         GatewaySettingsView::Detail
@@ -425,6 +477,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
             }
             KeyCode::Char('e') => begin_gateway_edit(state),
             KeyCode::Char('d') => begin_gateway_duplicate(state),
+            KeyCode::Char('x') => begin_gateway_delete(state),
             KeyCode::Tab => {
                 state.settings.gateways.secret_input.clear();
                 state.settings.gateways.editing_credential = false;
@@ -481,6 +534,17 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                     form.insert(character.encode_utf8(&mut encoded));
                 }
             }
+            _ => {}
+        },
+        GatewaySettingsView::DeleteConfirm => match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => cancel_gateway_delete(state),
+            KeyCode::Left | KeyCode::Char('k') => {
+                state.settings.gateways.credential_removal = CredentialRemoval::Keep;
+            }
+            KeyCode::Right | KeyCode::Char('d') => {
+                state.settings.gateways.credential_removal = CredentialRemoval::Delete;
+            }
+            KeyCode::Enter => return gateway_delete_action(state),
             _ => {}
         },
     }
@@ -772,6 +836,7 @@ impl AppState {
                     let idx = scroll + (row - first_row) as usize;
                     (idx < GatewayFormField::ALL.len()).then_some(idx)
                 }
+                GatewaySettingsView::DeleteConfirm => None,
             },
             SettingsSection::Theme => {
                 let max_visible = area.height as usize;
@@ -820,6 +885,7 @@ impl AppState {
                         self.settings.gateways.editing_credential = false;
                         self.settings.gateways.view = GatewaySettingsView::List;
                         self.settings.gateways.gateway_form = None;
+                        self.settings.gateways.credential_removal = CredentialRemoval::Keep;
                     }
                     self.settings.section = section;
                     self.settings.list.select(match section {
@@ -852,7 +918,7 @@ impl AppState {
                 if self.settings.section == SettingsSection::Gateways
                     && self.settings.gateways.view == GatewaySettingsView::Detail
                 {
-                    let show_edit = self
+                    let custom = self
                         .settings
                         .gateways
                         .detail_gateway_id
@@ -860,13 +926,39 @@ impl AppState {
                         .and_then(|id| self.gateway_catalog.gateways.get(id))
                         .is_some_and(|gateway| gateway.preset.is_none());
                     let (edit, duplicate) =
-                        crate::ui::gateway_detail_button_rects(gateway_area, show_edit);
+                        crate::ui::gateway_detail_button_rects(gateway_area, custom);
                     if edit.is_some_and(|rect| rect_contains(rect, mouse.column, mouse.row)) {
                         begin_gateway_edit(self);
                         return None;
                     }
                     if rect_contains(duplicate, mouse.column, mouse.row) {
                         begin_gateway_duplicate(self);
+                        return None;
+                    }
+                    if crate::ui::gateway_detail_delete_button_rect(gateway_area, custom)
+                        .is_some_and(|rect| rect_contains(rect, mouse.column, mouse.row))
+                    {
+                        begin_gateway_delete(self);
+                        return None;
+                    }
+                }
+                if self.settings.section == SettingsSection::Gateways
+                    && self.settings.gateways.view == GatewaySettingsView::DeleteConfirm
+                {
+                    let keep_row = gateway_area.y.saturating_add(5);
+                    let delete_row = gateway_area.y.saturating_add(7);
+                    if mouse.row == keep_row
+                        && mouse.column >= gateway_area.x
+                        && mouse.column < gateway_area.x.saturating_add(gateway_area.width)
+                    {
+                        self.settings.gateways.credential_removal = CredentialRemoval::Keep;
+                        return None;
+                    }
+                    if mouse.row == delete_row
+                        && mouse.column >= gateway_area.x
+                        && mouse.column < gateway_area.x.saturating_add(gateway_area.width)
+                    {
+                        self.settings.gateways.credential_removal = CredentialRemoval::Delete;
                         return None;
                     }
                 }
@@ -932,6 +1024,7 @@ impl AppState {
                                     }
                                 }
                             }
+                            GatewaySettingsView::DeleteConfirm => {}
                         }
                         return None;
                     }
@@ -983,12 +1076,16 @@ impl AppState {
                         if self.settings.gateways.view == GatewaySettingsView::Form {
                             return gateway_form_action(self);
                         }
+                        if self.settings.gateways.view == GatewaySettingsView::DeleteConfirm {
+                            return gateway_delete_action(self);
+                        }
                         let gateway_id = match self.settings.gateways.view {
                             GatewaySettingsView::List => selected_gateway_id(self),
                             GatewaySettingsView::Detail => {
                                 self.settings.gateways.detail_gateway_id.clone()
                             }
                             GatewaySettingsView::Form => None,
+                            GatewaySettingsView::DeleteConfirm => None,
                         };
                         gateway_id.map(SettingsAction::TestGateway)
                     }
@@ -998,6 +1095,10 @@ impl AppState {
                             && self.settings.gateways.view == GatewaySettingsView::Form
                         {
                             cancel_gateway_form(self);
+                        } else if self.settings.section == SettingsSection::Gateways
+                            && self.settings.gateways.view == GatewaySettingsView::DeleteConfirm
+                        {
+                            cancel_gateway_delete(self);
                         } else if self.settings.section == SettingsSection::Gateways
                             && self.settings.gateways.editing_credential
                         {
@@ -1549,6 +1650,153 @@ mod tests {
             .gateways
             .contains_key("local-proxy"));
         let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn gateway_delete_keyboard_defaults_to_keep_and_persists_after_confirmation() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix clock")
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("gowild-delete-confirm-{nonce}"))
+            .join("gateways.json");
+        let mut app = app_for_mouse_test();
+        app.gateway_repository = crate::gateway::GatewayRepository::new(path.clone());
+        open_settings(&mut app.state);
+        let mut custom = crate::gateway::Gateway::mindshub();
+        custom.id = "disposable".into();
+        custom.display_name = "Disposable".into();
+        custom.preset = None;
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        app.state.settings.gateways.detail_gateway_id = Some("disposable".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+
+        app.handle_settings_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty()));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::DeleteConfirm
+        );
+        assert_eq!(
+            app.state.settings.gateways.credential_removal,
+            CredentialRemoval::Keep
+        );
+        app.handle_settings_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()));
+        assert_eq!(
+            app.state.settings.gateways.credential_removal,
+            CredentialRemoval::Delete
+        );
+        app.handle_settings_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+
+        app.handle_settings_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty()));
+        app.handle_settings_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+        assert!(!app
+            .state
+            .gateway_catalog
+            .gateways
+            .contains_key("disposable"));
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::List);
+        assert!(app.state.settings.gateways.detail_gateway_id.is_none());
+        assert_eq!(
+            app.state.settings.gateways.credential_removal,
+            CredentialRemoval::Keep
+        );
+        assert!(!crate::gateway::GatewayRepository::new(path.clone())
+            .load()
+            .expect("saved gateway catalog")
+            .gateways
+            .contains_key("disposable"));
+
+        app.state.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+        app.handle_settings_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty()));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+        assert!(app
+            .state
+            .settings
+            .gateways
+            .notice
+            .as_ref()
+            .is_some_and(|notice| notice.message.contains("cannot be deleted")));
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
+    }
+
+    #[test]
+    fn gateway_delete_mouse_paths_select_key_removal_confirm_and_cancel() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+        let mut custom = crate::gateway::Gateway::mindshub();
+        custom.id = "mouse-delete".into();
+        custom.display_name = "Mouse Delete".into();
+        custom.preset = None;
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        app.state.settings.gateways.detail_gateway_id = Some("mouse-delete".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+
+        let area = app.state.settings_content_rect();
+        let delete = crate::ui::gateway_detail_delete_button_rect(area, true)
+            .expect("custom gateway delete button");
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            delete.x + 1,
+            delete.y,
+        ));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::DeleteConfirm
+        );
+
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            area.x + 2,
+            area.y + 7,
+        ));
+        assert_eq!(
+            app.state.settings.gateways.credential_removal,
+            CredentialRemoval::Delete
+        );
+        let inner = app.state.settings_inner_rect();
+        let (confirm, cancel) = crate::ui::settings_button_rects(inner, &app.state, true);
+        let confirm = confirm.expect("delete confirmation button");
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            confirm.x + 1,
+            confirm.y,
+        ));
+        assert!(matches!(
+            action,
+            Some(SettingsAction::DeleteCustomGateway {
+                gateway_id,
+                credential_removal: CredentialRemoval::Delete,
+            }) if gateway_id == "mouse-delete"
+        ));
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            cancel.x + 1,
+            cancel.y,
+        ));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+        assert!(app
+            .state
+            .gateway_catalog
+            .gateways
+            .contains_key("mouse-delete"));
     }
 
     #[test]

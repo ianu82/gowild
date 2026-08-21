@@ -10,6 +10,8 @@
   redacted diagnostics and non-secret model metadata.
 - Gateway settings can add, edit, and duplicate custom Responses- and
   Messages-compatible gateways with configurable discovery and authentication.
+- Custom gateway deletion uses an explicit keep-or-delete credential
+  confirmation; built-in presets remain non-deletable.
 
 ### Fixed
 - Windows panes now keep bare `cursor-agent` launches detected after Cursor hands off to its bundled Node process. (#3032)
