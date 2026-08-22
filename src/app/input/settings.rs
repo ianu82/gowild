@@ -27,10 +27,9 @@ pub(super) enum SettingsAction {
     SaveDefaultGateway(String),
     SaveGatewayCredential(String),
     TestGateway(String),
-    CycleGatewayModel {
+    OpenGatewayModelChooser {
         gateway_id: String,
         target: GatewayModelTarget,
-        direction: i8,
     },
     AddCustomGateway(Box<crate::gateway::Gateway>),
     UpdateCustomGateway {
@@ -69,11 +68,9 @@ impl App {
                     self.save_gateway_credential(&gateway_id)
                 }
                 SettingsAction::TestGateway(gateway_id) => self.start_gateway_test(&gateway_id),
-                SettingsAction::CycleGatewayModel {
-                    gateway_id,
-                    target,
-                    direction,
-                } => self.cycle_gateway_model(&gateway_id, target, direction),
+                SettingsAction::OpenGatewayModelChooser { gateway_id, target } => {
+                    self.open_gateway_model_chooser(gateway_id, target)
+                }
                 SettingsAction::AddCustomGateway(gateway) => {
                     let gateway_id = gateway.id.clone();
                     if self.add_custom_gateway(*gateway) {
@@ -466,7 +463,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                 state.settings.gateways.editing_credential = true;
                 state.settings.gateways.notice = None;
             }
-            KeyCode::Left | KeyCode::Right
+            KeyCode::Enter | KeyCode::Char('/')
                 if state.settings.gateways.detail_field != GatewayDetailField::Credential =>
             {
                 let gateway_id = state.settings.gateways.detail_gateway_id.clone()?;
@@ -476,12 +473,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                     } else {
                         GatewayModelTarget::Claude
                     };
-                let direction = if key.code == KeyCode::Left { -1 } else { 1 };
-                return Some(SettingsAction::CycleGatewayModel {
-                    gateway_id,
-                    target,
-                    direction,
-                });
+                return Some(SettingsAction::OpenGatewayModelChooser { gateway_id, target });
             }
             KeyCode::Char('t') | KeyCode::Char('r') => {
                 return state
@@ -590,15 +582,13 @@ pub(super) fn guided_setup_primary_action(state: &mut AppState) -> Option<Settin
             None
         }
         GuidedSetupStep::VerifyMindshub => Some(SettingsAction::TestGateway("mindshub".into())),
-        GuidedSetupStep::ChooseCodexModel => Some(SettingsAction::CycleGatewayModel {
+        GuidedSetupStep::ChooseCodexModel => Some(SettingsAction::OpenGatewayModelChooser {
             gateway_id: "mindshub".into(),
             target: GatewayModelTarget::Codex,
-            direction: 1,
         }),
-        GuidedSetupStep::ChooseClaudeModel => Some(SettingsAction::CycleGatewayModel {
+        GuidedSetupStep::ChooseClaudeModel => Some(SettingsAction::OpenGatewayModelChooser {
             gateway_id: "mindshub".into(),
             target: GatewayModelTarget::Claude,
-            direction: 1,
         }),
         GuidedSetupStep::Launch => {
             let cli = if state.guided_cli_available(crate::api::schema::IntegrationTarget::Codex) {
@@ -643,31 +633,6 @@ fn update_guided_setup(state: &mut AppState, key: KeyEvent) -> Option<SettingsAc
             return Some(SettingsAction::LaunchGuidedAgent(
                 crate::cli_adapter::CodingCli::Claude,
             ));
-        }
-        KeyCode::Left
-            if matches!(
-                state.guided_setup_step(),
-                GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel
-            ) =>
-        {
-            let target = if state.guided_setup_step() == GuidedSetupStep::ChooseCodexModel {
-                GatewayModelTarget::Codex
-            } else {
-                GatewayModelTarget::Claude
-            };
-            return Some(SettingsAction::CycleGatewayModel {
-                gateway_id: "mindshub".into(),
-                target,
-                direction: -1,
-            });
-        }
-        KeyCode::Right
-            if matches!(
-                state.guided_setup_step(),
-                GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel
-            ) =>
-        {
-            return guided_setup_primary_action(state);
         }
         KeyCode::Enter => return guided_setup_primary_action(state),
         _ => {}
@@ -875,14 +840,24 @@ fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
         && row < rect.y.saturating_add(rect.height)
 }
 
+fn cycle_settings_section(current: SettingsSection, direction: i8) -> SettingsSection {
+    let index = SettingsSection::ALL
+        .iter()
+        .position(|section| *section == current)
+        .unwrap_or_default();
+    let next = if direction.is_negative() {
+        index
+            .checked_sub(1)
+            .unwrap_or(SettingsSection::ALL.len() - 1)
+    } else {
+        (index + 1) % SettingsSection::ALL.len()
+    };
+    SettingsSection::ALL[next]
+}
+
 impl AppState {
     fn settings_popup_rect(&self) -> Rect {
-        crate::ui::centered_popup_rect(
-            self.screen_rect(),
-            crate::ui::SETTINGS_POPUP_WIDTH,
-            crate::ui::settings_popup_height(self),
-        )
-        .unwrap_or_default()
+        crate::ui::settings_popup_rect(self.screen_rect(), self).unwrap_or_default()
     }
 
     fn settings_inner_rect(&self) -> Rect {
@@ -899,6 +874,15 @@ impl AppState {
         let inner = self.settings_inner_rect();
         let tab_y = inner.y + 1;
         if row != tab_y {
+            return None;
+        }
+        if crate::ui::settings_is_compact(self.screen_rect()) {
+            if col < inner.x.saturating_add(3) {
+                return Some(cycle_settings_section(self.settings.section, -1));
+            }
+            if col >= inner.x.saturating_add(17) && col < inner.x.saturating_add(20) {
+                return Some(cycle_settings_section(self.settings.section, 1));
+            }
             return None;
         }
         let mut x = inner.x;
@@ -1193,10 +1177,9 @@ impl AppState {
                                         if let Some(gateway_id) =
                                             self.settings.gateways.detail_gateway_id.clone()
                                         {
-                                            return Some(SettingsAction::CycleGatewayModel {
+                                            return Some(SettingsAction::OpenGatewayModelChooser {
                                                 gateway_id,
                                                 target,
-                                                direction: 1,
                                             });
                                         }
                                     }
@@ -1718,7 +1701,7 @@ mod tests {
     }
 
     #[test]
-    fn gateway_detail_left_cycles_a_model_without_leaving_detail() {
+    fn gateway_detail_enter_opens_the_model_chooser_without_leaving_detail() {
         let mut state = state_with_workspaces(&["test"]);
         open_settings(&mut state);
         state.settings.gateways.view = GatewaySettingsView::Detail;
@@ -1727,15 +1710,14 @@ mod tests {
 
         let action = update_settings_state(
             &mut state,
-            KeyEvent::new(KeyCode::Left, KeyModifiers::empty()),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
         );
 
         assert_eq!(
             action,
-            Some(SettingsAction::CycleGatewayModel {
+            Some(SettingsAction::OpenGatewayModelChooser {
                 gateway_id: "mindshub".into(),
                 target: GatewayModelTarget::Codex,
-                direction: -1,
             })
         );
         assert_eq!(state.settings.gateways.view, GatewaySettingsView::Detail);
@@ -1769,10 +1751,9 @@ mod tests {
         ));
         assert_eq!(
             action,
-            Some(SettingsAction::CycleGatewayModel {
+            Some(SettingsAction::OpenGatewayModelChooser {
                 gateway_id: "mindshub".into(),
                 target: GatewayModelTarget::Codex,
-                direction: 1,
             })
         );
     }
@@ -2285,6 +2266,7 @@ mod tests {
             true,
         )];
         open_settings(&mut state);
+        state.view.terminal_area = Rect::new(0, 0, 100, 30);
 
         let inner = state.settings_inner_rect();
         let tab_y = inner.y + 1;

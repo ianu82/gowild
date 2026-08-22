@@ -32,14 +32,9 @@ impl App {
                 self.state.coding_agent_launch.move_field(1);
             }
             KeyCode::BackTab => self.state.coding_agent_launch.move_field(-1),
-            KeyCode::Left | KeyCode::Char('h') => self
-                .state
-                .coding_agent_launch
-                .cycle_selected(&self.state.gateway_catalog, -1),
-            KeyCode::Right | KeyCode::Char('l') => self
-                .state
-                .coding_agent_launch
-                .cycle_selected(&self.state.gateway_catalog, 1),
+            KeyCode::Left | KeyCode::Char('h') => self.cycle_or_choose_launch_field(-1),
+            KeyCode::Right | KeyCode::Char('l') => self.cycle_or_choose_launch_field(1),
+            KeyCode::Char('m') | KeyCode::Char('/') => self.open_launch_model_chooser(),
             KeyCode::Char('s') => crate::app::input::open_settings_at(
                 &mut self.state,
                 crate::app::state::SettingsSection::Gateways,
@@ -56,6 +51,16 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn cycle_or_choose_launch_field(&mut self, direction: i8) {
+        if self.state.coding_agent_launch.selected_field == CodingAgentLaunchField::Model {
+            self.open_launch_model_chooser();
+        } else {
+            self.state
+                .coding_agent_launch
+                .cycle_selected(&self.state.gateway_catalog, direction);
         }
     }
 
@@ -576,6 +581,44 @@ mod tests {
             app.state.settings.section,
             crate::app::state::SettingsSection::Gateways
         );
+    }
+
+    #[test]
+    fn launch_model_field_opens_search_instead_of_serial_cycling() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .model_discovery
+            .cached_models = vec![CachedModel {
+            id: "provider/searchable-model".into(),
+            label: Some("Searchable model".into()),
+            provider: Some("provider".into()),
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.coding_agent_launch.gateway_id = Some("mindshub".into());
+        app.state.coding_agent_launch.selected_field = CodingAgentLaunchField::Model;
+        let before = app.state.coding_agent_launch.model.clone();
+
+        app.handle_coding_agent_launch_key(KeyEvent::new(
+            KeyCode::Right,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(app.state.model_chooser.is_some());
+        assert_eq!(app.state.coding_agent_launch.model, before);
     }
 
     #[test]

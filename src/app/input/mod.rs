@@ -89,6 +89,10 @@ impl App {
             }
             return None;
         }
+        if self.state.model_chooser.is_some() {
+            self.handle_model_chooser_key(key_event);
+            return None;
+        }
 
         match self.state.mode {
             Mode::Terminal => return self.handle_terminal_key(key).await,
@@ -209,6 +213,9 @@ impl App {
     }
 
     pub(crate) fn paste_into_active_text_input(&mut self, text: &str) -> bool {
+        if self.state.model_chooser.is_some() {
+            return self.insert_model_chooser_query(text);
+        }
         match self.state.mode {
             Mode::RenameWorkspace | Mode::RenameTab | Mode::RenamePane => {
                 insert_rename_input_text(&mut self.state, text);
@@ -374,6 +381,10 @@ impl App {
             self.handle_popup_mouse(mouse);
             return;
         }
+        if self.state.model_chooser.is_some() {
+            self.handle_model_chooser_mouse(mouse);
+            return;
+        }
         if self.handle_overlay_mouse(mouse) {
             return;
         }
@@ -416,6 +427,7 @@ impl App {
             {
                 match action {
                     MouseAction::LaunchCodingAgent => self.launch_selected_coding_agent(),
+                    MouseAction::OpenLaunchModelChooser => self.open_launch_model_chooser(),
                     MouseAction::NewWorkspace => {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }
@@ -443,11 +455,9 @@ impl App {
                         SettingsAction::TestGateway(gateway_id) => {
                             self.start_gateway_test(&gateway_id)
                         }
-                        SettingsAction::CycleGatewayModel {
-                            gateway_id,
-                            target,
-                            direction,
-                        } => self.cycle_gateway_model(&gateway_id, target, direction),
+                        SettingsAction::OpenGatewayModelChooser { gateway_id, target } => {
+                            self.open_gateway_model_chooser(gateway_id, target)
+                        }
                         SettingsAction::AddCustomGateway(gateway) => {
                             let gateway_id = gateway.id.clone();
                             if self.add_custom_gateway(*gateway) {
@@ -796,6 +806,9 @@ pub(crate) fn is_modal_paste_shortcut(key: &KeyEvent) -> bool {
 }
 
 pub(crate) fn modal_paste_target_active(state: &AppState) -> bool {
+    if state.model_chooser.is_some() {
+        return true;
+    }
     match state.mode {
         Mode::RenameWorkspace | Mode::RenameTab | Mode::RenamePane | Mode::NewLinkedWorktree => {
             true
