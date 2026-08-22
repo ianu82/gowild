@@ -51,6 +51,55 @@ pub(crate) fn is_mobile_width(area: Rect, threshold: u16) -> bool {
     area.width > 0 && area.width <= threshold
 }
 
+enum MobileRouteIdentity<'a> {
+    Managed(&'a crate::terminal::GatewayAgentRoute),
+    Unmanaged,
+}
+
+fn active_route_identity(app: &AppState) -> Option<MobileRouteIdentity<'_>> {
+    let workspace = app.active.and_then(|index| app.workspaces.get(index))?;
+    let pane_id = workspace.focused_pane_id()?;
+    let terminal_id = workspace.terminal_id(pane_id)?;
+    let terminal = app.terminals.get(terminal_id)?;
+    if let Some(route) = terminal.gateway_agent_route.as_ref() {
+        return Some(MobileRouteIdentity::Managed(route));
+    }
+    matches!(
+        terminal.detected_agent,
+        Some(crate::detect::Agent::Codex | crate::detect::Agent::Claude)
+    )
+    .then_some(MobileRouteIdentity::Unmanaged)
+}
+
+fn mobile_route_lines(app: &AppState, width: u16) -> Vec<String> {
+    let width = width.saturating_sub(1) as usize;
+    match active_route_identity(app) {
+        Some(MobileRouteIdentity::Managed(route)) => [
+            format!(" ✓ {}", route.gateway_label()),
+            format!(" → {}", route.protocol_label()),
+            format!(" → {}", route.model),
+        ]
+        .into_iter()
+        .flat_map(|line| super::text::wrap_exact(&line, width))
+        .collect(),
+        Some(MobileRouteIdentity::Unmanaged) => vec![" ◇ unmanaged CLI".into()],
+        None => Vec::new(),
+    }
+}
+
+pub(crate) fn mobile_header_height(app: &AppState, area: Rect) -> u16 {
+    if area.height == 0 {
+        return 0;
+    }
+    if app.mode == crate::app::Mode::Navigate {
+        return area.height.min(2);
+    }
+    let switch_width = SWITCH_BUTTON_WIDTH.min(area.width);
+    let status_width = area.width.saturating_sub(switch_width).saturating_sub(1);
+    let desired = 2u16.saturating_add(mobile_route_lines(app, status_width).len() as u16);
+    desired.min(area.height)
+}
+
 pub(crate) fn compute_mobile_header_hit_areas(_app: &AppState, area: Rect) -> MobileHeaderHitAreas {
     if area.width == 0 || area.height == 0 {
         return MobileHeaderHitAreas::default();
@@ -364,6 +413,21 @@ fn render_header_status(
         frame.render_widget(
             Paragraph::new(agent_summary_line(app, p, area.width)),
             Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+    }
+    for (index, line) in mobile_route_lines(app, area.width)
+        .into_iter()
+        .take(area.height.saturating_sub(2) as usize)
+        .enumerate()
+    {
+        frame.render_widget(
+            Paragraph::new(line).style(
+                Style::default()
+                    .fg(p.accent)
+                    .bg(p.panel_bg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Rect::new(area.x, area.y + 2 + index as u16, area.width, 1),
         );
     }
 }
@@ -1228,6 +1292,65 @@ mod tests {
             tokens: std::collections::HashMap::new(),
             route_provenance: None,
         }
+    }
+
+    #[test]
+    fn compact_header_keeps_every_managed_route_value_visible() {
+        let mut app = AppState::test_new();
+        let workspace = crate::workspace::Workspace::test_new("Codex managed");
+        let pane_id = workspace.tabs[0].root_pane;
+        app.workspaces = vec![workspace];
+        app.ensure_test_terminals();
+        app.active = Some(0);
+        app.mode = crate::app::Mode::Terminal;
+        let terminal_id = app.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let model = "minds-labs/gowild-coding-model-2026-08";
+        app.terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .gateway_agent_route = Some(crate::terminal::GatewayAgentRoute::applied(
+            "codex",
+            "mindshub",
+            "MindsHub Inference",
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            model,
+        ));
+
+        let screen = Rect::new(0, 0, 64, 20);
+        let header_height = mobile_header_height(&app, screen);
+        assert_eq!(header_height, 5);
+        let header = Rect::new(0, 0, screen.width, header_height);
+        app.view.mobile_menu_hit_area = compute_mobile_header_hit_areas(&app, header).menu;
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
+            header.width,
+            header.height,
+        ))
+        .unwrap();
+        terminal
+            .draw(|frame| {
+                render_mobile_header(
+                    &app,
+                    &crate::terminal::TerminalRuntimeRegistry::new(),
+                    frame,
+                    header,
+                )
+            })
+            .unwrap();
+        let rendered = (0..header.height)
+            .map(|row| {
+                (0..header.width)
+                    .map(|column| terminal.backend().buffer()[(column, row)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("MindsHub Inference"), "{rendered}");
+        assert!(rendered.contains("OpenAI Responses"), "{rendered}");
+        assert!(rendered.contains(model), "{rendered}");
+        assert!(!rendered.contains('…'), "{rendered}");
     }
 
     #[test]

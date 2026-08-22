@@ -20,13 +20,25 @@ enum FieldAffordance {
 }
 
 pub(crate) fn coding_agent_launch_inner_rect(area: Rect) -> Option<Rect> {
-    let popup = centered_popup_rect(area, 74, 19)?;
+    let (width, height) = coding_agent_launch_popup_size(area);
+    let popup = centered_popup_rect(area, width, height)?;
     Some(Rect::new(
         popup.x + 1,
         popup.y + 1,
         popup.width.saturating_sub(2),
         popup.height.saturating_sub(2),
     ))
+}
+
+fn coding_agent_launch_popup_size(area: Rect) -> (u16, u16) {
+    if area.width >= 140 && area.height >= 38 {
+        (
+            (area.width * 2 / 3).clamp(90, 120),
+            (area.height * 2 / 5).clamp(21, 26),
+        )
+    } else {
+        (74, 19)
+    }
 }
 
 pub(crate) fn coding_agent_launch_field_rect(inner: Rect, index: usize) -> Rect {
@@ -60,7 +72,10 @@ pub(crate) fn coding_agent_launch_action_rects(inner: Rect) -> (Rect, Rect, Rect
 
 pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Frame, area: Rect) {
     super::dim_background(frame, area);
-    let Some(inner) = render_modal_shell(frame, area, 74, 19, &app.palette) else {
+    let compact = area.width < 80 || area.height < 22;
+    let (popup_width, popup_height) = coding_agent_launch_popup_size(area);
+    let Some(inner) = render_modal_shell(frame, area, popup_width, popup_height, &app.palette)
+    else {
         return;
     };
     if inner.width < 36 || inner.height < 14 {
@@ -107,15 +122,25 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
     ];
     for (index, (field, label, value, affordance)) in fields.into_iter().enumerate() {
         let row = coding_agent_launch_field_rect(inner, index);
-        render_route_field(
-            app,
-            frame,
-            row,
-            label,
-            value,
-            selection.selected_field == field,
-            affordance,
-        );
+        if compact && field == CodingAgentLaunchField::Model {
+            render_compact_model_field(
+                app,
+                frame,
+                Rect::new(row.x, row.y, row.width, 2),
+                value,
+                selection.selected_field == field,
+            );
+        } else {
+            render_route_field(
+                app,
+                frame,
+                row,
+                label,
+                value,
+                selection.selected_field == field,
+                affordance,
+            );
+        }
     }
 
     let protocol_y = inner.y + 8;
@@ -130,14 +155,24 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
     );
 
     let can_launch = selection.can_launch(&app.gateway_catalog);
-    let route = format!(
-        " {} → {} → {} → {}",
-        selection.cli_label(),
-        gateway_name,
-        selection.protocol().display_name(),
-        model
-    );
-    let route = truncate_end(&route, inner.width as usize);
+    let route = if compact {
+        if can_launch {
+            " ✓ route ready · exact values above".to_string()
+        } else {
+            " × route incomplete · exact values above".to_string()
+        }
+    } else {
+        truncate_end(
+            &format!(
+                " {} → {} → {} → {}",
+                selection.cli_label(),
+                gateway_name,
+                selection.protocol().display_name(),
+                model
+            ),
+            inner.width as usize,
+        )
+    };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             route,
@@ -199,7 +234,11 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
             },
             Span::styled(
                 if can_launch {
-                    "  m choose model  s gateway settings"
+                    if compact {
+                        "  m model  s settings"
+                    } else {
+                        "  m choose model  s gateway settings"
+                    }
                 } else {
                     " s fix route "
                 },
@@ -215,6 +254,33 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
             Span::styled("  esc cancel", Style::default().fg(app.palette.overlay1)),
         ])),
         Rect::new(inner.x, footer_y, inner.width, 1),
+    );
+}
+
+fn render_compact_model_field(
+    app: &AppState,
+    frame: &mut Frame,
+    area: Rect,
+    value: &str,
+    selected: bool,
+) {
+    let style = if selected {
+        Style::default()
+            .fg(app.palette.text)
+            .bg(app.palette.surface0)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(app.palette.text)
+    };
+    frame.render_widget(
+        Paragraph::new(format!(
+            " {} Model      {}",
+            if selected { "›" } else { " " },
+            value
+        ))
+        .style(style)
+        .wrap(ratatui::widgets::Wrap { trim: false }),
+        area,
     );
 }
 
@@ -293,6 +359,53 @@ mod tests {
             assert!(output.contains("OpenAI Responses"), "{width}×{height}");
             assert!(output.contains("routing-model"), "{width}×{height}");
         }
+    }
+
+    #[test]
+    fn launch_panel_has_compact_standard_and_wide_compositions() {
+        let compact = coding_agent_launch_inner_rect(Rect::new(0, 0, 64, 20)).unwrap();
+        let standard = coding_agent_launch_inner_rect(Rect::new(0, 0, 100, 30)).unwrap();
+        let wide_160 = coding_agent_launch_inner_rect(Rect::new(0, 0, 160, 45)).unwrap();
+        let wide_207 = coding_agent_launch_inner_rect(Rect::new(0, 0, 207, 62)).unwrap();
+
+        assert!(compact.width >= 56);
+        assert_eq!(standard.width, 72);
+        assert!(wide_160.width > standard.width);
+        assert!(wide_160.height > standard.height);
+        assert!(wide_207.width > wide_160.width);
+        assert!(wide_207.height > wide_160.height);
+    }
+
+    #[test]
+    fn compact_valid_route_keeps_full_model_and_every_action_visible() {
+        let mut app = AppState::test_new();
+        let model = "minds-labs/gowild-coding-model-2026-08";
+        app.gateway_catalog.default_gateway_id = Some("mindshub".into());
+        let gateway = app.gateway_catalog.gateways.get_mut("mindshub").unwrap();
+        gateway.default_models.insert("codex".into(), model.into());
+        gateway.model_discovery.cached_models = vec![crate::gateway::CachedModel {
+            id: model.into(),
+            label: Some("GoWild coding model".into()),
+            provider: Some("Minds Labs".into()),
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+        app.coding_agent_launch =
+            crate::app::state::CodingAgentLaunchState::new(&app.gateway_catalog);
+
+        let output = rendered(&app, 64, 20);
+
+        assert!(output.contains(model), "{output}");
+        assert!(
+            output.contains("✓ route ready · exact values above"),
+            "{output}"
+        );
+        assert!(output.contains("enter launch"), "{output}");
+        assert!(output.contains("m model"), "{output}");
+        assert!(output.contains("s settings"), "{output}");
+        assert!(output.contains("esc cancel"), "{output}");
+        assert!(!output.contains('…'), "{output}");
     }
 
     #[test]

@@ -39,6 +39,26 @@ pub(crate) fn middle_elide(text: &str, max_width: usize) -> String {
     format!("{prefix}…{suffix}")
 }
 
+pub(crate) fn wrap_exact(text: &str, max_width: usize) -> Vec<String> {
+    let max_width = max_width.max(1);
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    let mut width = 0usize;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0).max(1);
+        if width > 0 && width.saturating_add(ch_width) > max_width {
+            rows.push(std::mem::take(&mut row));
+            width = 0;
+        }
+        row.push(ch);
+        width = width.saturating_add(ch_width);
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    rows
+}
+
 fn take_prefix_width(text: &str, max_width: usize) -> String {
     let mut output = String::new();
     let mut width = 0usize;
@@ -85,5 +105,13 @@ mod tests {
 
         assert!(text.contains('…'));
         assert!(display_width(&text) <= 12);
+    }
+
+    #[test]
+    fn exact_wrap_preserves_every_character() {
+        let rows = wrap_exact("→ provider/models/相似-prefix-target", 12);
+
+        assert_eq!(rows.concat(), "→ provider/models/相似-prefix-target");
+        assert!(rows.iter().all(|row| display_width(row) <= 12));
     }
 }

@@ -584,7 +584,7 @@ pub(crate) fn guided_setup_launch_button_rects(area: Rect) -> (Rect, Rect) {
             },
         ],
         2,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(3),
     );
     (rects[0], rects[1])
 }
@@ -808,14 +808,13 @@ fn render_guided_setup(app: &AppState, frame: &mut Frame, area: Rect) {
             })
         });
     if let Some((notice, color)) = notice {
-        let notice_y = area.y.saturating_add(area.height.saturating_sub(1));
+        let notice_height = 2.min(area.height);
+        let notice_y = area.bottom().saturating_sub(notice_height);
         frame.render_widget(
-            Paragraph::new(format!(
-                " {}",
-                compact_text(notice, area.width.saturating_sub(1) as usize)
-            ))
-            .style(Style::default().fg(color)),
-            Rect::new(area.x, notice_y, area.width, 1),
+            Paragraph::new(format!(" {notice}"))
+                .style(Style::default().fg(color))
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            Rect::new(area.x, notice_y, area.width, notice_height),
         );
     }
 }
@@ -1951,6 +1950,35 @@ mod tests {
         assert!(rendered.contains("c Codex"));
         assert!(rendered.contains("l Claude"));
         assert!(rendered.contains("launch Codex"));
+    }
+
+    #[test]
+    fn guided_setup_wraps_complete_error_recovery_at_compact_size() {
+        let mut app = guided_settings_state(false);
+        app.settings
+            .gateways
+            .credential_status
+            .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+        app.settings.gateways.notice = Some(crate::app::state::GatewayNotice {
+            kind: GatewayNoticeKind::Error,
+            message: "MindsHub verification failed. Check the stored key and network, then press t to test again."
+                .into(),
+        });
+
+        let rendered = rendered_gateway_settings(&app, 64, 20);
+
+        assert!(
+            rendered.contains("MindsHub verification failed"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("network, then press t"), "{rendered}");
+        assert!(rendered.contains("to test again."), "{rendered}");
+
+        let area = Rect::new(0, 0, 56, 12);
+        let (codex, claude) = guided_setup_launch_button_rects(area);
+        let notice_y = area.bottom() - 2;
+        assert!(codex.bottom() <= notice_y);
+        assert!(claude.bottom() <= notice_y);
     }
 
     #[test]

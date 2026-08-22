@@ -565,27 +565,6 @@ pub(crate) fn agent_panel_body_rect(area: Rect, has_scrollbar: bool) -> Rect {
     Rect::new(area.x, body_y, body_width, body_height)
 }
 
-fn wrap_exact_text(value: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
-    let mut rows = Vec::new();
-    let mut row = String::new();
-    let mut row_width = 0usize;
-    for character in value.chars() {
-        let mut encoded = [0; 4];
-        let character_width = display_width(character.encode_utf8(&mut encoded)).max(1);
-        if row_width > 0 && row_width.saturating_add(character_width) > width {
-            rows.push(std::mem::take(&mut row));
-            row_width = 0;
-        }
-        row.push(character);
-        row_width = row_width.saturating_add(character_width);
-    }
-    if !row.is_empty() {
-        rows.push(row);
-    }
-    rows
-}
-
 fn route_provenance_rows(
     provenance: &AgentRouteProvenance,
     width: usize,
@@ -602,7 +581,7 @@ fn route_provenance_rows(
                     format!("→ {}", route.model),
                 ]
                 .into_iter()
-                .flat_map(|line| wrap_exact_text(&line, width))
+                .flat_map(|line| super::text::wrap_exact(&line, width))
                 .collect()
             }
         }
