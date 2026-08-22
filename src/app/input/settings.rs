@@ -41,6 +41,10 @@ pub(super) enum SettingsAction {
         gateway_id: String,
         credential_removal: CredentialRemoval,
     },
+    PauseGuidedSetup,
+    SkipGuidedSetup,
+    RefreshGuidedSetup,
+    LaunchGuidedAgent(crate::cli_adapter::CodingCli),
 }
 
 impl App {
@@ -91,6 +95,19 @@ impl App {
                     if self.delete_custom_gateway(&gateway_id, credential_removal) {
                         self.state.settings.gateways.credential_removal = CredentialRemoval::Keep;
                     }
+                }
+                SettingsAction::PauseGuidedSetup => cancel_settings(&mut self.state),
+                SettingsAction::SkipGuidedSetup => {
+                    self.mark_onboarding_complete();
+                    self.state.settings.guided_setup = false;
+                    cancel_settings(&mut self.state);
+                }
+                SettingsAction::RefreshGuidedSetup => {
+                    self.refresh_integration_recommendations();
+                    self.state.settings.guided_setup_error = None;
+                }
+                SettingsAction::LaunchGuidedAgent(cli) => {
+                    self.launch_guided_coding_agent(cli);
                 }
             }
         }
@@ -163,7 +180,7 @@ fn preview_selected_theme(state: &mut AppState) {
     }
 }
 
-fn cancel_settings(state: &mut AppState) {
+pub(super) fn cancel_settings(state: &mut AppState) {
     state.settings.gateways.secret_input.clear();
     state.settings.gateways.editing_credential = false;
     state.settings.gateways.gateway_form = None;
@@ -342,6 +359,9 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                 state.settings.gateways.secret_input.clear();
                 state.settings.gateways.editing_credential = false;
             }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                state.settings.gateways.secret_input.clear();
+            }
             KeyCode::Backspace => state.settings.gateways.secret_input.backspace(),
             KeyCode::Char(character)
                 if !key.modifiers.intersects(
@@ -358,6 +378,10 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
             _ => {}
         }
         return None;
+    }
+
+    if state.settings.guided_setup {
+        return update_guided_setup(state, key);
     }
 
     match state.settings.gateways.view {
@@ -551,6 +575,106 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
     None
 }
 
+pub(super) fn guided_setup_primary_action(state: &mut AppState) -> Option<SettingsAction> {
+    use crate::app::state::GuidedSetupStep;
+
+    if state.settings.gateways.editing_credential {
+        return Some(SettingsAction::SaveGatewayCredential("mindshub".into()));
+    }
+    match state.guided_setup_step() {
+        GuidedSetupStep::CliCheck => Some(SettingsAction::RefreshGuidedSetup),
+        GuidedSetupStep::ConnectMindshub => {
+            state.settings.gateways.secret_input.clear();
+            state.settings.gateways.editing_credential = true;
+            state.settings.gateways.notice = None;
+            None
+        }
+        GuidedSetupStep::VerifyMindshub => Some(SettingsAction::TestGateway("mindshub".into())),
+        GuidedSetupStep::ChooseCodexModel => Some(SettingsAction::CycleGatewayModel {
+            gateway_id: "mindshub".into(),
+            target: GatewayModelTarget::Codex,
+            direction: 1,
+        }),
+        GuidedSetupStep::ChooseClaudeModel => Some(SettingsAction::CycleGatewayModel {
+            gateway_id: "mindshub".into(),
+            target: GatewayModelTarget::Claude,
+            direction: 1,
+        }),
+        GuidedSetupStep::Launch => {
+            let cli = if state.guided_cli_available(crate::api::schema::IntegrationTarget::Codex) {
+                crate::cli_adapter::CodingCli::Codex
+            } else {
+                crate::cli_adapter::CodingCli::Claude
+            };
+            Some(SettingsAction::LaunchGuidedAgent(cli))
+        }
+    }
+}
+
+fn update_guided_setup(state: &mut AppState, key: KeyEvent) -> Option<SettingsAction> {
+    use crate::app::state::GuidedSetupStep;
+
+    match key.code {
+        KeyCode::Esc => return Some(SettingsAction::PauseGuidedSetup),
+        KeyCode::Char('q') => return Some(SettingsAction::SkipGuidedSetup),
+        KeyCode::Char('a') => {
+            state.settings.guided_setup = false;
+            begin_gateway_add(state);
+            return None;
+        }
+        KeyCode::Char('r') if state.guided_setup_step() == GuidedSetupStep::CliCheck => {
+            return Some(SettingsAction::RefreshGuidedSetup);
+        }
+        KeyCode::Char('t') if state.guided_setup_step() == GuidedSetupStep::VerifyMindshub => {
+            return Some(SettingsAction::TestGateway("mindshub".into()));
+        }
+        KeyCode::Char('c')
+            if state.guided_setup_step() == GuidedSetupStep::Launch
+                && state.guided_cli_available(crate::api::schema::IntegrationTarget::Codex) =>
+        {
+            return Some(SettingsAction::LaunchGuidedAgent(
+                crate::cli_adapter::CodingCli::Codex,
+            ));
+        }
+        KeyCode::Char('l')
+            if state.guided_setup_step() == GuidedSetupStep::Launch
+                && state.guided_cli_available(crate::api::schema::IntegrationTarget::Claude) =>
+        {
+            return Some(SettingsAction::LaunchGuidedAgent(
+                crate::cli_adapter::CodingCli::Claude,
+            ));
+        }
+        KeyCode::Left
+            if matches!(
+                state.guided_setup_step(),
+                GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel
+            ) =>
+        {
+            let target = if state.guided_setup_step() == GuidedSetupStep::ChooseCodexModel {
+                GatewayModelTarget::Codex
+            } else {
+                GatewayModelTarget::Claude
+            };
+            return Some(SettingsAction::CycleGatewayModel {
+                gateway_id: "mindshub".into(),
+                target,
+                direction: -1,
+            });
+        }
+        KeyCode::Right
+            if matches!(
+                state.guided_setup_step(),
+                GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel
+            ) =>
+        {
+            return guided_setup_primary_action(state);
+        }
+        KeyCode::Enter => return guided_setup_primary_action(state),
+        _ => {}
+    }
+    None
+}
+
 pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Option<SettingsAction> {
     match state.settings.section {
         SettingsSection::Gateways => return update_gateway_settings(state, key),
@@ -715,6 +839,8 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
     state.settings.gateways.view = GatewaySettingsView::List;
     state.settings.gateways.gateway_form = None;
     state.settings.gateways.notice = None;
+    state.settings.guided_setup = false;
+    state.settings.guided_setup_error = None;
     state.settings.list.selected = match section {
         SettingsSection::Gateways => 0,
         SettingsSection::Theme => current_theme_index(&state.theme_name),
@@ -725,6 +851,19 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
         SettingsSection::Integrations => 0,
     };
     state.mode = Mode::Settings;
+}
+
+pub(crate) fn open_guided_setup(state: &mut AppState) {
+    open_settings_at(state, SettingsSection::Gateways);
+    state.settings.guided_setup = true;
+    state.settings.gateways.view = GatewaySettingsView::Detail;
+    state.settings.gateways.detail_gateway_id = Some("mindshub".into());
+    state.settings.gateways.selected_gateway = state
+        .gateway_catalog
+        .gateways
+        .keys()
+        .position(|id| id == "mindshub")
+        .unwrap_or_default();
 }
 
 fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
@@ -879,28 +1018,75 @@ impl AppState {
     pub(super) fn handle_settings_mouse(&mut self, mouse: MouseEvent) -> Option<SettingsAction> {
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(section) = self.settings_tab_at(mouse.column, mouse.row) {
-                    if section != SettingsSection::Gateways {
-                        self.settings.gateways.secret_input.clear();
-                        self.settings.gateways.editing_credential = false;
-                        self.settings.gateways.view = GatewaySettingsView::List;
-                        self.settings.gateways.gateway_form = None;
-                        self.settings.gateways.credential_removal = CredentialRemoval::Keep;
+                if !self.settings.guided_setup {
+                    if let Some(section) = self.settings_tab_at(mouse.column, mouse.row) {
+                        if section != SettingsSection::Gateways {
+                            self.settings.gateways.secret_input.clear();
+                            self.settings.gateways.editing_credential = false;
+                            self.settings.gateways.view = GatewaySettingsView::List;
+                            self.settings.gateways.gateway_form = None;
+                            self.settings.gateways.credential_removal = CredentialRemoval::Keep;
+                        }
+                        self.settings.section = section;
+                        self.settings.list.select(match section {
+                            SettingsSection::Gateways => 0,
+                            SettingsSection::Theme => current_theme_index(&self.theme_name),
+                            SettingsSection::Indicators => {
+                                status_indicator_index(self.status_indicators)
+                            }
+                            SettingsSection::Sound => usize::from(!self.sound_enabled()),
+                            SettingsSection::Toast => toast_delivery_index(self.toast_delivery()),
+                            SettingsSection::PaneLabels => {
+                                usize::from(!self.agent_border_labels_enabled())
+                            }
+                            SettingsSection::Integrations => 0,
+                        });
+                        return None;
                     }
-                    self.settings.section = section;
-                    self.settings.list.select(match section {
-                        SettingsSection::Gateways => 0,
-                        SettingsSection::Theme => current_theme_index(&self.theme_name),
-                        SettingsSection::Indicators => {
-                            status_indicator_index(self.status_indicators)
+                }
+                if self.settings.guided_setup {
+                    let area = self.settings_content_rect();
+                    let (custom, skip) = crate::ui::guided_setup_aux_button_rects(area);
+                    if rect_contains(custom, mouse.column, mouse.row) {
+                        self.settings.guided_setup = false;
+                        begin_gateway_add(self);
+                        return None;
+                    }
+                    if rect_contains(skip, mouse.column, mouse.row) {
+                        return Some(SettingsAction::SkipGuidedSetup);
+                    }
+                    if self.guided_setup_step() == crate::app::state::GuidedSetupStep::Launch {
+                        let (codex, claude) = crate::ui::guided_setup_launch_button_rects(area);
+                        if rect_contains(codex, mouse.column, mouse.row)
+                            && self
+                                .guided_cli_available(crate::api::schema::IntegrationTarget::Codex)
+                        {
+                            return Some(SettingsAction::LaunchGuidedAgent(
+                                crate::cli_adapter::CodingCli::Codex,
+                            ));
                         }
-                        SettingsSection::Sound => usize::from(!self.sound_enabled()),
-                        SettingsSection::Toast => toast_delivery_index(self.toast_delivery()),
-                        SettingsSection::PaneLabels => {
-                            usize::from(!self.agent_border_labels_enabled())
+                        if rect_contains(claude, mouse.column, mouse.row)
+                            && self
+                                .guided_cli_available(crate::api::schema::IntegrationTarget::Claude)
+                        {
+                            return Some(SettingsAction::LaunchGuidedAgent(
+                                crate::cli_adapter::CodingCli::Claude,
+                            ));
                         }
-                        SettingsSection::Integrations => 0,
-                    });
+                    }
+                    let inner = self.settings_inner_rect();
+                    let (primary, close) = crate::ui::settings_button_rects(inner, self, true);
+                    if primary.is_some_and(|rect| rect_contains(rect, mouse.column, mouse.row)) {
+                        return guided_setup_primary_action(self);
+                    }
+                    if rect_contains(close, mouse.column, mouse.row) {
+                        if self.settings.gateways.editing_credential {
+                            self.settings.gateways.secret_input.clear();
+                            self.settings.gateways.editing_credential = false;
+                            return None;
+                        }
+                        return Some(SettingsAction::PauseGuidedSetup);
+                    }
                     return None;
                 }
                 let gateway_area = self.settings_content_rect();
@@ -1160,6 +1346,209 @@ mod tests {
 
     use super::super::{app_for_mouse_test, mouse, state_with_workspaces};
     use super::*;
+    use crate::app::state::GatewayCredentialStatus;
+
+    fn set_guided_cli_availability(state: &mut AppState, codex: bool, claude: bool) {
+        state.integration_recommendations = [
+            (crate::api::schema::IntegrationTarget::Codex, "codex", codex),
+            (
+                crate::api::schema::IntegrationTarget::Claude,
+                "claude",
+                claude,
+            ),
+        ]
+        .into_iter()
+        .map(
+            |(target, label, available)| crate::integration::IntegrationRecommendation {
+                target,
+                label,
+                command: label,
+                available,
+                path: std::path::PathBuf::from("/tmp/gowild-guided-test"),
+                state: crate::integration::IntegrationStatusKind::NotInstalled,
+            },
+        )
+        .collect();
+    }
+
+    fn mark_mindshub_verified(state: &mut AppState) {
+        use crate::gateway::{
+            CachedModel, ConnectionStatus, ConnectionTest, GatewayProtocol, ProtocolTest,
+        };
+
+        state
+            .settings
+            .gateways
+            .credential_status
+            .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+        let gateway = state.gateway_catalog.gateways.get_mut("mindshub").unwrap();
+        gateway.connection_test = ConnectionTest {
+            status: ConnectionStatus::Passed,
+            checked_at: Some("fixture".into()),
+            protocols: [
+                (
+                    GatewayProtocol::OpenAiResponses,
+                    ProtocolTest {
+                        status: ConnectionStatus::Passed,
+                        diagnostics: Vec::new(),
+                    },
+                ),
+                (
+                    GatewayProtocol::AnthropicMessages,
+                    ProtocolTest {
+                        status: ConnectionStatus::Passed,
+                        diagnostics: Vec::new(),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            diagnostics: Vec::new(),
+        };
+        gateway.model_discovery.cached_models = ["provider/codex", "provider/claude"]
+            .into_iter()
+            .map(|id| CachedModel {
+                id: id.into(),
+                label: None,
+                provider: Some("provider".into()),
+                enabled: true,
+                embedding: false,
+                reasoning_efforts: Vec::new(),
+            })
+            .collect();
+    }
+
+    #[test]
+    fn guided_setup_resumes_at_each_incomplete_durable_step() {
+        let mut state = state_with_workspaces(&["test"]);
+        set_guided_cli_availability(&mut state, true, true);
+        open_guided_setup(&mut state);
+
+        assert_eq!(
+            state.guided_setup_step(),
+            crate::app::state::GuidedSetupStep::ConnectMindshub
+        );
+        assert_eq!(guided_setup_primary_action(&mut state), None);
+        assert!(state.settings.gateways.editing_credential);
+
+        state.settings.gateways.editing_credential = false;
+        state
+            .settings
+            .gateways
+            .credential_status
+            .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+        assert_eq!(
+            state.guided_setup_step(),
+            crate::app::state::GuidedSetupStep::VerifyMindshub
+        );
+        assert_eq!(
+            update_guided_setup(
+                &mut state,
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE)
+            ),
+            Some(SettingsAction::TestGateway("mindshub".into()))
+        );
+
+        mark_mindshub_verified(&mut state);
+        assert_eq!(
+            state.guided_setup_step(),
+            crate::app::state::GuidedSetupStep::ChooseCodexModel
+        );
+        state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .default_models
+            .insert("codex".into(), "provider/codex".into());
+        assert_eq!(
+            state.guided_setup_step(),
+            crate::app::state::GuidedSetupStep::ChooseClaudeModel
+        );
+        state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .default_models
+            .insert("claude".into(), "provider/claude".into());
+        assert_eq!(
+            state.guided_setup_step(),
+            crate::app::state::GuidedSetupStep::Launch
+        );
+        assert_eq!(
+            update_guided_setup(
+                &mut state,
+                KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)
+            ),
+            Some(SettingsAction::LaunchGuidedAgent(
+                crate::cli_adapter::CodingCli::Codex
+            ))
+        );
+    }
+
+    #[test]
+    fn guided_setup_credential_shortcuts_match_the_visible_footer() {
+        let mut state = state_with_workspaces(&["test"]);
+        set_guided_cli_availability(&mut state, true, false);
+        open_guided_setup(&mut state);
+        guided_setup_primary_action(&mut state);
+        state
+            .settings
+            .gateways
+            .secret_input
+            .insert("debug-only-key");
+
+        assert_eq!(
+            update_gateway_settings(
+                &mut state,
+                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)
+            ),
+            None
+        );
+        assert!(state.settings.gateways.secret_input.is_empty());
+        assert!(state.settings.gateways.editing_credential);
+
+        assert_eq!(
+            update_gateway_settings(&mut state, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            None
+        );
+        assert!(!state.settings.gateways.editing_credential);
+        assert_eq!(state.mode, Mode::Settings);
+    }
+
+    #[test]
+    fn guided_setup_mouse_primary_and_skip_match_the_rendered_buttons() {
+        let mut state = state_with_workspaces(&["test"]);
+        state.view.sidebar_rect = Rect::new(0, 0, 0, 24);
+        state.view.terminal_area = Rect::new(0, 0, 80, 24);
+        set_guided_cli_availability(&mut state, true, false);
+        open_guided_setup(&mut state);
+
+        let inner = state.settings_inner_rect();
+        let (primary, _) = crate::ui::settings_button_rects(inner, &state, true);
+        let primary = primary.unwrap();
+        assert_eq!(
+            state.handle_settings_mouse(mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                primary.x,
+                primary.y
+            )),
+            None
+        );
+        assert!(state.settings.gateways.editing_credential);
+
+        state.settings.gateways.editing_credential = false;
+        let (_, skip) = crate::ui::guided_setup_aux_button_rects(state.settings_content_rect());
+        assert_eq!(
+            state.handle_settings_mouse(mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                skip.x,
+                skip.y
+            )),
+            Some(SettingsAction::SkipGuidedSetup)
+        );
+    }
 
     #[test]
     fn settings_cancel_restores_previewed_theme_from_other_sections() {

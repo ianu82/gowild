@@ -524,7 +524,9 @@ impl App {
         let startup_product_announcement =
             crate::product_announcements::load_unseen_for_current_version();
 
-        let mode = if config.should_show_onboarding() {
+        let mode = if config.onboarding == Some(true) {
+            state::Mode::Settings
+        } else if config.should_show_onboarding() {
             state::Mode::Onboarding
         } else if startup_product_announcement.is_some() {
             state::Mode::ProductAnnouncement
@@ -582,6 +584,16 @@ impl App {
             }
             gateway_settings
         };
+        let mut gateway_settings = gateway_settings;
+        if config.onboarding == Some(true) {
+            gateway_settings.view = state::GatewaySettingsView::Detail;
+            gateway_settings.detail_gateway_id = Some("mindshub".into());
+            gateway_settings.selected_gateway = gateway_catalog
+                .gateways
+                .keys()
+                .position(|id| id == "mindshub")
+                .unwrap_or_default();
+        }
         let config_diagnostic = match (config_diagnostic, gateway_config_error) {
             (Some(config), Some(gateway)) => Some(format!("{config}; {gateway}")),
             (Some(config), None) => Some(config),
@@ -742,6 +754,8 @@ impl App {
                 original_palette: None,
                 original_theme: None,
                 gateways: gateway_settings,
+                guided_setup: config.onboarding == Some(true),
+                guided_setup_error: None,
             },
             coding_agent_launch: state::CodingAgentLaunchState::new(&gateway_catalog),
             gateway_catalog,
@@ -1395,9 +1409,9 @@ impl App {
     }
 
     pub(crate) fn open_settings_from_onboarding(&mut self) {
-        self.mark_onboarding_complete();
+        self.mark_onboarding_started();
         self.refresh_integration_recommendations();
-        crate::app::input::open_settings_at(&mut self.state, state::SettingsSection::Gateways);
+        crate::app::input::open_guided_setup(&mut self.state);
     }
 
     pub(crate) fn refresh_integration_recommendations(&mut self) {
@@ -6196,6 +6210,59 @@ last_pane = "prefix+tab"
 
         assert_eq!(app.state.mode, Mode::Settings);
         assert_eq!(app.state.settings.section, state::SettingsSection::Gateways);
+        assert!(app.state.settings.guided_setup);
+        assert_eq!(
+            app.state.settings.gateways.detail_gateway_id.as_deref(),
+            Some("mindshub")
+        );
+    }
+
+    #[test]
+    fn onboarding_true_resumes_the_guided_setup_instead_of_replaying_welcome() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(
+            &Config {
+                onboarding: Some(true),
+                ..Config::default()
+            },
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+
+        assert_eq!(app.state.mode, Mode::Settings);
+        assert!(app.state.settings.guided_setup);
+        assert_eq!(
+            app.state.settings.gateways.detail_gateway_id.as_deref(),
+            Some("mindshub")
+        );
+    }
+
+    #[test]
+    fn onboarding_progress_persists_until_an_explicit_skip_or_success() {
+        let _guard = config_env_lock().lock().unwrap();
+        let path = temp_config_path("guided-onboarding-progress");
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+        let mut app = test_app();
+        app.state.mode = Mode::Onboarding;
+
+        app.open_settings_from_onboarding();
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("onboarding = true"));
+
+        app.handle_settings_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('q'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("onboarding = false"));
+        assert!(!app.state.settings.guided_setup);
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

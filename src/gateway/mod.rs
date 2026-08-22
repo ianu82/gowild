@@ -19,12 +19,12 @@ pub(crate) use credentials::CredentialStoreError;
 pub(crate) use credentials::{
     Credential, CredentialBackend, CredentialRemoval, CredentialStore, SystemCredentialStore,
 };
-#[cfg(test)]
-pub(crate) use model::CachedModel;
 pub(crate) use model::{
     AuthenticationMode, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature, GatewayPreset,
     GatewayProtocol, ValidationError, MINDSHUB_RESPONSES_BASE_URL,
 };
+#[cfg(test)]
+pub(crate) use model::{CachedModel, ConnectionTest, ProtocolTest};
 pub(crate) use redact::redact;
 pub(crate) use repository::GatewayRepository;
 pub(crate) use service::{GatewayInspection, GatewayTester, GatewayTesterError};
