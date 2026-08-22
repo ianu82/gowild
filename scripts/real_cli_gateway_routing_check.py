@@ -7,9 +7,11 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 
@@ -41,6 +43,10 @@ class RecordingServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), RecordingHandler)
         self.requests: list[CapturedRequest] = []
         self.requests_lock = threading.Lock()
+        self.codex_tool_output_seen = False
+        self.codex_tool_secret_seen = False
+        self.codex_tool_environment_filtered = False
+        self.codex_tool_environment_leaked = False
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
@@ -77,6 +83,28 @@ class RecordingHandler(BaseHTTPRequestHandler):
         with server.requests_lock:
             server.requests.append(request)
 
+        if "codex" in request.user_agent.lower():
+            tool_outputs = [
+                item.get("output")
+                for item in body.get("input", [])
+                if isinstance(item, dict) and item.get("type") == "function_call_output"
+            ]
+            serialized_tool_outputs = json.dumps(tool_outputs)
+            tool_output_seen = bool(tool_outputs)
+            with server.requests_lock:
+                server.codex_tool_output_seen |= tool_output_seen
+                server.codex_tool_secret_seen |= (
+                    tool_output_seen and FAKE_SECRET in serialized_tool_outputs
+                )
+                server.codex_tool_environment_filtered |= (
+                    tool_output_seen and "GOWILD_ENV_FILTERED" in serialized_tool_outputs
+                )
+                server.codex_tool_environment_leaked |= (
+                    tool_output_seen and "GOWILD_ENV_LEAKED" in serialized_tool_outputs
+                )
+            self.send_codex_response(tool_output_seen)
+            return
+
         payload = json.dumps(
             {
                 "type": "error",
@@ -91,6 +119,118 @@ class RecordingHandler(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def send_codex_response(self, tool_output_seen: bool) -> None:
+        if tool_output_seen:
+            item = {
+                "id": "msg_gowild_routing_check",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": "ROUTED", "annotations": []}
+                ],
+            }
+        else:
+            command = (
+                "printf 'ROUTED' > route-proof.txt && cat route-proof.txt && "
+                "if [ -z \"${GOWILD_CODEX_API_KEY+x}\" ] && "
+                "[ -z \"${GOWILD_API_KEY+x}\" ]; then "
+                "printf '\\nGOWILD_ENV_FILTERED\\n'; else "
+                "printf '\\nGOWILD_ENV_LEAKED\\n'; fi"
+            )
+            item = {
+                "id": "fc_gowild_routing_check",
+                "type": "function_call",
+                "call_id": "call_gowild_routing_check",
+                "name": "shell_command",
+                "arguments": json.dumps({"command": command}),
+                "status": "completed",
+            }
+
+        response = {
+            "id": "resp_gowild_routing_check",
+            "object": "response",
+            "status": "completed",
+            "model": FAKE_MODEL,
+            "output": [item],
+            "parallel_tool_calls": True,
+            "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        }
+        initial = dict(response)
+        initial["status"] = "in_progress"
+        initial["output"] = []
+        events: list[dict[str, Any]] = [
+            {"type": "response.created", "response": initial},
+            {"type": "response.in_progress", "response": initial},
+            {"type": "response.output_item.added", "output_index": 0, "item": item},
+        ]
+        if item["type"] == "function_call":
+            events.extend(
+                [
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "delta": item["arguments"],
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "arguments": item["arguments"],
+                    },
+                ]
+            )
+        else:
+            part = item["content"][0]
+            events.extend(
+                [
+                    {
+                        "type": "response.content_part.added",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "content_index": 0,
+                        "part": part,
+                    },
+                    {
+                        "type": "response.output_text.delta",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": "ROUTED",
+                    },
+                    {
+                        "type": "response.output_text.done",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "content_index": 0,
+                        "text": "ROUTED",
+                    },
+                    {
+                        "type": "response.content_part.done",
+                        "item_id": item["id"],
+                        "output_index": 0,
+                        "content_index": 0,
+                        "part": part,
+                    },
+                ]
+            )
+        events.extend(
+            [
+                {"type": "response.output_item.done", "output_index": 0, "item": item},
+                {"type": "response.completed", "response": response},
+            ]
+        )
+        payload = "".join(
+            f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events
+        ) + "data: [DONE]\n\n"
+        encoded = payload.encode()
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.send_header("content-length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def log_message(self, _format: str, *_args: object) -> None:
         return
@@ -116,10 +256,13 @@ def command_environment(
     return environment
 
 
-def run_command(command: list[str], environment: dict[str, str]) -> str:
+def run_command(
+    command: list[str], environment: dict[str, str], *, cwd: str | None = None
+) -> str:
     try:
         result = subprocess.run(
             command,
+            cwd=cwd,
             env=environment,
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -153,6 +296,10 @@ def codex_command(executable: str, base_url: str) -> list[str]:
         "-c",
         'model_providers.gowild.env_key="GOWILD_CODEX_API_KEY"',
         "-c",
+        "features.shell_snapshot=false",
+        "-c",
+        "shell_environment_policy.ignore_default_excludes=false",
+        "-c",
         'model_provider="gowild"',
         "-c",
         f'model="{FAKE_MODEL}"',
@@ -161,6 +308,8 @@ def codex_command(executable: str, base_url: str) -> list[str]:
         "--ignore-user-config",
         "--ignore-rules",
         "--skip-git-repo-check",
+        "--sandbox",
+        "workspace-write",
         "--color",
         "never",
         "Reply with only ROUTED.",
@@ -210,6 +359,13 @@ def require_request(
         raise RuntimeError(f"{user_agent_marker} used a credential other than the gateway key")
 
 
+def require_secret_absent(root: Path) -> None:
+    encoded = FAKE_SECRET.encode()
+    for path in root.rglob("*"):
+        if path.is_file() and encoded in path.read_bytes():
+            raise RuntimeError(f"Codex persisted the gateway credential in {path.relative_to(root)}")
+
+
 def main() -> None:
     codex = shutil.which("codex")
     claude = shutil.which("claude")
@@ -224,13 +380,30 @@ def main() -> None:
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_port}"
     try:
-        codex_output = run_command(
-            codex_command(codex, base_url),
-            command_environment(
-                remove=("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"),
-                set_values={"GOWILD_CODEX_API_KEY": FAKE_SECRET},
-            ),
-        )
+        with (
+            tempfile.TemporaryDirectory(prefix="gowild-codex-routing-") as codex_home,
+            tempfile.TemporaryDirectory(prefix="gowild-codex-worktree-") as codex_worktree,
+        ):
+            codex_output = run_command(
+                codex_command(codex, base_url),
+                command_environment(
+                    remove=(
+                        "OPENAI_API_KEY",
+                        "CODEX_API_KEY",
+                        "CODEX_ACCESS_TOKEN",
+                        "GOWILD_API_KEY",
+                    ),
+                    set_values={
+                        "CODEX_HOME": codex_home,
+                        "GOWILD_CODEX_API_KEY": FAKE_SECRET,
+                    },
+                ),
+                cwd=codex_worktree,
+            )
+            require_secret_absent(Path(codex_home))
+            proof = Path(codex_worktree, "route-proof.txt")
+            if proof.read_text() != "ROUTED":
+                raise RuntimeError("Codex did not complete the loopback file-edit tool call")
         if "provider: gowild" not in codex_output:
             raise RuntimeError("Codex did not report the reserved GoWild provider")
 
@@ -259,8 +432,22 @@ def main() -> None:
 
         with server.requests_lock:
             requests = list(server.requests)
+            codex_tool_output_seen = server.codex_tool_output_seen
+            codex_tool_secret_seen = server.codex_tool_secret_seen
+            codex_tool_environment_filtered = server.codex_tool_environment_filtered
+            codex_tool_environment_leaked = server.codex_tool_environment_leaked
         require_request(requests, path="/v1/responses", user_agent_marker="codex")
         require_request(requests, path="/v1/messages", user_agent_marker="claude")
+        if not codex_tool_output_seen:
+            raise RuntimeError("Codex did not return the loopback shell tool result")
+        if codex_tool_secret_seen:
+            raise RuntimeError("Codex exposed the gateway credential to its shell tool")
+        if not codex_tool_environment_filtered or codex_tool_environment_leaked:
+            raise RuntimeError(
+                "Codex did not exclude GoWild keys from its shell environment "
+                f"(filtered_marker={codex_tool_environment_filtered}, "
+                f"leaked_marker={codex_tool_environment_leaked})"
+            )
     finally:
         server.shutdown()
         server.server_close()
