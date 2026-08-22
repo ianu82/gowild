@@ -50,30 +50,57 @@ struct VisibleStatusSegment<'a> {
     accent: bool,
 }
 
+fn active_cli_route_status(app: &AppState) -> Option<VisibleStatusSegment<'static>> {
+    let workspace = app.active.and_then(|index| app.workspaces.get(index))?;
+    let pane_id = workspace.focused_pane_id()?;
+    let terminal_id = workspace.terminal_id(pane_id)?;
+    let terminal = app.terminals.get(terminal_id)?;
+    if terminal.gateway_agent_route.is_some() {
+        return Some(VisibleStatusSegment {
+            text: "✓ managed",
+            accent: true,
+        });
+    }
+    matches!(
+        terminal.detected_agent,
+        Some(crate::detect::Agent::Codex | crate::detect::Agent::Claude)
+    )
+    .then_some(VisibleStatusSegment {
+        text: "◇ unmanaged",
+        accent: false,
+    })
+}
+
 fn visible_status_segments(app: &AppState) -> Vec<VisibleStatusSegment<'_>> {
     let zoomed = app
         .active
         .and_then(|index| app.workspaces.get(index))
         .is_some_and(|workspace| workspace.zoomed);
-    app.tab_bar_right
-        .iter()
-        .filter_map(|segment| match segment {
-            crate::app::state::TabBarStatusSegment::Zoom if zoomed => Some(VisibleStatusSegment {
-                text: ZOOM_INDICATOR,
-                accent: true,
-            }),
-            crate::app::state::TabBarStatusSegment::Text(Some(text))
-                if display_width_u16(text) > 0 =>
-            {
-                Some(VisibleStatusSegment {
-                    text,
-                    accent: false,
-                })
-            }
-            crate::app::state::TabBarStatusSegment::Zoom
-            | crate::app::state::TabBarStatusSegment::Text(_) => None,
-        })
-        .collect()
+    let mut segments = active_cli_route_status(app).into_iter().collect::<Vec<_>>();
+    segments.extend(
+        app.tab_bar_right
+            .iter()
+            .filter_map(|segment| match segment {
+                crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
+                    Some(VisibleStatusSegment {
+                        text: ZOOM_INDICATOR,
+                        accent: true,
+                    })
+                }
+                crate::app::state::TabBarStatusSegment::Text(Some(text))
+                    if display_width_u16(text) > 0 =>
+                {
+                    Some(VisibleStatusSegment {
+                        text,
+                        accent: false,
+                    })
+                }
+                crate::app::state::TabBarStatusSegment::Zoom
+                | crate::app::state::TabBarStatusSegment::Text(_) => None,
+            })
+            .collect::<Vec<_>>(),
+    );
+    segments
 }
 
 fn tab_bar_status_width(app: &AppState) -> u16 {
@@ -582,6 +609,54 @@ mod tests {
         for rect in &view.tab_hit_areas {
             assert!(rect.x + rect.width <= content.x + content.width);
         }
+    }
+
+    #[test]
+    fn tab_bar_distinguishes_managed_and_unmanaged_coding_clis() {
+        let mut app = AppState::test_new();
+        let workspace = Workspace::test_new("test");
+        let pane_id = workspace.tabs[0].root_pane;
+        app.workspaces = vec![workspace];
+        app.active = Some(0);
+        app.ensure_test_terminals();
+        let terminal_id = app.workspaces[0].terminal_id(pane_id).unwrap().clone();
+        app.terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .gateway_agent_route = Some(crate::terminal::GatewayAgentRoute::applied(
+            "codex",
+            "mindshub",
+            "MindsHub Inference",
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            "route-model",
+        ));
+        app.view.tab_bar_rect = Rect::new(0, 0, 60, 1);
+        let content = tab_bar_content_area(&app, app.view.tab_bar_rect);
+        let view = compute_tab_bar_view(&app.workspaces[0], content, 0, true, false);
+        app.view.tab_hit_areas = view.tab_hit_areas;
+
+        let mut managed = Terminal::new(TestBackend::new(60, 1)).unwrap();
+        managed
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+        let managed_row = buffer_row_text(managed.backend().buffer(), app.view.tab_bar_rect, 0);
+        assert!(
+            managed_row.ends_with("✓ managed"),
+            "tab row: {managed_row:?}"
+        );
+
+        let terminal = app.terminals.get_mut(&terminal_id).unwrap();
+        terminal.gateway_agent_route = None;
+        terminal.detected_agent = Some(crate::detect::Agent::Codex);
+        let mut unmanaged = Terminal::new(TestBackend::new(60, 1)).unwrap();
+        unmanaged
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+        let unmanaged_row = buffer_row_text(unmanaged.backend().buffer(), app.view.tab_bar_rect, 0);
+        assert!(
+            unmanaged_row.ends_with("◇ unmanaged"),
+            "tab row: {unmanaged_row:?}"
+        );
     }
 
     #[test]

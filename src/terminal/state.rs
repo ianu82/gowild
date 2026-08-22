@@ -18,7 +18,62 @@ pub use metadata::{AgentMetadata, AgentMetadataReport, EffectivePresentation};
 pub struct GatewayAgentRoute {
     pub cli: String,
     pub gateway_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub gateway_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub protocol: String,
     pub model: String,
+}
+
+impl GatewayAgentRoute {
+    pub(crate) fn applied(
+        cli: impl Into<String>,
+        gateway_id: impl Into<String>,
+        gateway_name: impl Into<String>,
+        protocol: crate::gateway::GatewayProtocol,
+        model: impl Into<String>,
+    ) -> Self {
+        Self {
+            cli: cli.into(),
+            gateway_id: gateway_id.into(),
+            gateway_name: gateway_name.into(),
+            protocol: protocol.display_name().to_string(),
+            model: model.into(),
+        }
+    }
+
+    pub(crate) fn gateway_label(&self) -> &str {
+        if self.gateway_name.is_empty() {
+            &self.gateway_id
+        } else {
+            &self.gateway_name
+        }
+    }
+
+    pub(crate) fn cli_label(&self) -> &str {
+        match self.cli.as_str() {
+            "codex" => "Codex CLI",
+            "claude" => "Claude Code",
+            _ => &self.cli,
+        }
+    }
+
+    pub(crate) fn protocol_label(&self) -> &str {
+        if self.protocol.is_empty() {
+            "protocol unavailable"
+        } else {
+            &self.protocol
+        }
+    }
+
+    pub(crate) fn signature(&self) -> String {
+        format!(
+            "{} · {} · {}",
+            self.gateway_label(),
+            self.protocol_label(),
+            self.model
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2195,6 +2250,40 @@ mod tests {
 
     fn test_terminal() -> TerminalState {
         TerminalState::new(TerminalId::alloc(), "/tmp".into())
+    }
+
+    #[test]
+    fn applied_gateway_route_keeps_complete_structured_identity() {
+        let route = GatewayAgentRoute::applied(
+            "codex",
+            "mindshub",
+            "MindsHub Inference",
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            "provider/a-very-long-model-id",
+        );
+
+        assert_eq!(route.cli_label(), "Codex CLI");
+        assert_eq!(route.gateway_label(), "MindsHub Inference");
+        assert_eq!(route.protocol_label(), "OpenAI Responses");
+        assert_eq!(
+            route.signature(),
+            "MindsHub Inference · OpenAI Responses · provider/a-very-long-model-id"
+        );
+
+        let restored: GatewayAgentRoute =
+            serde_json::from_str(&serde_json::to_string(&route).unwrap()).unwrap();
+        assert_eq!(restored, route);
+    }
+
+    #[test]
+    fn legacy_gateway_route_is_truthful_about_missing_protocol_metadata() {
+        let route: GatewayAgentRoute = serde_json::from_str(
+            r#"{"cli":"codex","gateway_id":"mindshub","model":"legacy-model"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(route.gateway_label(), "mindshub");
+        assert_eq!(route.protocol_label(), "protocol unavailable");
     }
 
     fn test_session_path(name: &str) -> String {

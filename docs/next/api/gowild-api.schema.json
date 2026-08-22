@@ -757,6 +757,34 @@
           ],
           "type": "string"
         },
+        "ManagedAgentRouteInfo": {
+          "description": "The exact gateway route GoWild applied when launching or resuming an agent.\n\nThis is deliberately separate from screen-derived agent detection. Its\npresence is the authoritative signal that the CLI is managed by GoWild.",
+          "properties": {
+            "cli": {
+              "type": "string"
+            },
+            "gateway_id": {
+              "type": "string"
+            },
+            "gateway_name": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "protocol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cli",
+            "gateway_id",
+            "gateway_name",
+            "protocol",
+            "model"
+          ],
+          "type": "object"
+        },
         "PaneInfo": {
           "properties": {
             "agent": {
@@ -803,6 +831,16 @@
               "type": [
                 "string",
                 "null"
+              ]
+            },
+            "managed_agent_route": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/event/$defs/ManagedAgentRouteInfo"
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
             "pane_id": {
@@ -6158,6 +6196,16 @@
             "launch_pending": {
               "type": "boolean"
             },
+            "managed_agent_route": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ManagedAgentRouteInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "name": {
               "type": [
                 "string",
@@ -7300,6 +7348,34 @@
             }
           ]
         },
+        "ManagedAgentRouteInfo": {
+          "description": "The exact gateway route GoWild applied when launching or resuming an agent.\n\nThis is deliberately separate from screen-derived agent detection. Its\npresence is the authoritative signal that the CLI is managed by GoWild.",
+          "properties": {
+            "cli": {
+              "type": "string"
+            },
+            "gateway_id": {
+              "type": "string"
+            },
+            "gateway_name": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "protocol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cli",
+            "gateway_id",
+            "gateway_name",
+            "protocol",
+            "model"
+          ],
+          "type": "object"
+        },
         "NotificationShowReason": {
           "enum": [
             "shown",
@@ -7437,6 +7513,16 @@
               "type": [
                 "string",
                 "null"
+              ]
+            },
+            "managed_agent_route": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ManagedAgentRouteInfo"
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
             "pane_id": {

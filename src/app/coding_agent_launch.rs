@@ -155,11 +155,14 @@ impl App {
                 self.state.host_terminal_appearance,
             )
             .map_err(|error| format!("Could not launch {}: {error}", selection.cli_label()))?;
-        let terminal = terminal.with_gateway_agent_route(crate::terminal::GatewayAgentRoute {
-            cli: selection.cli.id().to_string(),
-            gateway_id: gateway_id.to_string(),
-            model: model.to_string(),
-        });
+        let terminal =
+            terminal.with_gateway_agent_route(crate::terminal::GatewayAgentRoute::applied(
+                selection.cli.id(),
+                gateway_id,
+                gateway_name,
+                protocol,
+                model,
+            ));
 
         let root_pane = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
         self.state.workspaces[ws_idx].tabs[tab_idx]
@@ -714,6 +717,8 @@ mod tests {
             Some(&crate::terminal::GatewayAgentRoute {
                 cli: "codex".into(),
                 gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "OpenAI Responses".into(),
                 model: "codex-route-model".into(),
             })
         );
@@ -734,6 +739,8 @@ mod tests {
             Some(&crate::terminal::GatewayAgentRoute {
                 cli: "claude".into(),
                 gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "Anthropic Messages".into(),
                 model: "claude-route-model".into(),
             })
         );

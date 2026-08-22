@@ -656,6 +656,8 @@ mod tests {
                 gateway_agent_route: Some(crate::terminal::GatewayAgentRoute {
                     cli: "codex".into(),
                     gateway_id: "mindshub".into(),
+                    gateway_name: "MindsHub Inference".into(),
+                    protocol: "OpenAI Responses".into(),
                     model: "minds/agentic-coding".into(),
                 }),
             },
@@ -732,6 +734,8 @@ mod tests {
             Some(&crate::terminal::GatewayAgentRoute {
                 cli: "codex".into(),
                 gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "OpenAI Responses".into(),
                 model: "minds/agentic-coding".into(),
             })
         );

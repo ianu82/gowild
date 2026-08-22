@@ -464,6 +464,10 @@ impl App {
             state_labels: presentation.state_labels,
             tokens: terminal.metadata_tokens.values(),
             agent_session: terminal_agent_session_info(terminal),
+            managed_agent_route: terminal
+                .gateway_agent_route
+                .as_ref()
+                .map(managed_agent_route_info),
             scroll,
             revision: terminal.revision,
         })
@@ -540,4 +544,16 @@ fn terminal_agent_session_info(
             kind: session.session_ref.kind,
             value: session.session_ref.value.clone(),
         })
+}
+
+fn managed_agent_route_info(
+    route: &crate::terminal::GatewayAgentRoute,
+) -> crate::api::schema::ManagedAgentRouteInfo {
+    crate::api::schema::ManagedAgentRouteInfo {
+        cli: route.cli.clone(),
+        gateway_id: route.gateway_id.clone(),
+        gateway_name: route.gateway_name.clone(),
+        protocol: route.protocol.clone(),
+        model: route.model.clone(),
+    }
 }

@@ -6876,6 +6876,60 @@ next_tab = ""
     }
 
     #[test]
+    fn managed_route_survives_terminal_detach_and_reattach() {
+        with_terminal_session_test_server(|server, terminal_id, terminal_id_string, _| {
+            let expected = api::schema::ManagedAgentRouteInfo {
+                cli: "claude".into(),
+                gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "Anthropic Messages".into(),
+                model: "provider/team/claude-compatible-model".into(),
+            };
+            server
+                .app
+                .state
+                .terminals
+                .get_mut(&terminal_id)
+                .expect("terminal")
+                .gateway_agent_route = Some(crate::terminal::GatewayAgentRoute::applied(
+                "claude",
+                "mindshub",
+                "MindsHub Inference",
+                crate::gateway::GatewayProtocol::AnthropicMessages,
+                "provider/team/claude-compatible-model",
+            ));
+
+            connect_pending_terminal_client(server, 7);
+            assert!(
+                server.handle_server_event(ServerEvent::ClientControlTerminal {
+                    client_id: 7,
+                    target: terminal_id_string.clone(),
+                    takeover: false,
+                })
+            );
+            assert_eq!(
+                headless_pane_list(server)[0].managed_agent_route.as_ref(),
+                Some(&expected)
+            );
+
+            assert!(server.handle_server_event(ServerEvent::ClientDetach { client_id: 7 }));
+
+            connect_pending_terminal_client(server, 8);
+            assert!(
+                server.handle_server_event(ServerEvent::ClientControlTerminal {
+                    client_id: 8,
+                    target: terminal_id_string,
+                    takeover: false,
+                })
+            );
+            assert_eq!(
+                headless_pane_list(server)[0].managed_agent_route.as_ref(),
+                Some(&expected)
+            );
+        });
+    }
+
+    #[test]
     fn terminal_observe_rejects_later_attach_upgrade() {
         with_terminal_session_test_server(|server, terminal_id, terminal_id_string, _| {
             connect_pending_terminal_client(server, 7);

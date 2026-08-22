@@ -10,7 +10,7 @@ pub(crate) const PANE_GRAPHICS_MAX_LAYERS_TOTAL: usize = 64;
 pub(crate) const PANE_GRAPHICS_MAX_INLINE_BYTES_TOTAL: usize = 64 * 1024 * 1024;
 pub(crate) const PANE_GRAPHICS_PRIMARY_LAYER_ID: &str = "primary";
 
-use super::agents::AgentSessionInfo;
+use super::agents::{AgentSessionInfo, ManagedAgentRouteInfo};
 use super::common::{AgentStatus, PaneAgentState, ReadFormat, ReadSource, SplitDirection};
 
 #[derive(
@@ -474,6 +474,8 @@ pub struct PaneInfo {
     pub tokens: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session: Option<AgentSessionInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_agent_route: Option<ManagedAgentRouteInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll: Option<PaneScrollInfo>,
     pub revision: u64,

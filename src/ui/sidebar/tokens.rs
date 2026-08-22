@@ -22,6 +22,8 @@ pub(super) enum ResolvedTokenKind {
     Branch(String),
     GitStatus { ahead: usize, behind: usize },
     Custom(String),
+    ManagedRoute(String),
+    UnmanagedRoute(String),
 }
 
 impl ResolvedToken {
@@ -29,7 +31,6 @@ impl ResolvedToken {
         Self { kind, style }
     }
 
-    #[cfg(test)]
     pub(super) fn unstyled(kind: ResolvedTokenKind) -> Self {
         Self::new(kind, SidebarTokenStyle::default())
     }
@@ -175,6 +176,7 @@ mod tests {
             last_agent_state_change_seq: None,
             state_labels: std::collections::HashMap::new(),
             tokens: std::collections::HashMap::new(),
+            route_provenance: None,
         }
     }
 
