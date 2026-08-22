@@ -519,11 +519,11 @@ impl App {
             ),
             ConnectionStatus::Partial => (
                 GatewayNoticeKind::Warning,
-                "Gateway partially connected. Review the protocol results below.",
+                "Gateway partially connected. Review the protocol results above.",
             ),
             ConnectionStatus::Failed => (
                 GatewayNoticeKind::Error,
-                "Gateway test failed. Review the redacted diagnostics below.",
+                "Gateway test failed. Review the redacted diagnostics above.",
             ),
             ConnectionStatus::NotTested => (GatewayNoticeKind::Info, "Gateway test did not run."),
         };

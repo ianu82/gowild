@@ -117,6 +117,7 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
         false,
     );
 
+    let can_launch = selection.can_launch(&app.gateway_catalog);
     let route = format!(
         " {} → {} → {} → {}",
         selection.cli_label(),
@@ -129,43 +130,75 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
         Paragraph::new(Line::from(Span::styled(
             route,
             Style::default()
-                .fg(panel_contrast_fg(&app.palette))
-                .bg(app.palette.accent)
+                .fg(if can_launch {
+                    panel_contrast_fg(&app.palette)
+                } else {
+                    app.palette.text
+                })
+                .bg(if can_launch {
+                    app.palette.accent
+                } else {
+                    app.palette.surface0
+                })
                 .add_modifier(Modifier::BOLD),
         ))),
         Rect::new(inner.x, inner.y + 12, inner.width, 1),
     );
 
+    let validation_error = selection.validation_error(&app.gateway_catalog);
     let status = selection
         .error
         .as_deref()
+        .or(validation_error.as_deref())
         .unwrap_or("GoWild will fail closed if any selected route value cannot be applied.");
+    let footer_y = inner.y + inner.height.saturating_sub(1);
+    let status_y = (inner.y + 14).min(footer_y.saturating_sub(2));
+    let status_height = footer_y.saturating_sub(status_y).max(1);
     frame.render_widget(
-        Paragraph::new(format!(
-            " {}",
-            truncate_end(status, inner.width.saturating_sub(1) as usize)
-        ))
-        .style(Style::default().fg(if selection.error.is_some() {
-            app.palette.red
-        } else {
-            app.palette.overlay1
-        })),
-        Rect::new(inner.x, inner.y + 14, inner.width, 1),
+        Paragraph::new(format!(" {status}"))
+            .style(Style::default().fg(
+                if selection.error.is_some() || validation_error.is_some() {
+                    app.palette.red
+                } else {
+                    app.palette.overlay1
+                },
+            ))
+            .wrap(ratatui::widgets::Wrap { trim: false }),
+        Rect::new(inner.x, status_y, inner.width, status_height),
     );
 
-    let footer_y = inner.y + inner.height.saturating_sub(1);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
+            if can_launch {
+                Span::styled(
+                    " enter launch ",
+                    Style::default()
+                        .fg(panel_contrast_fg(&app.palette))
+                        .bg(app.palette.accent)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(
+                    " launch unavailable ",
+                    Style::default()
+                        .fg(app.palette.overlay1)
+                        .bg(app.palette.surface0),
+                )
+            },
             Span::styled(
-                " enter launch ",
-                Style::default()
-                    .fg(panel_contrast_fg(&app.palette))
-                    .bg(app.palette.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "  s gateway settings",
-                Style::default().fg(app.palette.overlay1),
+                if can_launch {
+                    "  s gateway settings"
+                } else {
+                    " s fix route "
+                },
+                if can_launch {
+                    Style::default().fg(app.palette.overlay1)
+                } else {
+                    Style::default()
+                        .fg(panel_contrast_fg(&app.palette))
+                        .bg(app.palette.accent)
+                        .add_modifier(Modifier::BOLD)
+                },
             ),
             Span::styled("  esc cancel", Style::default().fg(app.palette.overlay1)),
         ])),
@@ -253,7 +286,11 @@ mod tests {
     #[test]
     fn missing_model_is_explicit() {
         let app = AppState::test_new();
-        let output = rendered(&app, 80, 24);
+        let output = rendered(&app, 64, 20);
         assert!(output.contains("no model selected"));
+        assert!(output.contains("launch unavailable"));
+        assert!(output.contains("s fix route"));
+        assert!(output.contains("t test"), "{output}");
+        assert!(!output.contains("enter launch"));
     }
 }

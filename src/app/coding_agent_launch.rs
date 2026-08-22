@@ -44,7 +44,17 @@ impl App {
                 &mut self.state,
                 crate::app::state::SettingsSection::Gateways,
             ),
-            KeyCode::Enter => self.launch_selected_coding_agent(),
+            KeyCode::Enter => {
+                if let Some(error) = self
+                    .state
+                    .coding_agent_launch
+                    .validation_error(&self.state.gateway_catalog)
+                {
+                    self.state.coding_agent_launch.error = Some(error);
+                } else {
+                    self.launch_selected_coding_agent();
+                }
+            }
             _ => {}
         }
     }
@@ -441,6 +451,39 @@ mod tests {
 
         assert_eq!(selection.gateway_id.as_deref(), Some("mindshub"));
         assert_eq!(selection.model, None);
+        let error = selection
+            .validation_error(&catalog)
+            .expect("missing model must invalidate launch");
+        assert!(error.contains("settings (s)"));
+        assert!(error.contains("t test"));
+        assert!(!selection.can_launch(&catalog));
+    }
+
+    #[test]
+    fn enter_does_not_attempt_an_invalid_route() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.mode = Mode::CodingAgentLaunch;
+
+        app.handle_coding_agent_launch_key(KeyEvent::new(
+            KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert_eq!(app.state.mode, Mode::CodingAgentLaunch);
+        assert!(app
+            .state
+            .coding_agent_launch
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("t test")));
     }
 
     #[test]
