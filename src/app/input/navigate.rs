@@ -429,6 +429,10 @@ impl App {
             }
             NavigateAction::Help => super::modal::open_keybind_help(&mut self.state),
             NavigateAction::Settings => super::settings::open_settings(&mut self.state),
+            NavigateAction::LaunchAgent => super::modal::apply_global_menu_action(
+                &mut self.state,
+                super::modal::GlobalMenuAction::LaunchAgent,
+            ),
             NavigateAction::ReloadConfig => {
                 self.runtime_server_reload_config("tui.server.reload_config");
                 leave_navigate_mode(&mut self.state);
@@ -1427,6 +1431,7 @@ pub(crate) enum NavigateAction {
     LastPane,
     Help,
     Settings,
+    LaunchAgent,
     ReloadConfig,
     OpenNotificationTarget,
     Detach,
@@ -1530,6 +1535,7 @@ fn non_indexed_action_for_key(
     for (bindings, action) in [
         (&kb.help, NavigateAction::Help),
         (&kb.settings, NavigateAction::Settings),
+        (&kb.launch_agent, NavigateAction::LaunchAgent),
         (&kb.workspace_picker, NavigateAction::WorkspacePicker),
         (&kb.new_workspace, NavigateAction::NewWorkspace),
         (&kb.new_worktree, NavigateAction::NewWorktree),
@@ -1844,6 +1850,10 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::Help => super::modal::open_keybind_help(state),
         NavigateAction::Settings => super::settings::open_settings(state),
+        NavigateAction::LaunchAgent => super::modal::apply_global_menu_action(
+            state,
+            super::modal::GlobalMenuAction::LaunchAgent,
+        ),
         NavigateAction::ReloadConfig => {
             state.request_reload_config = true;
             leave_navigate_mode(state);
@@ -2882,6 +2892,16 @@ last_pane = "prefix+tab"
         );
 
         assert_eq!(action, Some(NavigateAction::SwitchTab(2)));
+    }
+
+    #[test]
+    fn default_launch_agent_shortcut_opens_managed_launch_screen() {
+        let mut app = app_with_test_workspaces(&["test"]);
+        app.state.mode = Mode::Prefix;
+
+        app.handle_prefix_key(TerminalKey::new(KeyCode::Char('a'), KeyModifiers::empty()));
+
+        assert_eq!(app.state.mode, Mode::CodingAgentLaunch);
     }
 
     #[test]

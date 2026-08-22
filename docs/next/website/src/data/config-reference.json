@@ -260,6 +260,12 @@
           "description": "Open settings."
         },
         {
+          "key": "keys.launch_agent",
+          "type": "keybinding",
+          "default": "\"prefix+a\"",
+          "description": "Open the managed coding-agent launch screen."
+        },
+        {
           "key": "keys.new_workspace",
           "type": "keybinding",
           "default": "\"prefix+shift+n\"",
