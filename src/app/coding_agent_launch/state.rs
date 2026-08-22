@@ -21,6 +21,13 @@ pub(crate) struct CodingAgentLaunchState {
 
 impl CodingAgentLaunchState {
     pub(crate) fn new(catalog: &crate::gateway::GatewayCatalog) -> Self {
+        Self::new_with_environment(catalog, &super::ProcessEnvironment)
+    }
+
+    pub(super) fn new_with_environment(
+        catalog: &crate::gateway::GatewayCatalog,
+        environment: &dyn crate::cli_adapter::Environment,
+    ) -> Self {
         let mut state = Self {
             selected_field: CodingAgentLaunchField::Cli,
             cli: crate::cli_adapter::CodingCli::Codex,
@@ -29,6 +36,7 @@ impl CodingAgentLaunchState {
             error: None,
         };
         state.select_preferred_gateway(catalog);
+        state.apply_environment_overrides(catalog, environment);
         state
     }
 
@@ -151,6 +159,51 @@ impl CodingAgentLaunchState {
         self.model = gateway
             .and_then(|gateway| gateway.default_models.get(self.cli.id()).cloned())
             .or_else(|| self.available_models(catalog).first().cloned());
+    }
+
+    fn apply_environment_overrides(
+        &mut self,
+        catalog: &crate::gateway::GatewayCatalog,
+        environment: &dyn crate::cli_adapter::Environment,
+    ) {
+        if let Some(gateway_id) = environment
+            .get("GOWILD_GATEWAY")
+            .filter(|value| !value.trim().is_empty())
+        {
+            let gateway_id = gateway_id.trim().to_string();
+            match catalog.gateways.get(&gateway_id) {
+                Some(gateway) if gateway.supports(self.protocol()) => {
+                    self.gateway_id = Some(gateway_id);
+                    self.select_preferred_model(catalog);
+                }
+                Some(_) => {
+                    self.gateway_id = Some(gateway_id.clone());
+                    self.model = None;
+                    self.error = Some(format!(
+                        "GOWILD_GATEWAY `{gateway_id}` does not support {}.",
+                        self.protocol().display_name()
+                    ));
+                }
+                None => {
+                    self.gateway_id = Some(gateway_id.clone());
+                    self.model = None;
+                    self.error = Some(format!("GOWILD_GATEWAY `{gateway_id}` is not configured."));
+                }
+            }
+        }
+
+        if let Some(model) = environment
+            .get("GOWILD_MODEL")
+            .filter(|value| !value.trim().is_empty())
+        {
+            let model = model.trim();
+            if model.len() > 256 || model.chars().any(char::is_control) {
+                self.model = None;
+                self.error = Some("GOWILD_MODEL is invalid.".into());
+            } else {
+                self.model = Some(model.to_string());
+            }
+        }
     }
 
     fn compatible_gateway_ids(&self, catalog: &crate::gateway::GatewayCatalog) -> Vec<String> {

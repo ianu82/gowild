@@ -13,11 +13,11 @@ use crate::pane::PaneLaunchEnv;
 mod state;
 pub(crate) use state::{CodingAgentLaunchField, CodingAgentLaunchState};
 
-struct ConfiguredEnvironment;
+struct ProcessEnvironment;
 
-impl Environment for ConfiguredEnvironment {
-    fn get(&self, _key: &str) -> Option<String> {
-        None
+impl Environment for ProcessEnvironment {
+    fn get(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
     }
 }
 
@@ -69,6 +69,14 @@ impl App {
         &mut self,
         locator: &dyn ExecutableLocator,
     ) -> Result<(), String> {
+        self.launch_selected_coding_agent_with_environment(locator, &ProcessEnvironment)
+    }
+
+    fn launch_selected_coding_agent_with_environment(
+        &mut self,
+        locator: &dyn ExecutableLocator,
+        environment: &dyn Environment,
+    ) -> Result<(), String> {
         let selection = self.state.coding_agent_launch.clone();
         let gateway = selection
             .gateway(&self.state.gateway_catalog)
@@ -84,12 +92,13 @@ impl App {
         let gateway_id = gateway.id.clone();
         let gateway_name = gateway.display_name.clone();
         let protocol = selection.protocol();
-        let (argv, launch_env) = self.plan_coding_agent_launch(
+        let (argv, launch_env) = self.plan_coding_agent_launch_with_environment(
             selection.cli,
             &gateway_id,
             &model,
             LaunchMode::Fresh,
             locator,
+            environment,
         )?;
 
         self.spawn_coding_agent_tab(
@@ -164,30 +173,73 @@ impl App {
     }
 
     pub(super) fn plan_coding_agent_launch(
-        &self,
+        &mut self,
         cli: crate::cli_adapter::CodingCli,
         gateway_id: &str,
         model: &str,
         mode: LaunchMode,
         locator: &dyn ExecutableLocator,
     ) -> Result<(Vec<String>, PaneLaunchEnv), String> {
-        let registry = AdapterRegistry::with_builtin_adapters();
-        let environment = ConfiguredEnvironment;
-        let resolver = crate::cli_adapter::GatewayResolver::new(
-            &self.state.gateway_catalog,
-            self.gateway_credentials.as_ref(),
-            &environment,
-        );
-        let planner = LaunchPlanner::new(&registry, resolver, locator);
+        self.plan_coding_agent_launch_with_environment(
+            cli,
+            gateway_id,
+            model,
+            mode,
+            locator,
+            &ProcessEnvironment,
+        )
+    }
+
+    fn plan_coding_agent_launch_with_environment(
+        &mut self,
+        cli: crate::cli_adapter::CodingCli,
+        gateway_id: &str,
+        model: &str,
+        mode: LaunchMode,
+        locator: &dyn ExecutableLocator,
+        environment: &dyn Environment,
+    ) -> Result<(Vec<String>, PaneLaunchEnv), String> {
         let request = LaunchRequest {
             gateway_id: Some(gateway_id.to_string()),
             model: Some(model.to_string()),
             mode,
             passthrough_args: Vec::new(),
         };
-        let spec = planner
-            .plan(cli, &request)
-            .map_err(|error| error.to_string())?;
+        let (spec, bridge) = {
+            let registry = AdapterRegistry::with_builtin_adapters();
+            let resolver = crate::cli_adapter::GatewayResolver::new(
+                &self.state.gateway_catalog,
+                self.gateway_credentials.as_ref(),
+                environment,
+            );
+            let planner = LaunchPlanner::new(&registry, resolver, locator);
+            let mut resolved = planner
+                .resolve(cli, &request)
+                .map_err(|error| error.to_string())?;
+            let bridge = if crate::cli_adapter::ResponsesBridge::is_required(&resolved) {
+                match self.mindshub_responses_bridge.as_ref() {
+                    Some(existing) => {
+                        resolved.endpoint = existing.local_base_url().to_string();
+                        None
+                    }
+                    None => {
+                        let bridge =
+                            crate::cli_adapter::ResponsesBridge::start_required(&resolved)?;
+                        resolved.endpoint = bridge.local_base_url().to_string();
+                        Some(bridge)
+                    }
+                }
+            } else {
+                None
+            };
+            let spec = planner
+                .plan_resolved(cli, &request, &resolved)
+                .map_err(|error| error.to_string())?;
+            (spec, bridge)
+        };
+        if let Some(bridge) = bridge {
+            self.mindshub_responses_bridge = Some(bridge);
+        }
         pane_command_parts(spec.into_pane_parts())
     }
 }
@@ -213,6 +265,7 @@ fn pane_command_parts(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -270,6 +323,15 @@ mod tests {
 
         fn delete(&self, _credential_ref: &str) -> Result<(), CredentialStoreError> {
             unreachable!()
+        }
+    }
+
+    #[derive(Default)]
+    struct MemoryEnvironment(BTreeMap<String, String>);
+
+    impl Environment for MemoryEnvironment {
+        fn get(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
         }
     }
 
@@ -343,6 +405,31 @@ mod tests {
             selection.protocol(),
             crate::gateway::GatewayProtocol::AnthropicMessages
         );
+    }
+
+    #[test]
+    fn launch_selection_surfaces_environment_route_overrides() {
+        let mut catalog = GatewayCatalog::with_builtin_presets();
+        catalog.default_gateway_id = Some("mindshub".into());
+        catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .default_models
+            .insert("codex".into(), "saved-model".into());
+        let mut environment = MemoryEnvironment::default();
+        environment
+            .0
+            .insert("GOWILD_GATEWAY".into(), "mindshub".into());
+        environment
+            .0
+            .insert("GOWILD_MODEL".into(), "environment-model".into());
+
+        let selection = CodingAgentLaunchState::new_with_environment(&catalog, &environment);
+
+        assert_eq!(selection.gateway_id.as_deref(), Some("mindshub"));
+        assert_eq!(selection.model.as_deref(), Some("environment-model"));
+        assert_eq!(selection.error, None);
     }
 
     #[test]
@@ -431,6 +518,99 @@ mod tests {
 
         assert!(error.contains("no credential configured"));
         assert_eq!(app.state.workspaces.len(), before);
+    }
+
+    #[test]
+    fn managed_launch_planning_honors_environment_overrides() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.gateway_credentials = Box::new(MissingCredentialStore);
+        let mut environment = MemoryEnvironment::default();
+        environment.0.insert(
+            "GOWILD_API_KEY".into(),
+            "environment-only-test-secret".into(),
+        );
+        environment.0.insert(
+            "GOWILD_RESPONSES_BASE_URL".into(),
+            "https://override.invalid/v1".into(),
+        );
+
+        let (argv, launch_env) = app
+            .plan_coding_agent_launch_with_environment(
+                CodingCli::Codex,
+                "mindshub",
+                "environment-model",
+                LaunchMode::Fresh,
+                &FixedLocator(PathBuf::from("/bin/false")),
+                &environment,
+            )
+            .unwrap();
+        let argv = argv.join(" ");
+        assert!(argv.contains("https://override.invalid/v1"));
+        assert!(argv.contains("environment-model"));
+        assert!(!argv.contains("environment-only-test-secret"));
+        assert!(!format!("{launch_env:?}").contains("environment-only-test-secret"));
+    }
+
+    #[test]
+    fn official_mindshub_codex_launch_reuses_a_loopback_streaming_bridge() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.gateway_credentials = Box::new(MissingCredentialStore);
+        let mut environment = MemoryEnvironment::default();
+        environment.0.insert(
+            "GOWILD_API_KEY".into(),
+            "environment-only-test-secret".into(),
+        );
+
+        let first = app
+            .plan_coding_agent_launch_with_environment(
+                CodingCli::Codex,
+                "mindshub",
+                "deepseek",
+                LaunchMode::Fresh,
+                &FixedLocator(PathBuf::from("/bin/false")),
+                &environment,
+            )
+            .unwrap()
+            .0
+            .join(" ");
+        let bridge_url = app
+            .mindshub_responses_bridge
+            .as_ref()
+            .unwrap()
+            .local_base_url()
+            .to_string();
+        assert!(bridge_url.starts_with("http://127.0.0.1:"));
+        assert!(first.contains(&bridge_url));
+        assert!(!first.contains(crate::gateway::MINDSHUB_RESPONSES_BASE_URL));
+        assert!(!first.contains("environment-only-test-secret"));
+
+        let second = app
+            .plan_coding_agent_launch_with_environment(
+                CodingCli::Codex,
+                "mindshub",
+                "deepseek",
+                LaunchMode::Fresh,
+                &FixedLocator(PathBuf::from("/bin/false")),
+                &environment,
+            )
+            .unwrap()
+            .0
+            .join(" ");
+        assert!(second.contains(&bridge_url));
     }
 
     #[cfg(unix)]

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Wired into managed launches by the next stacked change.
-
 use std::collections::BTreeSet;
 use std::fmt;
 use std::io::{self, Read, Write};

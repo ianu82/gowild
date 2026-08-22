@@ -8,6 +8,8 @@ claims, support commitments, or current install instructions.
 ## Unreleased
 
 ### Added
+- The managed coding-agent launch screen now has a keyboard-only `prefix+a`
+  shortcut in addition to the global menu.
 - First-run and normal settings now include a gateway section for securely
   connecting MindsHub Inference, testing both coding protocols, discovering
   models, and choosing independent Codex and Claude Code defaults.
@@ -19,6 +21,15 @@ claims, support commitments, or current install instructions.
   confirmation; built-in presets remain non-deletable.
 
 ### Fixed
+- Unsigned Unix development builds now store gateway credentials in GoWild's
+  existing owner-only file backend, avoiding repeated Keychain prompts after
+  every debug rebuild; release builds retain operating-system credential storage.
+- Codex CLI launches through the built-in MindsHub Inference route now bridge
+  MindsHub's non-streaming Responses payloads into the streaming event contract
+  Codex requires, including function-call arguments and usage metadata.
+- Managed coding-agent launches now honor the documented `GOWILD_*`
+  environment overrides while keeping gateway and model overrides visible on
+  the launch screen.
 - Windows panes now keep bare `cursor-agent` launches detected after Cursor hands off to its bundled Node process. (#3032)
 - Oversized Kitty images no longer prevent smaller images shown later in the same pane from rendering. (#3033)
 - Claude Code panes now use visible turn, background shell, and background agent activity as working-state fallbacks when OSC titles are unavailable or disabled. (#1630, #2241)

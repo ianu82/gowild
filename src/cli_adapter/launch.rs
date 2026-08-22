@@ -440,27 +440,45 @@ impl<'a> LaunchPlanner<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn plan(
         &self,
         cli: CodingCli,
         request: &LaunchRequest,
     ) -> Result<LaunchSpec, LaunchError> {
+        let resolved = self.resolve(cli, request)?;
+        self.plan_resolved(cli, request, &resolved)
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        cli: CodingCli,
+        request: &LaunchRequest,
+    ) -> Result<ResolvedGateway, LaunchError> {
         let adapter = self.registry.get(cli).ok_or(LaunchError::UnknownCli(cli))?;
-        let resolved = self
-            .resolver
+        self.resolver
             .resolve(
                 cli.id(),
                 adapter.required_protocol(),
                 request.gateway_id.as_deref(),
                 request.model.as_deref(),
             )
-            .map_err(LaunchError::Gateway)?;
+            .map_err(LaunchError::Gateway)
+    }
+
+    pub(crate) fn plan_resolved(
+        &self,
+        cli: CodingCli,
+        request: &LaunchRequest,
+        resolved: &ResolvedGateway,
+    ) -> Result<LaunchSpec, LaunchError> {
+        let adapter = self.registry.get(cli).ok_or(LaunchError::UnknownCli(cli))?;
         let executable = self
             .locator
             .locate(adapter.executable_candidates())
             .ok_or(LaunchError::ExecutableNotFound(cli))?;
         let spec = adapter
-            .build(&executable, &resolved, request)
+            .build(&executable, resolved, request)
             .map_err(|error| LaunchError::Adapter {
                 cli,
                 message: redact(
@@ -468,7 +486,7 @@ impl<'a> LaunchPlanner<'a> {
                     &resolved.credential.iter().collect::<Vec<_>>(),
                 ),
             })?;
-        spec.validate(cli, &resolved).map_err(LaunchError::Spec)?;
+        spec.validate(cli, resolved).map_err(LaunchError::Spec)?;
         Ok(spec)
     }
 }
