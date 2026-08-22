@@ -8,6 +8,7 @@ mod codex;
 mod launch;
 mod registry;
 mod resolver;
+mod responses_bridge;
 
 pub(crate) use claude::ClaudeAdapter;
 pub(crate) use codex::CodexAdapter;
