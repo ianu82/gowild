@@ -47,16 +47,25 @@ impl App {
         });
     }
 
-    pub(super) fn save_theme(&mut self, name: &str) {
-        if self.update_config_file("theme", |content| {
-            let content = crate::config::upsert_section_value(
-                content,
-                "theme",
-                "name",
-                &format!("\"{name}\""),
-            );
-            crate::config::upsert_section_bool(&content, "theme", "auto_switch", false)
-        }) {
+    pub(super) fn save_theme_choice(&mut self, choice: crate::app::state::ThemeChoice) {
+        let saved = match choice {
+            crate::app::state::ThemeChoice::Manual(name) => {
+                self.update_config_file("theme", |content| {
+                    let content = crate::config::upsert_section_value(
+                        content,
+                        "theme",
+                        "name",
+                        &format!("\"{name}\""),
+                    );
+                    crate::config::upsert_section_bool(&content, "theme", "auto_switch", false)
+                })
+            }
+            crate::app::state::ThemeChoice::FollowTerminal => self
+                .update_config_file("theme", |content| {
+                    crate::config::upsert_section_bool(content, "theme", "auto_switch", true)
+                }),
+        };
+        if saved {
             self.apply_config_from_disk(false);
         }
     }
@@ -130,5 +139,75 @@ impl App {
         }) {
             self.apply_config_from_disk(false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        app::state::{ThemeChoice, THEME_CHOICES},
+        config::Config,
+    };
+
+    fn temp_config_path(name: &str) -> std::path::PathBuf {
+        let unique = format!(
+            "gowild-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        std::env::temp_dir().join(unique).join("config.toml")
+    }
+
+    fn app_for_theme_config() -> App {
+        let config = Config::default();
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        App::new(&config, true, None, api_rx, crate::api::EventHub::default())
+    }
+
+    #[test]
+    fn theme_choice_persistence_preserves_pair_and_toggles_follow_mode() {
+        let _guard = crate::config::test_config_env_lock().lock().unwrap();
+        let path = temp_config_path("theme-choice-persistence");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "[theme]\nname = \"cowork\"\ndark_name = \"nord\"\nlight_name = \"one-light\"\nauto_switch = false\n",
+        )
+        .unwrap();
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+        let mut app = app_for_theme_config();
+
+        app.save_theme_choice(ThemeChoice::FollowTerminal);
+
+        let followed = std::fs::read_to_string(&path).unwrap();
+        let followed: Config = toml::from_str(&followed).unwrap();
+        assert!(followed.theme.auto_switch);
+        assert_eq!(followed.theme.dark_name.as_deref(), Some("nord"));
+        assert_eq!(followed.theme.light_name.as_deref(), Some("one-light"));
+        assert_eq!(
+            THEME_CHOICES[app.state.settings.theme_choice_selected],
+            ThemeChoice::FollowTerminal
+        );
+
+        app.save_theme_choice(ThemeChoice::Manual("cowork-light"));
+
+        let manual = std::fs::read_to_string(&path).unwrap();
+        let manual: Config = toml::from_str(&manual).unwrap();
+        assert!(!manual.theme.auto_switch);
+        assert_eq!(manual.theme.name.as_deref(), Some("cowork-light"));
+        assert_eq!(manual.theme.dark_name.as_deref(), Some("nord"));
+        assert_eq!(manual.theme.light_name.as_deref(), Some("one-light"));
+        assert_eq!(app.state.theme_name, "cowork-light");
+        assert_eq!(
+            THEME_CHOICES[app.state.settings.theme_choice_selected],
+            ThemeChoice::Manual("cowork-light")
+        );
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

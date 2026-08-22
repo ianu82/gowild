@@ -288,6 +288,24 @@ fn normalize_theme_name(name: &str) -> String {
     name.to_lowercase().replace([' ', '_'], "-")
 }
 
+pub(crate) fn theme_choice_index(runtime: &state::ThemeRuntimeConfig) -> usize {
+    if runtime.auto_switch {
+        return state::THEME_CHOICES
+            .iter()
+            .position(|choice| *choice == state::ThemeChoice::FollowTerminal)
+            .unwrap_or_default();
+    }
+    let normalized = normalize_theme_name(&runtime.manual_name);
+    state::THEME_CHOICES
+        .iter()
+        .position(|choice| {
+            choice
+                .manual_name()
+                .is_some_and(|name| normalize_theme_name(name) == normalized)
+        })
+        .unwrap_or_default()
+}
+
 fn sibling_theme_names(name: &str) -> (String, String) {
     match normalize_theme_name(name).as_str() {
         "cowork" | "cowork-dark" | "cowork-light" | "gowild" | "gowild-dark" | "gowild-light" => {
@@ -545,6 +563,7 @@ impl App {
         let agent_manifest_summaries = Vec::new();
         let theme_runtime = theme_runtime_config(config, true);
         let (theme_palette, theme_name) = resolve_effective_theme(&theme_runtime, None);
+        let theme_choice_selected = theme_choice_index(&theme_runtime);
 
         let gateway_repository = crate::gateway::GatewayRepository::in_default_config_dir();
         let gateway_credentials: Box<dyn crate::gateway::CredentialStore> = Box::new(
@@ -754,6 +773,7 @@ impl App {
                 list: state::SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,
+                theme_choice_selected,
                 gateways: gateway_settings,
                 guided_setup: config.onboarding == Some(true),
                 guided_setup_error: None,
@@ -1684,6 +1704,8 @@ impl App {
         if !invalid_section("theme") {
             self.state.theme_runtime = theme_runtime_config(config, !invalid_section("ui"));
             self.refresh_effective_app_theme();
+            self.state.settings.theme_choice_selected =
+                theme_choice_index(&self.state.theme_runtime);
         }
 
         let status = if diagnostics.is_empty() {
@@ -2929,6 +2951,10 @@ mod tests {
         );
         assert_eq!(app.state.theme_name, "cowork-light");
         assert_eq!(app.state.palette, state::Palette::cowork_light());
+
+        assert!(app.set_host_terminal_appearance(crate::terminal_theme::HostAppearance::Dark, true));
+        assert_eq!(app.state.theme_name, "cowork");
+        assert_eq!(app.state.palette, state::Palette::cowork());
     }
 
     #[test]

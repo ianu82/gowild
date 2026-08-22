@@ -121,8 +121,8 @@ impl Palette {
             surface0: Color::Rgb(19, 29, 49),
             surface1: Color::Rgb(26, 38, 64),
             surface_dim: Color::Rgb(8, 13, 24),
-            overlay0: Color::Rgb(92, 107, 133),
-            overlay1: Color::Rgb(138, 151, 174),
+            overlay0: Color::Rgb(132, 145, 168),
+            overlay1: Color::Rgb(164, 176, 196),
             text: Color::Rgb(242, 246, 255),
             subtext0: Color::Rgb(199, 210, 229),
             mauve: Color::Rgb(8, 178, 207),
@@ -138,25 +138,25 @@ impl Palette {
     /// MindsHub Cowork light.
     pub fn cowork_light() -> Self {
         Self {
-            accent: Color::Rgb(31, 156, 176),
-            panel_bg: Color::Rgb(255, 255, 255),
+            accent: Color::Rgb(7, 90, 108),
+            panel_bg: Color::Rgb(247, 250, 252),
             sidebar_bg: Color::Reset,
-            active_row_bg: Color::Rgb(244, 244, 244),
-            selection_bg: Color::Rgb(229, 244, 247),
-            surface0: Color::Rgb(244, 244, 244),
-            surface1: Color::Rgb(236, 236, 234),
-            surface_dim: Color::Rgb(250, 250, 250),
-            overlay0: Color::Rgb(155, 159, 163),
-            overlay1: Color::Rgb(107, 111, 115),
-            text: Color::Rgb(14, 15, 16),
-            subtext0: Color::Rgb(58, 61, 64),
-            mauve: Color::Rgb(17, 85, 98),
-            green: Color::Rgb(21, 128, 61),
-            yellow: Color::Rgb(180, 83, 9),
-            red: Color::Rgb(185, 28, 28),
-            blue: Color::Rgb(31, 156, 176),
-            teal: Color::Rgb(17, 85, 98),
-            peach: Color::Rgb(180, 83, 9),
+            active_row_bg: Color::Rgb(232, 242, 245),
+            selection_bg: Color::Rgb(213, 235, 240),
+            surface0: Color::Rgb(232, 242, 245),
+            surface1: Color::Rgb(220, 235, 240),
+            surface_dim: Color::Rgb(241, 246, 248),
+            overlay0: Color::Rgb(82, 96, 106),
+            overlay1: Color::Rgb(62, 77, 88),
+            text: Color::Rgb(14, 25, 32),
+            subtext0: Color::Rgb(42, 55, 64),
+            mauve: Color::Rgb(7, 90, 108),
+            green: Color::Rgb(15, 105, 50),
+            yellow: Color::Rgb(150, 67, 5),
+            red: Color::Rgb(175, 24, 24),
+            blue: Color::Rgb(7, 90, 108),
+            teal: Color::Rgb(7, 90, 108),
+            peach: Color::Rgb(150, 67, 5),
         }
     }
 
@@ -1126,7 +1126,74 @@ impl SettingsSection {
 }
 
 /// All built-in theme names in display order.
+#[cfg(test)]
 pub const THEME_NAMES: &[&str] = crate::config::THEME_NAMES;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThemeChoice {
+    Manual(&'static str),
+    FollowTerminal,
+}
+
+impl ThemeChoice {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Manual("cowork") => "Cowork dark",
+            Self::Manual("cowork-light") => "Cowork light",
+            Self::FollowTerminal => "Follow terminal",
+            Self::Manual("catppuccin") => "Catppuccin",
+            Self::Manual("catppuccin-latte") => "Catppuccin Latte",
+            Self::Manual("terminal") => "Terminal colours",
+            Self::Manual("tokyo-night") => "Tokyo Night",
+            Self::Manual("tokyo-night-day") => "Tokyo Night Day",
+            Self::Manual("dracula") => "Dracula",
+            Self::Manual("nord") => "Nord",
+            Self::Manual("gruvbox") => "Gruvbox",
+            Self::Manual("gruvbox-light") => "Gruvbox Light",
+            Self::Manual("one-dark") => "One Dark",
+            Self::Manual("one-light") => "One Light",
+            Self::Manual("solarized") => "Solarized",
+            Self::Manual("solarized-light") => "Solarized Light",
+            Self::Manual("kanagawa") => "Kanagawa",
+            Self::Manual("kanagawa-lotus") => "Kanagawa Lotus",
+            Self::Manual("rose-pine") => "Rosé Pine",
+            Self::Manual("rose-pine-dawn") => "Rosé Pine Dawn",
+            Self::Manual("vesper") => "Vesper",
+            Self::Manual(_) => "Theme",
+        }
+    }
+
+    pub(crate) fn manual_name(self) -> Option<&'static str> {
+        match self {
+            Self::Manual(name) => Some(name),
+            Self::FollowTerminal => None,
+        }
+    }
+}
+
+pub(crate) const THEME_CHOICES: &[ThemeChoice] = &[
+    ThemeChoice::Manual("cowork"),
+    ThemeChoice::Manual("cowork-light"),
+    ThemeChoice::FollowTerminal,
+    ThemeChoice::Manual("catppuccin"),
+    ThemeChoice::Manual("catppuccin-latte"),
+    ThemeChoice::Manual("terminal"),
+    ThemeChoice::Manual("tokyo-night"),
+    ThemeChoice::Manual("tokyo-night-day"),
+    ThemeChoice::Manual("dracula"),
+    ThemeChoice::Manual("nord"),
+    ThemeChoice::Manual("gruvbox"),
+    ThemeChoice::Manual("gruvbox-light"),
+    ThemeChoice::Manual("one-dark"),
+    ThemeChoice::Manual("one-light"),
+    ThemeChoice::Manual("solarized"),
+    ThemeChoice::Manual("solarized-light"),
+    ThemeChoice::Manual("kanagawa"),
+    ThemeChoice::Manual("kanagawa-lotus"),
+    ThemeChoice::Manual("rose-pine"),
+    ThemeChoice::Manual("rose-pine-dawn"),
+    ThemeChoice::Manual("vesper"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuListState {
@@ -1199,6 +1266,8 @@ pub struct SettingsState {
     pub original_palette: Option<Palette>,
     /// The theme name before opening settings.
     pub original_theme: Option<String>,
+    /// Stable theme choice while other settings sections reuse the list cursor.
+    pub(crate) theme_choice_selected: usize,
     /// Gateway list, detail, credential-entry, and connection-test UI state.
     pub gateways: GatewaySettingsState,
     /// True while the finite first-run route setup is using the settings shell.
@@ -2671,6 +2740,7 @@ impl AppState {
                 list: SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,
+                theme_choice_selected: 0,
                 gateways: GatewaySettingsState::default(),
                 guided_setup: false,
                 guided_setup_error: None,
@@ -3216,12 +3286,12 @@ mod tests {
         assert_eq!(dark.red, Color::Rgb(248, 113, 113));
 
         let light = Palette::cowork_light();
-        assert_eq!(light.accent, Color::Rgb(31, 156, 176));
-        assert_eq!(light.panel_bg, Color::Rgb(255, 255, 255));
-        assert_eq!(light.text, Color::Rgb(14, 15, 16));
-        assert_eq!(light.green, Color::Rgb(21, 128, 61));
-        assert_eq!(light.yellow, Color::Rgb(180, 83, 9));
-        assert_eq!(light.red, Color::Rgb(185, 28, 28));
+        assert_eq!(light.accent, Color::Rgb(7, 90, 108));
+        assert_eq!(light.panel_bg, Color::Rgb(247, 250, 252));
+        assert_eq!(light.text, Color::Rgb(14, 25, 32));
+        assert_eq!(light.green, Color::Rgb(15, 105, 50));
+        assert_eq!(light.yellow, Color::Rgb(150, 67, 5));
+        assert_eq!(light.red, Color::Rgb(175, 24, 24));
     }
 
     #[test]
@@ -3242,15 +3312,39 @@ mod tests {
                 contrast_ratio(palette.accent, palette.panel_bg) >= 3.0,
                 "focus contrast regressed for {name}"
             );
-            for (role, color) in [
-                ("success", palette.green),
-                ("working", palette.yellow),
-                ("blocked", palette.red),
+            for (surface_name, surface) in [
+                ("panel", palette.panel_bg),
+                ("active row", palette.active_row_bg),
+                ("selection", palette.selection_bg),
+                ("surface 0", palette.surface0),
+                ("surface 1", palette.surface1),
             ] {
+                for (role, color) in [
+                    ("text", palette.text),
+                    ("subtext", palette.subtext0),
+                    ("muted text", palette.overlay0),
+                    ("secondary text", palette.overlay1),
+                    ("accent text", palette.accent),
+                ] {
+                    assert!(
+                        contrast_ratio(color, surface) >= 4.5,
+                        "{role} contrast on {surface_name} regressed for {name}"
+                    );
+                }
                 assert!(
-                    contrast_ratio(color, palette.panel_bg) >= 4.5,
-                    "{role} contrast regressed for {name}"
+                    contrast_ratio(palette.accent, surface) >= 3.0,
+                    "focus contrast on {surface_name} regressed for {name}"
                 );
+                for (role, color) in [
+                    ("success", palette.green),
+                    ("working", palette.yellow),
+                    ("blocked", palette.red),
+                ] {
+                    assert!(
+                        contrast_ratio(color, surface) >= 4.5,
+                        "{role} contrast on {surface_name} regressed for {name}"
+                    );
+                }
             }
         }
     }

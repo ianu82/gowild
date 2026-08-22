@@ -6,7 +6,7 @@ use crate::{
         state::{
             AppState, CustomGatewayFormMode, CustomGatewayFormState, GatewayDetailField,
             GatewayFormField, GatewayModelTarget, GatewaySettingsView, SettingsSection,
-            THEME_NAMES,
+            ThemeChoice, THEME_CHOICES,
         },
         App, Mode,
     },
@@ -18,7 +18,7 @@ use crate::{
 // The shared `Save` verb is semantic: these actions persist settings.
 #[allow(clippy::enum_variant_names)]
 pub(super) enum SettingsAction {
-    SaveTheme(String),
+    SaveTheme(ThemeChoice),
     SaveStatusIndicators(StatusIndicatorStyle),
     SaveSound(bool),
     SaveToastDelivery(ToastDelivery),
@@ -51,7 +51,7 @@ impl App {
         let previous_section = self.state.settings.section;
         if let Some(action) = update_settings_state(&mut self.state, key) {
             match action {
-                SettingsAction::SaveTheme(name) => self.save_theme(&name),
+                SettingsAction::SaveTheme(choice) => self.save_theme_choice(choice),
                 SettingsAction::SaveStatusIndicators(style) => self.save_status_indicators(style),
                 SettingsAction::SaveSound(enabled) => self.save_sound(enabled),
                 SettingsAction::SaveToastDelivery(delivery) => self.save_toast_delivery(delivery),
@@ -116,16 +116,8 @@ impl App {
     }
 }
 
-fn normalize_theme_name(name: &str) -> String {
-    name.to_lowercase().replace([' ', '_'], "-")
-}
-
-fn current_theme_index(theme_name: &str) -> usize {
-    let normalized = normalize_theme_name(theme_name);
-    THEME_NAMES
-        .iter()
-        .position(|name| normalize_theme_name(name) == normalized)
-        .unwrap_or(0)
+fn current_theme_index(state: &AppState) -> usize {
+    crate::app::theme_choice_index(&state.theme_runtime)
 }
 
 fn status_indicator_index(style: StatusIndicatorStyle) -> usize {
@@ -164,7 +156,18 @@ fn toast_delivery_for_index(idx: usize) -> ToastDelivery {
 fn preview_selected_theme(state: &mut AppState) {
     use crate::app::state::Palette;
 
-    let name = THEME_NAMES[state.settings.list.selected];
+    let choice = THEME_CHOICES[state.settings.list.selected];
+    state.settings.theme_choice_selected = state.settings.list.selected;
+    let name = match choice {
+        ThemeChoice::Manual(name) => name,
+        ThemeChoice::FollowTerminal => match state
+            .host_terminal_appearance
+            .unwrap_or(crate::terminal_theme::HostAppearance::Dark)
+        {
+            crate::terminal_theme::HostAppearance::Dark => state.theme_runtime.dark_name.as_str(),
+            crate::terminal_theme::HostAppearance::Light => state.theme_runtime.light_name.as_str(),
+        },
+    };
     if let Some(mut palette) = Palette::from_name(name) {
         if let Some(custom) = &state.theme_runtime.custom {
             palette = palette.with_overrides(custom);
@@ -188,6 +191,7 @@ pub(super) fn cancel_settings(state: &mut AppState) {
     if let Some(theme_name) = state.settings.original_theme.take() {
         state.theme_name = theme_name;
     }
+    state.settings.theme_choice_selected = current_theme_index(state);
     super::modal::leave_modal(state);
 }
 
@@ -201,11 +205,11 @@ fn integrations_need_install(state: &AppState) -> bool {
 fn apply_settings(state: &mut AppState) -> Option<SettingsAction> {
     match state.settings.section {
         SettingsSection::Theme => {
-            let theme_name = state.theme_name.clone();
+            let choice = THEME_CHOICES[state.settings.theme_choice_selected];
             state.settings.original_palette = None;
             state.settings.original_theme = None;
             super::modal::leave_modal(state);
-            Some(SettingsAction::SaveTheme(theme_name))
+            Some(SettingsAction::SaveTheme(choice))
         }
         SettingsSection::Integrations if integrations_need_install(state) => {
             Some(SettingsAction::InstallRecommendedIntegrations)
@@ -411,7 +415,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
             }
             KeyCode::Tab => {
                 state.settings.section = SettingsSection::Theme;
-                state.settings.list.selected = current_theme_index(&state.theme_name);
+                state.settings.list.selected = state.settings.theme_choice_selected;
             }
             KeyCode::BackTab => {
                 state.settings.section = SettingsSection::Integrations;
@@ -499,7 +503,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                 state.settings.gateways.editing_credential = false;
                 state.settings.gateways.view = GatewaySettingsView::List;
                 state.settings.section = SettingsSection::Theme;
-                state.settings.list.selected = current_theme_index(&state.theme_name);
+                state.settings.list.selected = state.settings.theme_choice_selected;
             }
             KeyCode::BackTab => {
                 state.settings.gateways.secret_input.clear();
@@ -653,7 +657,7 @@ pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Opti
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let previous = state.settings.list.selected;
-                state.settings.list.move_next(THEME_NAMES.len());
+                state.settings.list.move_next(THEME_CHOICES.len());
                 if state.settings.list.selected != previous {
                     preview_selected_theme(state);
                 }
@@ -682,7 +686,7 @@ pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Opti
             }
             KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
                 state.settings.section = SettingsSection::Theme;
-                state.settings.list.selected = current_theme_index(&state.theme_name);
+                state.settings.list.selected = state.settings.theme_choice_selected;
             }
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
                 state.settings.section = SettingsSection::Sound;
@@ -806,9 +810,10 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
     state.settings.gateways.notice = None;
     state.settings.guided_setup = false;
     state.settings.guided_setup_error = None;
+    state.settings.theme_choice_selected = current_theme_index(state);
     state.settings.list.selected = match section {
         SettingsSection::Gateways => 0,
-        SettingsSection::Theme => current_theme_index(&state.theme_name),
+        SettingsSection::Theme => state.settings.theme_choice_selected,
         SettingsSection::Indicators => status_indicator_index(state.status_indicators),
         SettingsSection::Sound => usize::from(!state.sound_enabled()),
         SettingsSection::Toast => toast_delivery_index(state.toast_delivery()),
@@ -962,14 +967,7 @@ impl AppState {
                 GatewaySettingsView::DeleteConfirm => None,
             },
             SettingsSection::Theme => {
-                let max_visible = area.height as usize;
-                let scroll = if self.settings.list.selected >= max_visible {
-                    self.settings.list.selected - max_visible + 1
-                } else {
-                    0
-                };
-                let idx = scroll + (row - area.y) as usize;
-                (idx < THEME_NAMES.len()).then_some(idx)
+                crate::ui::theme_choice_index_at(area, self.settings.list.selected, row)
             }
             SettingsSection::Indicators | SettingsSection::Sound => {
                 let list_y = area.y + 3;
@@ -1014,7 +1012,7 @@ impl AppState {
                         self.settings.section = section;
                         self.settings.list.select(match section {
                             SettingsSection::Gateways => 0,
-                            SettingsSection::Theme => current_theme_index(&self.theme_name),
+                            SettingsSection::Theme => self.settings.theme_choice_selected,
                             SettingsSection::Indicators => {
                                 status_indicator_index(self.status_indicators)
                             }
@@ -1564,6 +1562,65 @@ mod tests {
         assert_eq!(state.theme_name, original_theme);
         assert_eq!(state.palette.accent, original_palette.accent);
         assert_eq!(state.palette.panel_bg, original_palette.panel_bg);
+    }
+
+    #[test]
+    fn follow_terminal_previews_the_active_host_pair_and_cancel_restores() {
+        let mut state = state_with_workspaces(&["test"]);
+        state.host_terminal_appearance = Some(crate::terminal_theme::HostAppearance::Light);
+        state.theme_runtime.dark_name = "cowork".into();
+        state.theme_runtime.light_name = "cowork-light".into();
+        let original_palette = state.palette.clone();
+        let original_theme = state.theme_name.clone();
+
+        open_settings_at(&mut state, SettingsSection::Theme);
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::empty()),
+        );
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::empty()),
+        );
+
+        assert_eq!(
+            THEME_CHOICES[state.settings.theme_choice_selected],
+            ThemeChoice::FollowTerminal
+        );
+        assert_eq!(state.theme_name, "cowork-light");
+        assert_eq!(state.palette, crate::app::state::Palette::cowork_light());
+
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()),
+        );
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()),
+        );
+
+        assert_eq!(state.theme_name, original_theme);
+        assert_eq!(state.palette, original_palette);
+        assert_eq!(state.settings.theme_choice_selected, 0);
+    }
+
+    #[test]
+    fn applying_follow_terminal_returns_the_structured_theme_choice() {
+        let mut state = state_with_workspaces(&["test"]);
+        open_settings_at(&mut state, SettingsSection::Theme);
+        state.settings.list.selected = 2;
+        preview_selected_theme(&mut state);
+
+        let action = update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
+        );
+
+        assert_eq!(
+            action,
+            Some(SettingsAction::SaveTheme(ThemeChoice::FollowTerminal))
+        );
+        assert_eq!(state.mode, Mode::Terminal);
     }
 
     #[test]

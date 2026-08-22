@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(app.palette, crate::app::state::Palette::cowork());
         assert_eq!(
             frame_digest(&frame),
-            "6d73c01a09bba4cdba80fd2e25e120c59ae51707c32fa5d435d3d22e8e549b8d"
+            "5e7a8aeca48ac78bbb215bf5865d7454ce0d52212cc6b3e1099cda56a1c81b7f"
         );
     }
 
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(app.palette, crate::app::state::Palette::cowork());
         assert_eq!(
             frame_digest(&frame),
-            "310a4f77ae858f002e999bd6fd840a4afd3a48e35aba95b7bbf14ea7f959dd82"
+            "b65067dde0b1e6553c174fe580aa47f5717ebb87b002b537b8667eb5b3e0181f"
         );
     }
 }

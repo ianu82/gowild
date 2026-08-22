@@ -83,6 +83,7 @@ pub(crate) use self::{
         gateway_add_button_rect, gateway_detail_button_rects, gateway_detail_delete_button_rect,
         guided_setup_aux_button_rects, guided_setup_launch_button_rects, settings_button_rects,
         settings_is_compact, settings_popup_rect, settings_show_primary_action,
+        theme_choice_index_at,
     },
     sidebar::{
         agent_entry_gap, agent_entry_height_in_body, agent_panel_body_rect, agent_panel_entries,
