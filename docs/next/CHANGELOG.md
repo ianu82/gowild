@@ -21,6 +21,10 @@ claims, support commitments, or current install instructions.
   confirmation; built-in presets remain non-deletable.
 
 ### Fixed
+- Claude Code launches through the built-in MindsHub Inference route now use a
+  loopback compatibility bridge that supplies GoWild's upstream request
+  identity and converts complete Messages responses into Claude's streaming
+  event contract, including tool calls and usage metadata.
 - Unsigned Unix development builds now store gateway credentials in GoWild's
   existing owner-only file backend, avoiding repeated Keychain prompts after
   every debug rebuild; release builds retain operating-system credential storage.

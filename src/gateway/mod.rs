@@ -21,7 +21,8 @@ pub(crate) use credentials::{
 };
 pub(crate) use model::{
     AuthenticationMode, CachedModel, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature,
-    GatewayPreset, GatewayProtocol, ValidationError, MINDSHUB_RESPONSES_BASE_URL,
+    GatewayPreset, GatewayProtocol, ValidationError, MINDSHUB_ANTHROPIC_BASE_URL,
+    MINDSHUB_RESPONSES_BASE_URL,
 };
 #[cfg(test)]
 pub(crate) use model::{ConnectionTest, ProtocolTest};
