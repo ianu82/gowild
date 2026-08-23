@@ -1152,10 +1152,10 @@ pub(crate) enum GatewaySettingsView {
     #[default]
     List,
     Detail,
+    Form,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum CustomGatewayFormMode {
     #[default]
     Add,
@@ -1164,7 +1164,6 @@ pub(crate) enum CustomGatewayFormMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum GatewayFormField {
     #[default]
     Id,
@@ -1177,7 +1176,6 @@ pub(crate) enum GatewayFormField {
     AuthPrefix,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl GatewayFormField {
     pub(crate) const ALL: [Self; 8] = [
         Self::Id,
@@ -1203,7 +1201,6 @@ impl GatewayFormField {
 }
 
 #[derive(Clone)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CustomGatewayFormState {
     pub(crate) mode: CustomGatewayFormMode,
     pub(crate) selected_field: GatewayFormField,
@@ -1218,7 +1215,6 @@ pub(crate) struct CustomGatewayFormState {
     template: crate::gateway::Gateway,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl CustomGatewayFormState {
     pub(crate) fn add() -> Self {
         let mut template = crate::gateway::Gateway::mindshub();
@@ -1319,6 +1315,12 @@ impl CustomGatewayFormState {
         }
     }
 
+    pub(crate) fn clear_selected(&mut self) {
+        if self.selected_field_is_editable() {
+            self.selected_text_mut().clear();
+        }
+    }
+
     pub(crate) fn cycle_authentication(&mut self, direction: i8) {
         use crate::gateway::AuthenticationMode;
         let modes = [
@@ -1389,8 +1391,12 @@ impl CustomGatewayFormState {
         gateway
     }
 
-    fn selected_field_is_editable(&self) -> bool {
-        match self.selected_field {
+    pub(crate) fn selected_field_is_editable(&self) -> bool {
+        self.field_is_editable(self.selected_field)
+    }
+
+    pub(crate) fn field_is_editable(&self, field: GatewayFormField) -> bool {
+        match field {
             GatewayFormField::Id => !self.is_editing_existing(),
             GatewayFormField::Authentication => false,
             GatewayFormField::AuthHeader | GatewayFormField::AuthPrefix => {
@@ -1432,7 +1438,6 @@ impl std::fmt::Debug for CustomGatewayFormState {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn nonempty(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
@@ -1548,7 +1553,6 @@ pub(crate) struct GatewaySettingsState {
     pub(crate) notice: Option<GatewayNotice>,
     pub(crate) test_in_flight: Option<(u64, String)>,
     pub(crate) next_test_generation: u64,
-    #[allow(dead_code)]
     pub(crate) gateway_form: Option<CustomGatewayFormState>,
 }
 

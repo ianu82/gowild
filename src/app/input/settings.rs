@@ -4,7 +4,8 @@ use ratatui::layout::Rect;
 use crate::{
     app::{
         state::{
-            AppState, GatewayDetailField, GatewayModelTarget, GatewaySettingsView, SettingsSection,
+            AppState, CustomGatewayFormMode, CustomGatewayFormState, GatewayDetailField,
+            GatewayFormField, GatewayModelTarget, GatewaySettingsView, SettingsSection,
             THEME_NAMES,
         },
         App, Mode,
@@ -29,6 +30,11 @@ pub(super) enum SettingsAction {
         gateway_id: String,
         target: GatewayModelTarget,
         direction: i8,
+    },
+    AddCustomGateway(Box<crate::gateway::Gateway>),
+    UpdateCustomGateway {
+        gateway_id: String,
+        gateway: Box<crate::gateway::Gateway>,
     },
 }
 
@@ -59,6 +65,20 @@ impl App {
                     target,
                     direction,
                 } => self.cycle_gateway_model(&gateway_id, target, direction),
+                SettingsAction::AddCustomGateway(gateway) => {
+                    let gateway_id = gateway.id.clone();
+                    if self.add_custom_gateway(*gateway) {
+                        finish_gateway_form(&mut self.state, &gateway_id);
+                    }
+                }
+                SettingsAction::UpdateCustomGateway {
+                    gateway_id,
+                    gateway,
+                } => {
+                    if self.update_custom_gateway(&gateway_id, *gateway) {
+                        finish_gateway_form(&mut self.state, &gateway_id);
+                    }
+                }
             }
         }
         if previous_section != SettingsSection::Integrations
@@ -133,6 +153,7 @@ fn preview_selected_theme(state: &mut AppState) {
 fn cancel_settings(state: &mut AppState) {
     state.settings.gateways.secret_input.clear();
     state.settings.gateways.editing_credential = false;
+    state.settings.gateways.gateway_form = None;
     if let Some(palette) = state.settings.original_palette.take() {
         state.palette = palette;
     }
@@ -178,6 +199,86 @@ fn selected_gateway_id(state: &AppState) -> Option<String> {
         .cloned()
 }
 
+fn begin_gateway_add(state: &mut AppState) {
+    state.settings.gateways.secret_input.clear();
+    state.settings.gateways.editing_credential = false;
+    state.settings.gateways.gateway_form = Some(CustomGatewayFormState::add());
+    state.settings.gateways.view = GatewaySettingsView::Form;
+    state.settings.gateways.notice = None;
+}
+
+fn begin_gateway_edit(state: &mut AppState) {
+    let Some(gateway_id) = state.settings.gateways.detail_gateway_id.as_deref() else {
+        return;
+    };
+    let Some(gateway) = state.gateway_catalog.gateways.get(gateway_id) else {
+        return;
+    };
+    if gateway.preset.is_some() {
+        state.settings.gateways.notice = Some(crate::app::state::GatewayNotice {
+            kind: crate::app::state::GatewayNoticeKind::Warning,
+            message: "Built-in presets are fixed. Duplicate this gateway to customize it.".into(),
+        });
+        return;
+    }
+    state.settings.gateways.gateway_form = Some(CustomGatewayFormState::edit(gateway));
+    state.settings.gateways.view = GatewaySettingsView::Form;
+    state.settings.gateways.notice = None;
+}
+
+fn begin_gateway_duplicate(state: &mut AppState) {
+    let Some(gateway_id) = state.settings.gateways.detail_gateway_id.as_deref() else {
+        return;
+    };
+    let Some(gateway) = state.gateway_catalog.gateways.get(gateway_id) else {
+        return;
+    };
+    state.settings.gateways.gateway_form = Some(CustomGatewayFormState::duplicate(gateway));
+    state.settings.gateways.view = GatewaySettingsView::Form;
+    state.settings.gateways.notice = None;
+}
+
+fn cancel_gateway_form(state: &mut AppState) {
+    let return_to_detail = state
+        .settings
+        .gateways
+        .gateway_form
+        .as_ref()
+        .is_some_and(|form| form.mode != CustomGatewayFormMode::Add);
+    state.settings.gateways.gateway_form = None;
+    state.settings.gateways.notice = None;
+    state.settings.gateways.view = if return_to_detail {
+        GatewaySettingsView::Detail
+    } else {
+        GatewaySettingsView::List
+    };
+}
+
+fn gateway_form_action(state: &AppState) -> Option<SettingsAction> {
+    let form = state.settings.gateways.gateway_form.as_ref()?;
+    let gateway = form.gateway();
+    match form.original_gateway_id() {
+        Some(gateway_id) => Some(SettingsAction::UpdateCustomGateway {
+            gateway_id: gateway_id.to_string(),
+            gateway: Box::new(gateway),
+        }),
+        None => Some(SettingsAction::AddCustomGateway(Box::new(gateway))),
+    }
+}
+
+pub(super) fn finish_gateway_form(state: &mut AppState, gateway_id: &str) {
+    state.settings.gateways.gateway_form = None;
+    state.settings.gateways.detail_gateway_id = Some(gateway_id.to_string());
+    state.settings.gateways.detail_field = GatewayDetailField::Credential;
+    state.settings.gateways.view = GatewaySettingsView::Detail;
+    state.settings.gateways.selected_gateway = state
+        .gateway_catalog
+        .gateways
+        .keys()
+        .position(|id| id == gateway_id)
+        .unwrap_or_default();
+}
+
 fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<SettingsAction> {
     if state.settings.gateways.editing_credential {
         match key.code {
@@ -209,6 +310,7 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
 
     match state.settings.gateways.view {
         GatewaySettingsView::List => match key.code {
+            KeyCode::Char('a') => begin_gateway_add(state),
             KeyCode::Up | KeyCode::Char('k') => {
                 state.settings.gateways.selected_gateway =
                     state.settings.gateways.selected_gateway.saturating_sub(1);
@@ -273,7 +375,16 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                     GatewayDetailField::ALL[(current + 1).min(GatewayDetailField::ALL.len() - 1)];
             }
             KeyCode::Enter
-                if state.settings.gateways.detail_field == GatewayDetailField::Credential =>
+                if state.settings.gateways.detail_field == GatewayDetailField::Credential
+                    && state
+                        .settings
+                        .gateways
+                        .detail_gateway_id
+                        .as_ref()
+                        .and_then(|id| state.gateway_catalog.gateways.get(id))
+                        .is_some_and(|gateway| {
+                            gateway.auth.mode != crate::gateway::AuthenticationMode::None
+                        }) =>
             {
                 state.settings.gateways.secret_input.clear();
                 state.settings.gateways.editing_credential = true;
@@ -312,6 +423,8 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                     .clone()
                     .map(SettingsAction::SaveDefaultGateway);
             }
+            KeyCode::Char('e') => begin_gateway_edit(state),
+            KeyCode::Char('d') => begin_gateway_duplicate(state),
             KeyCode::Tab => {
                 state.settings.gateways.secret_input.clear();
                 state.settings.gateways.editing_credential = false;
@@ -325,6 +438,48 @@ fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<Settin
                 state.settings.gateways.view = GatewaySettingsView::List;
                 state.settings.section = SettingsSection::Integrations;
                 state.settings.list.selected = 0;
+            }
+            _ => {}
+        },
+        GatewaySettingsView::Form => match key.code {
+            KeyCode::Esc => cancel_gateway_form(state),
+            KeyCode::Up | KeyCode::BackTab => {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    form.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    form.move_selection(1);
+                }
+            }
+            KeyCode::Left | KeyCode::Right => {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    if form.selected_field == GatewayFormField::Authentication {
+                        form.cycle_authentication(if key.code == KeyCode::Left { -1 } else { 1 });
+                    }
+                }
+            }
+            KeyCode::Enter => return gateway_form_action(state),
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    form.clear_selected();
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    form.backspace();
+                }
+            }
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                if let Some(form) = state.settings.gateways.gateway_form.as_mut() {
+                    let mut encoded = [0; 4];
+                    form.insert(character.encode_utf8(&mut encoded));
+                }
             }
             _ => {}
         },
@@ -494,6 +649,7 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
     state.settings.gateways.secret_input.clear();
     state.settings.gateways.editing_credential = false;
     state.settings.gateways.view = GatewaySettingsView::List;
+    state.settings.gateways.gateway_form = None;
     state.settings.gateways.notice = None;
     state.settings.list.selected = match section {
         SettingsSection::Gateways => 0,
@@ -505,6 +661,15 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
         SettingsSection::Integrations => 0,
     };
     state.mode = Mode::Settings;
+}
+
+fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
+    rect.width > 0
+        && rect.height > 0
+        && column >= rect.x
+        && column < rect.x.saturating_add(rect.width)
+        && row >= rect.y
+        && row < rect.y.saturating_add(rect.height)
 }
 
 impl AppState {
@@ -583,6 +748,30 @@ impl AppState {
                         None
                     }
                 }
+                GatewaySettingsView::Form => {
+                    let first_offset = if area.height < 12 { 1 } else { 2 };
+                    let visible_rows = area.height.saturating_sub(first_offset + 2) as usize;
+                    let selected_index = self
+                        .settings
+                        .gateways
+                        .gateway_form
+                        .as_ref()
+                        .and_then(|form| {
+                            GatewayFormField::ALL
+                                .iter()
+                                .position(|field| *field == form.selected_field)
+                        })
+                        .unwrap_or_default();
+                    let scroll = selected_index
+                        .saturating_add(1)
+                        .saturating_sub(visible_rows);
+                    let first_row = area.y + first_offset;
+                    if row < first_row || row >= first_row + visible_rows as u16 {
+                        return None;
+                    }
+                    let idx = scroll + (row - first_row) as usize;
+                    (idx < GatewayFormField::ALL.len()).then_some(idx)
+                }
             },
             SettingsSection::Theme => {
                 let max_visible = area.height as usize;
@@ -630,6 +819,7 @@ impl AppState {
                         self.settings.gateways.secret_input.clear();
                         self.settings.gateways.editing_credential = false;
                         self.settings.gateways.view = GatewaySettingsView::List;
+                        self.settings.gateways.gateway_form = None;
                     }
                     self.settings.section = section;
                     self.settings.list.select(match section {
@@ -646,6 +836,39 @@ impl AppState {
                         SettingsSection::Integrations => 0,
                     });
                     return None;
+                }
+                let gateway_area = self.settings_content_rect();
+                if self.settings.section == SettingsSection::Gateways
+                    && self.settings.gateways.view == GatewaySettingsView::List
+                    && rect_contains(
+                        crate::ui::gateway_add_button_rect(gateway_area),
+                        mouse.column,
+                        mouse.row,
+                    )
+                {
+                    begin_gateway_add(self);
+                    return None;
+                }
+                if self.settings.section == SettingsSection::Gateways
+                    && self.settings.gateways.view == GatewaySettingsView::Detail
+                {
+                    let show_edit = self
+                        .settings
+                        .gateways
+                        .detail_gateway_id
+                        .as_ref()
+                        .and_then(|id| self.gateway_catalog.gateways.get(id))
+                        .is_some_and(|gateway| gateway.preset.is_none());
+                    let (edit, duplicate) =
+                        crate::ui::gateway_detail_button_rects(gateway_area, show_edit);
+                    if edit.is_some_and(|rect| rect_contains(rect, mouse.column, mouse.row)) {
+                        begin_gateway_edit(self);
+                        return None;
+                    }
+                    if rect_contains(duplicate, mouse.column, mouse.row) {
+                        begin_gateway_duplicate(self);
+                        return None;
+                    }
                 }
                 if let Some(idx) = self.settings_list_index_at(mouse.column, mouse.row) {
                     if self.settings.section == SettingsSection::Gateways {
@@ -664,9 +887,21 @@ impl AppState {
                                 self.settings.gateways.detail_field = GatewayDetailField::ALL[idx];
                                 match self.settings.gateways.detail_field {
                                     GatewayDetailField::Credential => {
-                                        self.settings.gateways.secret_input.clear();
-                                        self.settings.gateways.editing_credential = true;
-                                        self.settings.gateways.notice = None;
+                                        let needs_credential = self
+                                            .settings
+                                            .gateways
+                                            .detail_gateway_id
+                                            .as_ref()
+                                            .and_then(|id| self.gateway_catalog.gateways.get(id))
+                                            .is_some_and(|gateway| {
+                                                gateway.auth.mode
+                                                    != crate::gateway::AuthenticationMode::None
+                                            });
+                                        if needs_credential {
+                                            self.settings.gateways.secret_input.clear();
+                                            self.settings.gateways.editing_credential = true;
+                                            self.settings.gateways.notice = None;
+                                        }
                                     }
                                     GatewayDetailField::CodexModel
                                     | GatewayDetailField::ClaudeModel => {
@@ -686,6 +921,14 @@ impl AppState {
                                                 direction: 1,
                                             });
                                         }
+                                    }
+                                }
+                            }
+                            GatewaySettingsView::Form => {
+                                if let Some(form) = self.settings.gateways.gateway_form.as_mut() {
+                                    form.selected_field = GatewayFormField::ALL[idx];
+                                    if form.selected_field == GatewayFormField::Authentication {
+                                        form.cycle_authentication(1);
                                     }
                                 }
                             }
@@ -737,17 +980,25 @@ impl AppState {
                                 .clone()
                                 .map(SettingsAction::SaveGatewayCredential);
                         }
+                        if self.settings.gateways.view == GatewaySettingsView::Form {
+                            return gateway_form_action(self);
+                        }
                         let gateway_id = match self.settings.gateways.view {
                             GatewaySettingsView::List => selected_gateway_id(self),
                             GatewaySettingsView::Detail => {
                                 self.settings.gateways.detail_gateway_id.clone()
                             }
+                            GatewaySettingsView::Form => None,
                         };
                         gateway_id.map(SettingsAction::TestGateway)
                     }
                     Some(super::modal::ModalAction::Apply) => apply_settings(self),
                     Some(super::modal::ModalAction::Close) => {
                         if self.settings.section == SettingsSection::Gateways
+                            && self.settings.gateways.view == GatewaySettingsView::Form
+                        {
+                            cancel_gateway_form(self);
+                        } else if self.settings.section == SettingsSection::Gateways
                             && self.settings.gateways.editing_credential
                         {
                             self.settings.gateways.secret_input.clear();
@@ -1007,6 +1258,297 @@ mod tests {
                 direction: 1,
             })
         );
+    }
+
+    #[test]
+    fn gateway_form_keyboard_and_paste_paths_return_explicit_create_and_update_actions() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+
+        update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()),
+        );
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::Form);
+        assert!(app.paste_into_active_text_input("private-hub\n"));
+        update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+        );
+        assert_eq!(
+            app.state
+                .settings
+                .gateways
+                .gateway_form
+                .as_ref()
+                .expect("add form")
+                .id,
+            ""
+        );
+        assert!(app.paste_into_active_text_input("private-hub\n"));
+        let form = app
+            .state
+            .settings
+            .gateways
+            .gateway_form
+            .as_mut()
+            .expect("add form");
+        assert_eq!(form.id, "private-hub");
+        form.display_name = "Private Hub".into();
+        form.responses_url = "https://gateway.example/v1".into();
+
+        let action = update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
+        );
+        assert!(matches!(
+            action,
+            Some(SettingsAction::AddCustomGateway(gateway))
+                if gateway.id == "private-hub"
+                    && gateway.display_name == "Private Hub"
+        ));
+
+        let mut custom = crate::gateway::Gateway::mindshub();
+        custom.id = "existing".into();
+        custom.display_name = "Existing".into();
+        custom.preset = None;
+        custom.auth.credential_ref = Some("gateway:existing".into());
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        app.state.settings.gateways.detail_gateway_id = Some("existing".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+        update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::empty()),
+        );
+        app.state
+            .settings
+            .gateways
+            .gateway_form
+            .as_mut()
+            .expect("edit form")
+            .display_name = "Edited".into();
+        let action = update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
+        );
+        assert!(matches!(
+            action,
+            Some(SettingsAction::UpdateCustomGateway { gateway_id, gateway })
+                if gateway_id == "existing" && gateway.display_name == "Edited"
+        ));
+    }
+
+    #[test]
+    fn gateway_form_cancel_and_unauthenticated_detail_fail_safe() {
+        let mut state = state_with_workspaces(&["test"]);
+        open_settings(&mut state);
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()),
+        );
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()),
+        );
+        assert_eq!(state.settings.gateways.view, GatewaySettingsView::List);
+        assert!(state.settings.gateways.gateway_form.is_none());
+
+        let mut custom = crate::gateway::Gateway::mindshub();
+        custom.id = "no-auth".into();
+        custom.display_name = "No Auth".into();
+        custom.preset = None;
+        custom.auth.mode = crate::gateway::AuthenticationMode::None;
+        custom.auth.credential_ref = None;
+        state
+            .gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        state.settings.gateways.detail_gateway_id = Some("no-auth".into());
+        state.settings.gateways.view = GatewaySettingsView::Detail;
+        state.settings.gateways.detail_field = GatewayDetailField::Credential;
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()),
+        );
+        assert!(!state.settings.gateways.editing_credential);
+    }
+
+    #[test]
+    fn gateway_form_mouse_paths_cover_add_edit_duplicate_save_and_cancel_controls() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+        let area = app.state.settings_content_rect();
+        let add = crate::ui::gateway_add_button_rect(area);
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            add.x + 1,
+            add.y,
+        ));
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::Form);
+
+        let auth_row = area.y + 1 + GatewayFormField::Authentication as u16;
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            area.x + 2,
+            auth_row,
+        ));
+        let form = app
+            .state
+            .settings
+            .gateways
+            .gateway_form
+            .as_ref()
+            .expect("form after mouse add");
+        assert_eq!(form.selected_field, GatewayFormField::Authentication);
+        assert_eq!(
+            form.authentication,
+            crate::gateway::AuthenticationMode::XApiKey
+        );
+
+        {
+            let form = app
+                .state
+                .settings
+                .gateways
+                .gateway_form
+                .as_mut()
+                .expect("form before mouse save");
+            form.id = "mouse-hub".into();
+            form.display_name = "Mouse Hub".into();
+            form.responses_url = "https://gateway.example/v1".into();
+        }
+        let inner = app.state.settings_inner_rect();
+        let (save, close) = crate::ui::settings_button_rects(inner, &app.state, true);
+        let save = save.expect("gateway form save button");
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            save.x + 1,
+            save.y,
+        ));
+        assert!(matches!(
+            action,
+            Some(SettingsAction::AddCustomGateway(gateway))
+                if gateway.id == "mouse-hub" && gateway.display_name == "Mouse Hub"
+        ));
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            close.x + 1,
+            close.y,
+        ));
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::List);
+
+        let mut custom = crate::gateway::Gateway::mindshub();
+        custom.id = "editable".into();
+        custom.display_name = "Editable".into();
+        custom.preset = None;
+        app.state
+            .gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+        app.state.settings.gateways.detail_gateway_id = Some("editable".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+        let (edit, _) = crate::ui::gateway_detail_button_rects(area, true);
+        let edit = edit.expect("custom gateway edit button");
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            edit.x + 1,
+            edit.y,
+        ));
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::Form);
+        assert_eq!(
+            app.state
+                .settings
+                .gateways
+                .gateway_form
+                .as_ref()
+                .map(|form| form.mode),
+            Some(CustomGatewayFormMode::Edit)
+        );
+
+        let (_, close) = crate::ui::settings_button_rects(inner, &app.state, true);
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            close.x + 1,
+            close.y,
+        ));
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+
+        app.state.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+        let (_, duplicate) = crate::ui::gateway_detail_button_rects(area, false);
+        app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            duplicate.x + 1,
+            duplicate.y,
+        ));
+        assert_eq!(app.state.settings.gateways.view, GatewaySettingsView::Form);
+        assert_eq!(
+            app.state
+                .settings
+                .gateways
+                .gateway_form
+                .as_ref()
+                .map(|form| form.mode),
+            Some(CustomGatewayFormMode::Duplicate)
+        );
+    }
+
+    #[test]
+    fn gateway_form_action_persists_and_opens_the_saved_gateway() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix clock")
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("gowild-form-save-{nonce}"))
+            .join("gateways.json");
+        let mut app = app_for_mouse_test();
+        app.gateway_repository = crate::gateway::GatewayRepository::new(path.clone());
+        open_settings(&mut app.state);
+        update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()),
+        );
+        let form = app
+            .state
+            .settings
+            .gateways
+            .gateway_form
+            .as_mut()
+            .expect("add form");
+        form.id = "local-proxy".into();
+        form.display_name = "Local Proxy".into();
+        form.responses_url = "http://127.0.0.1:11434/v1".into();
+        form.authentication = crate::gateway::AuthenticationMode::None;
+
+        app.handle_settings_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        assert!(app
+            .state
+            .gateway_catalog
+            .gateways
+            .contains_key("local-proxy"));
+        assert_eq!(
+            app.state.settings.gateways.detail_gateway_id.as_deref(),
+            Some("local-proxy")
+        );
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+        assert!(app.state.settings.gateways.gateway_form.is_none());
+        assert!(crate::gateway::GatewayRepository::new(path.clone())
+            .load()
+            .expect("saved form catalog")
+            .gateways
+            .contains_key("local-proxy"));
+        let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
     }
 
     #[test]

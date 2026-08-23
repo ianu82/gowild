@@ -26,10 +26,6 @@ impl App {
         self.persist_custom_gateway(gateway, None)
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "wired into custom gateway forms next")
-    )]
     pub(crate) fn update_custom_gateway(&mut self, gateway_id: &str, gateway: Gateway) -> bool {
         if gateway.id != gateway_id {
             self.set_gateway_notice(

@@ -13,13 +13,13 @@ use super::widgets::{
 use crate::{
     app::{
         state::{
-            GatewayCredentialStatus, GatewayDetailField, GatewayNoticeKind, GatewaySettingsView,
-            Palette,
+            CustomGatewayFormMode, GatewayCredentialStatus, GatewayDetailField, GatewayFormField,
+            GatewayNoticeKind, GatewaySettingsView, Palette,
         },
         AppState,
     },
     config::{StatusIndicatorStyle, ToastDelivery},
-    gateway::{ConnectionStatus, Gateway, GatewayProtocol},
+    gateway::{AuthenticationMode, ConnectionStatus, Gateway, GatewayProtocol},
 };
 
 pub(crate) const SETTINGS_POPUP_WIDTH: u16 = 76;
@@ -213,7 +213,23 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                 GatewaySettingsView::Detail if app.settings.gateways.editing_credential => {
                     " paste or type key  ↵ store securely  esc cancel"
                 }
-                GatewaySettingsView::Detail => " ↑↓ field  ←→ model  ↵ replace key  space default",
+                GatewaySettingsView::Detail => {
+                    let custom = app
+                        .settings
+                        .gateways
+                        .detail_gateway_id
+                        .as_ref()
+                        .and_then(|id| app.gateway_catalog.gateways.get(id))
+                        .is_some_and(|gateway| gateway.preset.is_none());
+                    if custom {
+                        " ↑↓ field  ←→ model  e edit  d duplicate"
+                    } else {
+                        " ↑↓ field  ←→ model  d duplicate  space default"
+                    }
+                }
+                GatewaySettingsView::Form => {
+                    " ↑↓ field  type/paste  ^u clear  ←→ auth  ↵ save  esc cancel"
+                }
             }
         } else {
             " ↑↓ select  tab section"
@@ -232,6 +248,21 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
         {
             "store"
         }
+        crate::app::state::SettingsSection::Gateways
+            if app.settings.gateways.view == GatewaySettingsView::Form =>
+        {
+            match app
+                .settings
+                .gateways
+                .gateway_form
+                .as_ref()
+                .map(|form| form.mode)
+            {
+                Some(CustomGatewayFormMode::Edit) => "save",
+                Some(CustomGatewayFormMode::Duplicate) => "duplicate",
+                _ => "add",
+            }
+        }
         crate::app::state::SettingsSection::Gateways => "test",
         crate::app::state::SettingsSection::Integrations => "install",
         _ => "apply",
@@ -240,7 +271,8 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
 
 pub(crate) fn settings_close_button_label(app: &AppState) -> &'static str {
     if app.settings.section == crate::app::state::SettingsSection::Gateways
-        && app.settings.gateways.editing_credential
+        && (app.settings.gateways.view == GatewaySettingsView::Form
+            || app.settings.gateways.editing_credential)
     {
         "cancel"
     } else if app.settings.section == crate::app::state::SettingsSection::Gateways
@@ -267,6 +299,7 @@ pub(crate) fn settings_show_primary_action(app: &AppState) -> bool {
                 .detail_gateway_id
                 .as_ref()
                 .is_some_and(|id| app.gateway_catalog.gateways.contains_key(id)),
+            GatewaySettingsView::Form => app.settings.gateways.gateway_form.is_some(),
         },
         crate::app::state::SettingsSection::Integrations => app
             .integration_recommendations
@@ -321,6 +354,19 @@ fn compact_text(value: &str, max_chars: usize) -> String {
     } else {
         prefix
     }
+}
+
+fn compact_input_text(value: &str, max_chars: usize) -> String {
+    let count = value.chars().count();
+    if count <= max_chars {
+        return value.to_string();
+    }
+    let tail_chars = max_chars.saturating_sub(1);
+    let tail = value
+        .chars()
+        .skip(count.saturating_sub(tail_chars))
+        .collect::<String>();
+    format!("…{tail}")
 }
 
 fn connection_label(status: ConnectionStatus) -> &'static str {
@@ -379,6 +425,51 @@ fn render_settings_gateways(app: &AppState, frame: &mut Frame, area: Rect) {
     match app.settings.gateways.view {
         GatewaySettingsView::List => render_gateway_list(app, frame, area),
         GatewaySettingsView::Detail => render_gateway_detail(app, frame, area),
+        GatewaySettingsView::Form => render_gateway_form(app, frame, area),
+    }
+}
+
+pub(crate) fn gateway_add_button_rect(area: Rect) -> Rect {
+    let width = 14.min(area.width);
+    Rect::new(
+        area.x.saturating_add(area.width.saturating_sub(width)),
+        area.y,
+        width,
+        u16::from(area.height > 0),
+    )
+}
+
+pub(crate) fn gateway_detail_button_rects(area: Rect, show_edit: bool) -> (Option<Rect>, Rect) {
+    let duplicate_width = 13.min(area.width);
+    let duplicate = Rect::new(
+        area.x
+            .saturating_add(area.width.saturating_sub(duplicate_width)),
+        area.y.saturating_add(1),
+        duplicate_width,
+        u16::from(area.height > 1),
+    );
+    let edit = show_edit.then(|| {
+        let gap = 1;
+        let width = 8.min(area.width.saturating_sub(duplicate_width + gap));
+        Rect::new(
+            duplicate.x.saturating_sub(width + gap),
+            duplicate.y,
+            width,
+            duplicate.height,
+        )
+    });
+    (edit, duplicate)
+}
+
+fn gateway_protocol_summary(gateway: &Gateway) -> &'static str {
+    match (
+        gateway.supports(GatewayProtocol::OpenAiResponses),
+        gateway.supports(GatewayProtocol::AnthropicMessages),
+    ) {
+        (true, true) => "Responses + Messages",
+        (true, false) => "Responses",
+        (false, true) => "Messages",
+        (false, false) => "No launch protocol",
     }
 }
 
@@ -396,6 +487,17 @@ fn render_gateway_list(app: &AppState, frame: &mut Frame, area: Rect) {
             Span::styled("  CLI + model independent", Style::default().fg(p.accent)),
         ])),
         Rect::new(area.x, area.y, area.width, 1),
+    );
+    let add_rect = gateway_add_button_rect(area);
+    render_action_button(
+        frame,
+        add_rect,
+        Some("a"),
+        "add custom",
+        Style::default()
+            .fg(panel_contrast_fg(p))
+            .bg(p.accent)
+            .add_modifier(Modifier::BOLD),
     );
     if area.height > 1 {
         frame.render_widget(
@@ -467,7 +569,7 @@ fn render_gateway_list(app: &AppState, frame: &mut Frame, area: Rect) {
                     Span::styled(status_label, Style::default().fg(status_color)),
                 ]),
                 Line::from(vec![
-                    Span::styled("   Responses + Messages", style),
+                    Span::styled(format!("   {}", gateway_protocol_summary(gateway)), style),
                     Span::styled(
                         format!("  {models} models"),
                         Style::default().fg(p.overlay1),
@@ -540,13 +642,32 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
     );
     if area.height > 1 {
         frame.render_widget(
-            Paragraph::new(" one gateway · two coding CLIs · any discovered model")
-                .style(Style::default().fg(p.overlay1)),
+            Paragraph::new(" one gateway · two coding CLIs").style(Style::default().fg(p.overlay1)),
             Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+        let (edit_rect, duplicate_rect) =
+            gateway_detail_button_rects(area, gateway.preset.is_none());
+        if let Some(edit_rect) = edit_rect {
+            render_action_button(
+                frame,
+                edit_rect,
+                Some("e"),
+                "edit",
+                Style::default().fg(p.text).bg(p.surface0),
+            );
+        }
+        render_action_button(
+            frame,
+            duplicate_rect,
+            Some("d"),
+            "duplicate",
+            Style::default().fg(p.text).bg(p.surface0),
         );
     }
 
-    let credential_status = if app.settings.gateways.editing_credential {
+    let credential_status = if gateway.auth.mode == AuthenticationMode::None {
+        "not required"
+    } else if app.settings.gateways.editing_credential {
         if app.settings.gateways.secret_input.is_empty() {
             "paste or type key  ↵ store"
         } else {
@@ -620,23 +741,28 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
 
     let protocol_y = area.y.saturating_add(7);
     if protocol_y < area.y.saturating_add(area.height) {
-        let (responses, responses_status) =
-            protocol_badge(gateway, GatewayProtocol::OpenAiResponses);
-        let (messages, messages_status) =
-            protocol_badge(gateway, GatewayProtocol::AnthropicMessages);
+        let mut spans = vec![Span::styled(
+            " protocols  ",
+            Style::default().fg(p.overlay1),
+        )];
+        for protocol in [
+            GatewayProtocol::OpenAiResponses,
+            GatewayProtocol::AnthropicMessages,
+        ] {
+            if !gateway.supports(protocol) {
+                continue;
+            }
+            if spans.len() > 1 {
+                spans.push(Span::raw("    "));
+            }
+            let (label, status) = protocol_badge(gateway, protocol);
+            spans.push(Span::styled(
+                format!("{label} {}", status_symbol(status)),
+                Style::default().fg(status_color(status, p)),
+            ));
+        }
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(" protocols  ", Style::default().fg(p.overlay1)),
-                Span::styled(
-                    format!("{responses} {}", status_symbol(responses_status)),
-                    Style::default().fg(status_color(responses_status, p)),
-                ),
-                Span::raw("    "),
-                Span::styled(
-                    format!("{messages} {}", status_symbol(messages_status)),
-                    Style::default().fg(status_color(messages_status, p)),
-                ),
-            ])),
+            Paragraph::new(Line::from(spans)),
             Rect::new(area.x, protocol_y, area.width, 1),
         );
     }
@@ -657,6 +783,151 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
                 Rect::new(area.x, diagnostic_y, area.width, 1),
             );
         }
+    }
+
+    let notice_y = area.y.saturating_add(area.height.saturating_sub(2));
+    render_gateway_notice(
+        app,
+        frame,
+        Rect::new(area.x, notice_y, area.width, area.height.min(2)),
+    );
+}
+
+fn authentication_label(mode: AuthenticationMode) -> &'static str {
+    match mode {
+        AuthenticationMode::BearerToken => "bearer token",
+        AuthenticationMode::XApiKey => "x-api-key",
+        AuthenticationMode::CustomHeader => "custom secret header",
+        AuthenticationMode::None => "none",
+    }
+}
+
+fn gateway_form_field_label(field: GatewayFormField) -> &'static str {
+    match field {
+        GatewayFormField::Id => "Gateway ID",
+        GatewayFormField::DisplayName => "Name",
+        GatewayFormField::ResponsesUrl => "Responses URL",
+        GatewayFormField::MessagesUrl => "Messages URL",
+        GatewayFormField::ModelsUrl => "Models URL",
+        GatewayFormField::Authentication => "Authentication",
+        GatewayFormField::AuthHeader => "Secret header",
+        GatewayFormField::AuthPrefix => "Value prefix",
+    }
+}
+
+fn gateway_form_field_value(
+    form: &crate::app::state::CustomGatewayFormState,
+    field: GatewayFormField,
+) -> String {
+    match field {
+        GatewayFormField::Id => form.id.clone(),
+        GatewayFormField::DisplayName => form.display_name.clone(),
+        GatewayFormField::ResponsesUrl => form.responses_url.clone(),
+        GatewayFormField::MessagesUrl => form.messages_url.clone(),
+        GatewayFormField::ModelsUrl => form.models_url.clone(),
+        GatewayFormField::Authentication => authentication_label(form.authentication).into(),
+        GatewayFormField::AuthHeader => form.auth_header.clone(),
+        GatewayFormField::AuthPrefix => form.auth_prefix.clone(),
+    }
+}
+
+fn render_gateway_form(app: &AppState, frame: &mut Frame, area: Rect) {
+    let p = &app.palette;
+    let Some(form) = app.settings.gateways.gateway_form.as_ref() else {
+        frame.render_widget(
+            Paragraph::new(" Gateway form is no longer available.")
+                .style(Style::default().fg(p.red)),
+            area,
+        );
+        return;
+    };
+    if area.height == 0 {
+        return;
+    }
+    let title = match form.mode {
+        CustomGatewayFormMode::Add => " add custom gateway",
+        CustomGatewayFormMode::Edit => " edit custom gateway",
+        CustomGatewayFormMode::Duplicate => " duplicate as custom gateway",
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                title,
+                Style::default().fg(p.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  API key follows after save",
+                Style::default().fg(p.accent),
+            ),
+        ])),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+
+    let first_offset = if area.height < 12 { 1 } else { 2 };
+    let visible_rows = area.height.saturating_sub(first_offset + 2) as usize;
+    let selected_index = GatewayFormField::ALL
+        .iter()
+        .position(|field| *field == form.selected_field)
+        .unwrap_or_default();
+    let scroll = selected_index
+        .saturating_add(1)
+        .saturating_sub(visible_rows);
+    let value_chars = (area.width as usize).saturating_sub(23).max(8);
+    for (visible_index, field) in GatewayFormField::ALL
+        .iter()
+        .copied()
+        .skip(scroll)
+        .take(visible_rows)
+        .enumerate()
+    {
+        let selected = field == form.selected_field;
+        let enabled = form.field_is_editable(field) || field == GatewayFormField::Authentication;
+        let mut value = gateway_form_field_value(form, field);
+        if value.is_empty() {
+            value = match field {
+                GatewayFormField::ResponsesUrl | GatewayFormField::MessagesUrl => {
+                    "optional; configure at least one".into()
+                }
+                GatewayFormField::ModelsUrl => "optional model discovery".into(),
+                GatewayFormField::AuthHeader | GatewayFormField::AuthPrefix if !enabled => {
+                    "custom header auth only".into()
+                }
+                _ => "required".into(),
+            };
+        } else if field == GatewayFormField::Id && form.is_editing_existing() {
+            value.push_str("  fixed");
+        } else if selected && form.field_is_editable(field) {
+            value.push('▏');
+        }
+        let value = if selected && form.field_is_editable(field) {
+            compact_input_text(&value, value_chars)
+        } else {
+            compact_text(&value, value_chars)
+        };
+        let style = if selected {
+            Style::default()
+                .fg(if enabled { p.text } else { p.overlay1 })
+                .bg(p.surface0)
+                .add_modifier(Modifier::BOLD)
+        } else if enabled {
+            Style::default().fg(p.subtext0)
+        } else {
+            Style::default().fg(p.overlay0)
+        };
+        let y = area
+            .y
+            .saturating_add(first_offset)
+            .saturating_add(visible_index as u16);
+        frame.render_widget(
+            Paragraph::new(format!(
+                " {} {:<15}  {}",
+                if selected { "▸" } else { " " },
+                gateway_form_field_label(field),
+                value
+            ))
+            .style(style),
+            Rect::new(area.x, y, area.width, 1),
+        );
     }
 
     let notice_y = area.y.saturating_add(area.height.saturating_sub(2));
@@ -841,7 +1112,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::state::{GatewayCredentialStatus, GatewaySettingsView, Mode, SettingsSection},
+        app::state::{
+            CustomGatewayFormState, GatewayCredentialStatus, GatewaySettingsView, Mode,
+            SettingsSection,
+        },
         gateway::CachedModel,
     };
 
@@ -946,5 +1220,77 @@ mod tests {
         let rendered = rendered_gateway_settings(&app, 80, 24);
 
         assert!(rendered.contains("No gateways configured."));
+    }
+
+    #[test]
+    fn custom_gateway_form_scrolls_and_stays_legible_at_supported_sizes() {
+        let mut app = gateway_settings_state();
+        let mut form = CustomGatewayFormState::add();
+        form.id = "private-hub".into();
+        form.display_name = "Private Hub".into();
+        form.responses_url = "https://gateway.example/v1".into();
+        app.settings.gateways.view = GatewaySettingsView::Form;
+        app.settings.gateways.gateway_form = Some(form);
+
+        for (width, height) in [(80, 24), (100, 30), (64, 20)] {
+            let rendered = rendered_gateway_settings(&app, width, height);
+            assert!(rendered.contains("add custom gateway"), "{width}×{height}");
+            assert!(rendered.contains("Gateway ID"), "{width}×{height}");
+            assert!(rendered.contains("private-hub"), "{width}×{height}");
+            assert!(rendered.contains("add"), "{width}×{height}");
+            assert!(rendered.contains("cancel"), "{width}×{height}");
+        }
+
+        app.settings
+            .gateways
+            .gateway_form
+            .as_mut()
+            .expect("custom form")
+            .selected_field = GatewayFormField::AuthPrefix;
+        let constrained = rendered_gateway_settings(&app, 64, 20);
+        assert!(constrained.contains("Value prefix"));
+
+        let form = app
+            .settings
+            .gateways
+            .gateway_form
+            .as_mut()
+            .expect("custom form");
+        form.selected_field = GatewayFormField::ResponsesUrl;
+        form.responses_url = format!("https://gateway.example/{}VISIBLE-END", "x".repeat(100));
+        let constrained = rendered_gateway_settings(&app, 64, 20);
+        assert!(constrained.contains("VISIBLE-END▏"));
+    }
+
+    #[test]
+    fn custom_gateway_rows_show_actual_protocols_and_unauthenticated_state() {
+        let mut app = gateway_settings_state();
+        let mut custom = Gateway::mindshub();
+        custom.id = "responses-only".into();
+        custom.display_name = "Responses Only".into();
+        custom.preset = None;
+        custom.endpoints.anthropic_messages = None;
+        custom
+            .capabilities
+            .protocols
+            .remove(&GatewayProtocol::AnthropicMessages);
+        custom.auth.mode = AuthenticationMode::None;
+        custom.auth.credential_ref = None;
+        app.gateway_catalog.gateways.clear();
+        app.gateway_catalog
+            .gateways
+            .insert(custom.id.clone(), custom);
+
+        let list = rendered_gateway_settings(&app, 100, 30);
+        assert!(list.contains("Responses Only"));
+        assert!(list.contains("Responses"));
+        assert!(!list.contains("Messages"));
+
+        app.settings.gateways.view = GatewaySettingsView::Detail;
+        app.settings.gateways.detail_gateway_id = Some("responses-only".into());
+        let detail = rendered_gateway_settings(&app, 80, 24);
+        assert!(detail.contains("not required"));
+        assert!(detail.contains("edit"));
+        assert!(detail.contains("duplicate"));
     }
 }
