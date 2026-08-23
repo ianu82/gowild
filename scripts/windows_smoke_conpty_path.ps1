@@ -103,11 +103,17 @@ try {
         throw "workspace create did not return a root pane id: $($created -join "`n")"
     }
     $marker = "GOWILD_CONPTY_SMOKE_OK"
-    Invoke-Checked $exe @("pane", "run", $paneId, "echo $marker")
 
     $text = ""
-    $deadline = (Get-Date).AddSeconds(15)
+    $attempt = 0
+    $deadline = (Get-Date).AddSeconds(30)
     do {
+        # Workspace creation can complete before the new shell is ready to
+        # consume input. Re-sending this idempotent marker exercises the same
+        # pane path without treating that startup race as a ConPTY failure.
+        if (($attempt % 4) -eq 0) {
+            Invoke-Checked $exe @("pane", "run", $paneId, "echo $marker")
+        }
         Start-Sleep -Milliseconds 500
         try {
             $read = & $exe pane read $paneId --source recent-unwrapped --lines 40 --format text 2>&1
@@ -120,6 +126,7 @@ try {
         if ($readExitCode -eq 0 -and (($text -replace "\s", "") -match $marker)) {
             break
         }
+        $attempt += 1
     } while ((Get-Date) -lt $deadline)
 
     if (($text -replace "\s", "") -notmatch $marker) {

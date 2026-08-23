@@ -60,6 +60,7 @@ mod app;
 mod build_info;
 mod checksum;
 mod cli;
+mod cli_adapter;
 mod client;
 mod config;
 mod detect;

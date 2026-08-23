@@ -28,3 +28,30 @@ cannot establish an owner-only ACL there.
 The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
 credentials and common key formats before persistence.
+
+## Launch resolution
+
+Every coding CLI declares the protocol it needs. GoWild resolves the selected
+gateway before invoking the adapter and refuses to launch when that gateway
+does not advertise a matching endpoint. Fresh and resumed sessions use the same
+resolution path, so resume cannot silently fall back to a proprietary service.
+
+Selection uses the following precedence:
+
+1. An explicit per-launch gateway or model.
+2. A GoWild process environment override.
+3. The saved gateway and per-CLI model defaults.
+
+The supported process overrides are:
+
+- `GOWILD_GATEWAY`
+- `GOWILD_MODEL`
+- `GOWILD_API_KEY`
+- `GOWILD_RESPONSES_BASE_URL`
+- `GOWILD_MESSAGES_BASE_URL`
+
+`GOWILD_API_KEY` is an ephemeral override and is never persisted. The resolved
+credential is passed to an adapter as a secret value, rejected if the adapter
+places it in argv or an ordinary environment value, and exposed only to the
+spawned child process. Launch specifications and pane environment diagnostics
+redact all environment values.
