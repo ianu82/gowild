@@ -107,6 +107,8 @@ pub struct PaneSnapshot {
     pub agent_session: Option<PaneAgentSessionSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_argv: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_agent_route: Option<crate::terminal::GatewayAgentRoute>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,6 +340,8 @@ fn capture_tab(
             })
             .unwrap_or_default();
         let launch_argv = terminal.and_then(|terminal| terminal.launch_argv.clone());
+        let gateway_agent_route =
+            terminal.and_then(|terminal| terminal.gateway_agent_route.clone());
         let agent_session = terminal.and_then(|terminal| {
             if let Some(authority) = terminal.hook_authority.as_ref() {
                 if let Some(session_ref) = authority.session_ref.as_ref() {
@@ -368,6 +372,7 @@ fn capture_tab(
                 managed_agent_kind,
                 agent_session,
                 launch_argv,
+                gateway_agent_route,
             },
         );
     }
@@ -648,6 +653,11 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                gateway_agent_route: Some(crate::terminal::GatewayAgentRoute {
+                    cli: "codex".into(),
+                    gateway_id: "mindshub".into(),
+                    model: "minds/agentic-coding".into(),
+                }),
             },
         );
         panes.insert(
@@ -659,6 +669,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                gateway_agent_route: None,
             },
         );
 
@@ -713,6 +724,16 @@ mod tests {
         assert_eq!(
             restored.workspaces[0].tabs[0].panes[&1].label.as_deref(),
             Some("website")
+        );
+        assert_eq!(
+            restored.workspaces[0].tabs[0].panes[&0]
+                .gateway_agent_route
+                .as_ref(),
+            Some(&crate::terminal::GatewayAgentRoute {
+                cli: "codex".into(),
+                gateway_id: "mindshub".into(),
+                model: "minds/agentic-coding".into(),
+            })
         );
         assert_eq!(restored.sidebar_width, Some(26));
         assert_eq!(restored.sidebar_section_split, Some(0.5));
@@ -1207,6 +1228,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                gateway_agent_route: None,
             },
         );
         panes.insert(
@@ -1220,6 +1242,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                gateway_agent_route: None,
             },
         );
 

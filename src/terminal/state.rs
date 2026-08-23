@@ -14,6 +14,13 @@ use crate::terminal::TerminalId;
 mod metadata;
 pub use metadata::{AgentMetadata, AgentMetadataReport, EffectivePresentation};
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GatewayAgentRoute {
+    pub cli: String,
+    pub gateway_id: String,
+    pub model: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookAuthority {
     pub source: String,
@@ -143,6 +150,7 @@ pub struct TerminalState {
     pub last_agent_state_change_seq: Option<u64>,
     pub revision: u64,
     pub launch_argv: Option<Vec<String>>,
+    pub gateway_agent_route: Option<GatewayAgentRoute>,
     pub respawn_shell_on_exit: bool,
     recent_agent_process_exit: Option<RecentAgentProcessExit>,
     agent_process_acquisition_pending: bool,
@@ -177,6 +185,7 @@ impl TerminalState {
             last_agent_state_change_seq: None,
             revision: 0,
             launch_argv: None,
+            gateway_agent_route: None,
             respawn_shell_on_exit: false,
             recent_agent_process_exit: None,
             agent_process_acquisition_pending: false,
@@ -240,6 +249,11 @@ impl TerminalState {
 
     pub fn with_launch_argv(mut self, argv: Vec<String>) -> Self {
         self.launch_argv = Some(argv);
+        self
+    }
+
+    pub fn with_gateway_agent_route(mut self, route: GatewayAgentRoute) -> Self {
+        self.gateway_agent_route = Some(route);
         self
     }
 
