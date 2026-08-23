@@ -101,7 +101,6 @@ impl PaneClickState {
 pub struct App {
     pub state: AppState,
     pub(crate) gateway_repository: crate::gateway::GatewayRepository,
-    #[allow(dead_code)] // First read by the immediately stacked gateway settings TUI.
     pub(crate) gateway_credentials: Box<dyn crate::gateway::CredentialStore>,
     pub(crate) pane_graphics: pane_graphics::Runtime,
     pub(crate) pane_graphics_files: Arc<crate::pane_graphics_files::FileStore>,
@@ -734,7 +733,7 @@ impl App {
             host_terminal_appearance: None,
             host_terminal_appearance_explicit: false,
             settings: state::SettingsState {
-                section: state::SettingsSection::Theme,
+                section: state::SettingsSection::Gateways,
                 list: state::SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,
@@ -1389,7 +1388,7 @@ impl App {
     pub(crate) fn open_settings_from_onboarding(&mut self) {
         self.mark_onboarding_complete();
         self.refresh_integration_recommendations();
-        crate::app::input::open_settings_at(&mut self.state, state::SettingsSection::Integrations);
+        crate::app::input::open_settings_at(&mut self.state, state::SettingsSection::Gateways);
     }
 
     pub(crate) fn refresh_integration_recommendations(&mut self) {
@@ -6157,10 +6156,7 @@ last_pane = "prefix+tab"
         app.route_client_input(b"\r".to_vec());
 
         assert_eq!(app.state.mode, Mode::Settings);
-        assert_eq!(
-            app.state.settings.section,
-            state::SettingsSection::Integrations
-        );
+        assert_eq!(app.state.settings.section, state::SettingsSection::Gateways);
     }
 
     #[test]

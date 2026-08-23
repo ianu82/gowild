@@ -257,6 +257,13 @@ impl App {
                     .extend(text.chars().filter(|ch| !ch.is_control()));
                 true
             }
+            Mode::Settings
+                if self.state.settings.section == crate::app::state::SettingsSection::Gateways
+                    && self.state.settings.gateways.editing_credential =>
+            {
+                self.state.settings.gateways.secret_input.insert(text);
+                true
+            }
             _ => false,
         }
     }
@@ -415,6 +422,20 @@ impl App {
                         SettingsAction::InstallRecommendedIntegrations => {
                             self.install_recommended_integrations()
                         }
+                        SettingsAction::SaveDefaultGateway(gateway_id) => {
+                            self.save_default_gateway(&gateway_id)
+                        }
+                        SettingsAction::SaveGatewayCredential(gateway_id) => {
+                            self.save_gateway_credential(&gateway_id)
+                        }
+                        SettingsAction::TestGateway(gateway_id) => {
+                            self.start_gateway_test(&gateway_id)
+                        }
+                        SettingsAction::CycleGatewayModel {
+                            gateway_id,
+                            target,
+                            direction,
+                        } => self.cycle_gateway_model(&gateway_id, target, direction),
                     },
                     MouseAction::FocusWorkspace { ws_idx } => {
                         self.focus_workspace_idx_via_api(ws_idx)
@@ -735,6 +756,10 @@ pub(crate) fn modal_paste_target_active(state: &AppState) -> bool {
             .is_some_and(|open| open.search_focused),
         Mode::Navigator => state.navigator.search_focused,
         Mode::KeybindHelp => state.keybind_help.search_focused,
+        Mode::Settings => {
+            state.settings.section == crate::app::state::SettingsSection::Gateways
+                && state.settings.gateways.editing_credential
+        }
         Mode::Copy => state
             .copy_mode
             .as_ref()

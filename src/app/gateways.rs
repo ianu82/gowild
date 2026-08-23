@@ -1,8 +1,3 @@
-// The immediately stacked TUI change is the first production caller of this
-// controller. Keeping the runtime seam independently reviewable is worth a
-// narrow temporary dead-code allowance on this module.
-#![allow(dead_code)]
-
 use crate::app::state::{
     GatewayCredentialStatus, GatewayModelTarget, GatewayNotice, GatewayNoticeKind,
 };

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+- First-run and normal settings now include a gateway section for securely
+  connecting MindsHub Inference, testing both coding protocols, discovering
+  models, and choosing independent Codex and Claude Code defaults.
+- Gateway connection tests run outside the render thread and persist only
+  redacted diagnostics and non-secret model metadata.
+
 ### Fixed
 - Windows panes now keep bare `cursor-agent` launches detected after Cursor hands off to its bundled Node process. (#3032)
 - Oversized Kitty images no longer prevent smaller images shown later in the same pane from rendering. (#3033)

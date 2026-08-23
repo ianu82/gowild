@@ -1021,6 +1021,7 @@ pub enum AgentPanelSort {
 /// Which section of the settings panel is focused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
+    Gateways,
     Theme,
     Indicators,
     Sound,
@@ -1031,6 +1032,7 @@ pub enum SettingsSection {
 
 impl SettingsSection {
     pub const ALL: &[Self] = &[
+        Self::Gateways,
         Self::Theme,
         Self::Indicators,
         Self::Sound,
@@ -1041,12 +1043,28 @@ impl SettingsSection {
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Gateways => "gateways",
             Self::Theme => "theme",
-            Self::Indicators => "indicators",
+            Self::Indicators => "status",
             Self::Sound => "sound",
             Self::Toast => "toasts",
-            Self::PaneLabels => "pane labels",
+            Self::PaneLabels => "panes",
             Self::Integrations => "integrations",
+        }
+    }
+
+    pub fn tab_label(self, available_width: u16) -> &'static str {
+        if available_width >= 68 {
+            return self.label();
+        }
+        match self {
+            Self::Gateways => "gate",
+            Self::Theme => "theme",
+            Self::Indicators => "status",
+            Self::Sound => "sound",
+            Self::Toast => "toast",
+            Self::PaneLabels => "panes",
+            Self::Integrations => "hooks",
         }
     }
 }
@@ -1125,8 +1143,15 @@ pub struct SettingsState {
     pub original_palette: Option<Palette>,
     /// The theme name before opening settings.
     pub original_theme: Option<String>,
-    /// Gateway credential-entry and background connection-test state.
+    /// Gateway list, detail, credential-entry, and connection-test UI state.
     pub gateways: GatewaySettingsState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum GatewaySettingsView {
+    #[default]
+    List,
+    Detail,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1137,14 +1162,24 @@ pub(crate) enum GatewayCredentialStatus {
     Stored,
 }
 
-#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum GatewayDetailField {
+    #[default]
+    Credential,
+    CodexModel,
+    ClaudeModel,
+}
+
+impl GatewayDetailField {
+    pub(crate) const ALL: [Self; 3] = [Self::Credential, Self::CodexModel, Self::ClaudeModel];
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayModelTarget {
     Codex,
     Claude,
 }
 
-#[allow(dead_code)]
 impl GatewayModelTarget {
     pub(crate) fn config_key(self) -> &'static str {
         match self {
@@ -1175,12 +1210,10 @@ pub(crate) struct GatewayNotice {
     pub(crate) message: String,
 }
 
-#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
 pub(crate) struct SecretInput {
     value: zeroize::Zeroizing<String>,
 }
 
-#[allow(dead_code)]
 impl SecretInput {
     const MAX_CHARS: usize = 16_384;
 
@@ -1188,6 +1221,10 @@ impl SecretInput {
         let remaining = Self::MAX_CHARS.saturating_sub(self.value.chars().count());
         self.value
             .extend(text.chars().filter(|ch| !ch.is_control()).take(remaining));
+    }
+
+    pub(crate) fn backspace(&mut self) {
+        self.value.pop();
     }
 
     pub(crate) fn clear(&mut self) {
@@ -1217,8 +1254,11 @@ impl std::fmt::Debug for SecretInput {
     }
 }
 
-#[allow(dead_code)] // Driven by the immediately stacked gateway settings TUI.
 pub(crate) struct GatewaySettingsState {
+    pub(crate) view: GatewaySettingsView,
+    pub(crate) selected_gateway: usize,
+    pub(crate) detail_gateway_id: Option<String>,
+    pub(crate) detail_field: GatewayDetailField,
     pub(crate) editing_credential: bool,
     pub(crate) secret_input: SecretInput,
     pub(crate) credential_status: std::collections::BTreeMap<String, GatewayCredentialStatus>,
@@ -1230,6 +1270,10 @@ pub(crate) struct GatewaySettingsState {
 impl Default for GatewaySettingsState {
     fn default() -> Self {
         Self {
+            view: GatewaySettingsView::List,
+            selected_gateway: 0,
+            detail_gateway_id: None,
+            detail_field: GatewayDetailField::Credential,
             editing_credential: false,
             secret_input: SecretInput::default(),
             credential_status: std::collections::BTreeMap::new(),
@@ -2029,7 +2073,7 @@ impl AppState {
             host_terminal_appearance: None,
             host_terminal_appearance_explicit: false,
             settings: SettingsState {
-                section: SettingsSection::Theme,
+                section: SettingsSection::Gateways,
                 list: SelectionListState::new(0),
                 original_palette: None,
                 original_theme: None,

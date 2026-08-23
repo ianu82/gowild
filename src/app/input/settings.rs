@@ -1,9 +1,12 @@
-use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::{
     app::{
-        state::{AppState, SettingsSection, THEME_NAMES},
+        state::{
+            AppState, GatewayDetailField, GatewayModelTarget, GatewaySettingsView, SettingsSection,
+            THEME_NAMES,
+        },
         App, Mode,
     },
     config::{StatusIndicatorStyle, ToastDelivery},
@@ -19,6 +22,14 @@ pub(super) enum SettingsAction {
     SaveToastDelivery(ToastDelivery),
     SaveAgentBorderLabels(bool),
     InstallRecommendedIntegrations,
+    SaveDefaultGateway(String),
+    SaveGatewayCredential(String),
+    TestGateway(String),
+    CycleGatewayModel {
+        gateway_id: String,
+        target: GatewayModelTarget,
+        direction: i8,
+    },
 }
 
 impl App {
@@ -36,6 +47,18 @@ impl App {
                 SettingsAction::InstallRecommendedIntegrations => {
                     self.install_recommended_integrations()
                 }
+                SettingsAction::SaveDefaultGateway(gateway_id) => {
+                    self.save_default_gateway(&gateway_id)
+                }
+                SettingsAction::SaveGatewayCredential(gateway_id) => {
+                    self.save_gateway_credential(&gateway_id)
+                }
+                SettingsAction::TestGateway(gateway_id) => self.start_gateway_test(&gateway_id),
+                SettingsAction::CycleGatewayModel {
+                    gateway_id,
+                    target,
+                    direction,
+                } => self.cycle_gateway_model(&gateway_id, target, direction),
             }
         }
         if previous_section != SettingsSection::Integrations
@@ -108,6 +131,8 @@ fn preview_selected_theme(state: &mut AppState) {
 }
 
 fn cancel_settings(state: &mut AppState) {
+    state.settings.gateways.secret_input.clear();
+    state.settings.gateways.editing_credential = false;
     if let Some(palette) = state.settings.original_palette.take() {
         state.palette = palette;
     }
@@ -144,8 +169,172 @@ fn apply_settings(state: &mut AppState) -> Option<SettingsAction> {
     }
 }
 
+fn selected_gateway_id(state: &AppState) -> Option<String> {
+    state
+        .gateway_catalog
+        .gateways
+        .keys()
+        .nth(state.settings.gateways.selected_gateway)
+        .cloned()
+}
+
+fn update_gateway_settings(state: &mut AppState, key: KeyEvent) -> Option<SettingsAction> {
+    if state.settings.gateways.editing_credential {
+        match key.code {
+            KeyCode::Enter => {
+                let gateway_id = state.settings.gateways.detail_gateway_id.clone()?;
+                return Some(SettingsAction::SaveGatewayCredential(gateway_id));
+            }
+            KeyCode::Esc => {
+                state.settings.gateways.secret_input.clear();
+                state.settings.gateways.editing_credential = false;
+            }
+            KeyCode::Backspace => state.settings.gateways.secret_input.backspace(),
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                let mut encoded = [0; 4];
+                state
+                    .settings
+                    .gateways
+                    .secret_input
+                    .insert(character.encode_utf8(&mut encoded));
+            }
+            _ => {}
+        }
+        return None;
+    }
+
+    match state.settings.gateways.view {
+        GatewaySettingsView::List => match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.settings.gateways.selected_gateway =
+                    state.settings.gateways.selected_gateway.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let count = state.gateway_catalog.gateways.len();
+                if count > 0 {
+                    state.settings.gateways.selected_gateway =
+                        (state.settings.gateways.selected_gateway + 1).min(count - 1);
+                }
+            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(gateway_id) = selected_gateway_id(state) {
+                    state.settings.gateways.detail_gateway_id = Some(gateway_id);
+                    state.settings.gateways.detail_field = GatewayDetailField::Credential;
+                    state.settings.gateways.view = GatewaySettingsView::Detail;
+                    state.settings.gateways.notice = None;
+                }
+            }
+            KeyCode::Char(' ') => {
+                return selected_gateway_id(state).map(SettingsAction::SaveDefaultGateway);
+            }
+            KeyCode::Char('t') | KeyCode::Char('r') => {
+                return selected_gateway_id(state).map(SettingsAction::TestGateway);
+            }
+            KeyCode::Tab => {
+                state.settings.section = SettingsSection::Theme;
+                state.settings.list.selected = current_theme_index(&state.theme_name);
+            }
+            KeyCode::BackTab => {
+                state.settings.section = SettingsSection::Integrations;
+                state.settings.list.selected = 0;
+            }
+            _ => {
+                if let Some(super::modal::ModalAction::Close) =
+                    super::modal::modal_action_from_key(&key, super::modal::SETTINGS_ACTIONS)
+                {
+                    cancel_settings(state);
+                }
+            }
+        },
+        GatewaySettingsView::Detail => match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => {
+                state.settings.gateways.secret_input.clear();
+                state.settings.gateways.view = GatewaySettingsView::List;
+                state.settings.gateways.notice = None;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let current = GatewayDetailField::ALL
+                    .iter()
+                    .position(|field| *field == state.settings.gateways.detail_field)
+                    .unwrap_or(0);
+                state.settings.gateways.detail_field =
+                    GatewayDetailField::ALL[current.saturating_sub(1)];
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let current = GatewayDetailField::ALL
+                    .iter()
+                    .position(|field| *field == state.settings.gateways.detail_field)
+                    .unwrap_or(0);
+                state.settings.gateways.detail_field =
+                    GatewayDetailField::ALL[(current + 1).min(GatewayDetailField::ALL.len() - 1)];
+            }
+            KeyCode::Enter
+                if state.settings.gateways.detail_field == GatewayDetailField::Credential =>
+            {
+                state.settings.gateways.secret_input.clear();
+                state.settings.gateways.editing_credential = true;
+                state.settings.gateways.notice = None;
+            }
+            KeyCode::Left | KeyCode::Right
+                if state.settings.gateways.detail_field != GatewayDetailField::Credential =>
+            {
+                let gateway_id = state.settings.gateways.detail_gateway_id.clone()?;
+                let target =
+                    if state.settings.gateways.detail_field == GatewayDetailField::CodexModel {
+                        GatewayModelTarget::Codex
+                    } else {
+                        GatewayModelTarget::Claude
+                    };
+                let direction = if key.code == KeyCode::Left { -1 } else { 1 };
+                return Some(SettingsAction::CycleGatewayModel {
+                    gateway_id,
+                    target,
+                    direction,
+                });
+            }
+            KeyCode::Char('t') | KeyCode::Char('r') => {
+                return state
+                    .settings
+                    .gateways
+                    .detail_gateway_id
+                    .clone()
+                    .map(SettingsAction::TestGateway);
+            }
+            KeyCode::Char(' ') => {
+                return state
+                    .settings
+                    .gateways
+                    .detail_gateway_id
+                    .clone()
+                    .map(SettingsAction::SaveDefaultGateway);
+            }
+            KeyCode::Tab => {
+                state.settings.gateways.secret_input.clear();
+                state.settings.gateways.editing_credential = false;
+                state.settings.gateways.view = GatewaySettingsView::List;
+                state.settings.section = SettingsSection::Theme;
+                state.settings.list.selected = current_theme_index(&state.theme_name);
+            }
+            KeyCode::BackTab => {
+                state.settings.gateways.secret_input.clear();
+                state.settings.gateways.editing_credential = false;
+                state.settings.gateways.view = GatewaySettingsView::List;
+                state.settings.section = SettingsSection::Integrations;
+                state.settings.list.selected = 0;
+            }
+            _ => {}
+        },
+    }
+    None
+}
+
 pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Option<SettingsAction> {
     match state.settings.section {
+        SettingsSection::Gateways => return update_gateway_settings(state, key),
         SettingsSection::Theme => match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 let previous = state.settings.list.selected;
@@ -166,7 +355,7 @@ pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Opti
                 state.settings.list.selected = status_indicator_index(state.status_indicators);
             }
             KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
-                state.settings.section = SettingsSection::Integrations;
+                state.settings.section = SettingsSection::Gateways;
                 state.settings.list.selected = 0;
             }
             _ => match super::modal::modal_action_from_key(&key, super::modal::SETTINGS_ACTIONS) {
@@ -279,8 +468,8 @@ pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Opti
                 state.settings.list.selected = usize::from(!state.agent_border_labels_enabled());
             }
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
-                state.settings.section = SettingsSection::Theme;
-                state.settings.list.selected = current_theme_index(&state.theme_name);
+                state.settings.section = SettingsSection::Gateways;
+                state.settings.list.selected = 0;
             }
             _ => match super::modal::modal_action_from_key(&key, super::modal::SETTINGS_ACTIONS) {
                 Some(super::modal::ModalAction::Apply) => return apply_settings(state),
@@ -294,7 +483,7 @@ pub(super) fn update_settings_state(state: &mut AppState, key: KeyEvent) -> Opti
 }
 
 pub(crate) fn open_settings(state: &mut AppState) {
-    open_settings_at(state, SettingsSection::Theme);
+    open_settings_at(state, SettingsSection::Gateways);
 }
 
 pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
@@ -302,7 +491,12 @@ pub(crate) fn open_settings_at(state: &mut AppState, section: SettingsSection) {
     state.settings.original_palette = Some(state.palette.clone());
     state.settings.original_theme = Some(state.theme_name.clone());
     state.settings.section = section;
+    state.settings.gateways.secret_input.clear();
+    state.settings.gateways.editing_credential = false;
+    state.settings.gateways.view = GatewaySettingsView::List;
+    state.settings.gateways.notice = None;
     state.settings.list.selected = match section {
+        SettingsSection::Gateways => 0,
         SettingsSection::Theme => current_theme_index(&state.theme_name),
         SettingsSection::Indicators => status_indicator_index(state.status_indicators),
         SettingsSection::Sound => usize::from(!state.sound_enabled()),
@@ -346,7 +540,7 @@ impl AppState {
             } else {
                 0
             };
-            let width = section.label().len() as u16 + 2 + badge_width;
+            let width = section.tab_label(inner.width).len() as u16 + 2 + badge_width;
             if col >= x && col < x + width {
                 return Some(*section);
             }
@@ -368,6 +562,28 @@ impl AppState {
         }
 
         match self.settings.section {
+            SettingsSection::Gateways => match self.settings.gateways.view {
+                GatewaySettingsView::List => {
+                    let first_row = area.y + 3;
+                    if row < first_row {
+                        return None;
+                    }
+                    let relative = row - first_row;
+                    if relative % 3 >= 2 {
+                        return None;
+                    }
+                    let idx = (relative / 3) as usize;
+                    (idx < self.gateway_catalog.gateways.len()).then_some(idx)
+                }
+                GatewaySettingsView::Detail => {
+                    let first_row = area.y + 3;
+                    if row >= first_row && row < first_row + GatewayDetailField::ALL.len() as u16 {
+                        Some((row - first_row) as usize)
+                    } else {
+                        None
+                    }
+                }
+            },
             SettingsSection::Theme => {
                 let max_visible = area.height as usize;
                 let scroll = if self.settings.list.selected >= max_visible {
@@ -410,8 +626,14 @@ impl AppState {
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 if let Some(section) = self.settings_tab_at(mouse.column, mouse.row) {
+                    if section != SettingsSection::Gateways {
+                        self.settings.gateways.secret_input.clear();
+                        self.settings.gateways.editing_credential = false;
+                        self.settings.gateways.view = GatewaySettingsView::List;
+                    }
                     self.settings.section = section;
                     self.settings.list.select(match section {
+                        SettingsSection::Gateways => 0,
                         SettingsSection::Theme => current_theme_index(&self.theme_name),
                         SettingsSection::Indicators => {
                             status_indicator_index(self.status_indicators)
@@ -426,8 +648,53 @@ impl AppState {
                     return None;
                 }
                 if let Some(idx) = self.settings_list_index_at(mouse.column, mouse.row) {
+                    if self.settings.section == SettingsSection::Gateways {
+                        match self.settings.gateways.view {
+                            GatewaySettingsView::List => {
+                                self.settings.gateways.selected_gateway = idx;
+                                if let Some(gateway_id) = selected_gateway_id(self) {
+                                    self.settings.gateways.detail_gateway_id = Some(gateway_id);
+                                    self.settings.gateways.detail_field =
+                                        GatewayDetailField::Credential;
+                                    self.settings.gateways.view = GatewaySettingsView::Detail;
+                                    self.settings.gateways.notice = None;
+                                }
+                            }
+                            GatewaySettingsView::Detail => {
+                                self.settings.gateways.detail_field = GatewayDetailField::ALL[idx];
+                                match self.settings.gateways.detail_field {
+                                    GatewayDetailField::Credential => {
+                                        self.settings.gateways.secret_input.clear();
+                                        self.settings.gateways.editing_credential = true;
+                                        self.settings.gateways.notice = None;
+                                    }
+                                    GatewayDetailField::CodexModel
+                                    | GatewayDetailField::ClaudeModel => {
+                                        let target = if self.settings.gateways.detail_field
+                                            == GatewayDetailField::CodexModel
+                                        {
+                                            GatewayModelTarget::Codex
+                                        } else {
+                                            GatewayModelTarget::Claude
+                                        };
+                                        if let Some(gateway_id) =
+                                            self.settings.gateways.detail_gateway_id.clone()
+                                        {
+                                            return Some(SettingsAction::CycleGatewayModel {
+                                                gateway_id,
+                                                target,
+                                                direction: 1,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return None;
+                    }
                     self.settings.list.select(idx);
                     return match self.settings.section {
+                        SettingsSection::Gateways => None,
                         SettingsSection::Theme => {
                             preview_selected_theme(self);
                             None
@@ -453,16 +720,48 @@ impl AppState {
 
                 let inner = self.settings_inner_rect();
                 let show_primary = crate::ui::settings_show_primary_action(self);
-                let (apply, close) =
-                    crate::ui::settings_button_rects(inner, self.settings.section, show_primary);
+                let (apply, close) = crate::ui::settings_button_rects(inner, self, show_primary);
                 let mut buttons = vec![(close, super::modal::ModalAction::Close)];
                 if let Some(apply) = apply {
                     buttons.insert(0, (apply, super::modal::ModalAction::Apply));
                 }
                 match super::modal::modal_action_from_buttons(mouse.column, mouse.row, &buttons) {
+                    Some(super::modal::ModalAction::Apply)
+                        if self.settings.section == SettingsSection::Gateways =>
+                    {
+                        if self.settings.gateways.editing_credential {
+                            return self
+                                .settings
+                                .gateways
+                                .detail_gateway_id
+                                .clone()
+                                .map(SettingsAction::SaveGatewayCredential);
+                        }
+                        let gateway_id = match self.settings.gateways.view {
+                            GatewaySettingsView::List => selected_gateway_id(self),
+                            GatewaySettingsView::Detail => {
+                                self.settings.gateways.detail_gateway_id.clone()
+                            }
+                        };
+                        gateway_id.map(SettingsAction::TestGateway)
+                    }
                     Some(super::modal::ModalAction::Apply) => apply_settings(self),
                     Some(super::modal::ModalAction::Close) => {
-                        cancel_settings(self);
+                        if self.settings.section == SettingsSection::Gateways
+                            && self.settings.gateways.editing_credential
+                        {
+                            self.settings.gateways.secret_input.clear();
+                            self.settings.gateways.editing_credential = false;
+                        } else if self.settings.section == SettingsSection::Gateways
+                            && self.settings.gateways.view == GatewaySettingsView::Detail
+                        {
+                            self.settings.gateways.secret_input.clear();
+                            self.settings.gateways.editing_credential = false;
+                            self.settings.gateways.view = GatewaySettingsView::List;
+                            self.settings.gateways.notice = None;
+                        } else {
+                            cancel_settings(self);
+                        }
                         None
                     }
                     _ => {
@@ -489,7 +788,7 @@ mod tests {
         let original_palette = state.palette.clone();
         let original_theme = state.theme_name.clone();
 
-        open_settings(&mut state);
+        open_settings_at(&mut state, SettingsSection::Theme);
         update_settings_state(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::empty()),
@@ -569,7 +868,19 @@ mod tests {
             &mut state,
             KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()),
         );
+        assert_eq!(state.settings.section, SettingsSection::Gateways);
+
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()),
+        );
         assert_eq!(state.settings.section, SettingsSection::Theme);
+
+        update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::BackTab, KeyModifiers::empty()),
+        );
+        assert_eq!(state.settings.section, SettingsSection::Gateways);
 
         update_settings_state(
             &mut state,
@@ -612,6 +923,90 @@ mod tests {
         app.handle_mouse(mouse(MouseEventKind::Moved, area.x + 2, area.y + 2));
 
         assert_eq!(app.state.settings.list.selected, 0);
+    }
+
+    #[test]
+    fn gateway_credential_paste_is_redacted_and_cleared_on_cancel() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+        app.state.settings.gateways.view = GatewaySettingsView::Detail;
+        app.state.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        app.state.settings.gateways.editing_credential = true;
+
+        assert!(app.paste_into_active_text_input("TOP_SECRET_GATEWAY_KEY\n"));
+        assert_eq!(
+            app.state.settings.gateways.secret_input.expose(),
+            "TOP_SECRET_GATEWAY_KEY"
+        );
+        assert!(!format!("{:?}", app.state.settings.gateways.secret_input)
+            .contains("TOP_SECRET_GATEWAY_KEY"));
+
+        update_settings_state(
+            &mut app.state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()),
+        );
+        assert!(app.state.settings.gateways.secret_input.is_empty());
+        assert!(!app.state.settings.gateways.editing_credential);
+    }
+
+    #[test]
+    fn gateway_detail_left_cycles_a_model_without_leaving_detail() {
+        let mut state = state_with_workspaces(&["test"]);
+        open_settings(&mut state);
+        state.settings.gateways.view = GatewaySettingsView::Detail;
+        state.settings.gateways.detail_gateway_id = Some("mindshub".into());
+        state.settings.gateways.detail_field = GatewayDetailField::CodexModel;
+
+        let action = update_settings_state(
+            &mut state,
+            KeyEvent::new(KeyCode::Left, KeyModifiers::empty()),
+        );
+
+        assert_eq!(
+            action,
+            Some(SettingsAction::CycleGatewayModel {
+                gateway_id: "mindshub".into(),
+                target: GatewayModelTarget::Codex,
+                direction: -1,
+            })
+        );
+        assert_eq!(state.settings.gateways.view, GatewaySettingsView::Detail);
+    }
+
+    #[test]
+    fn gateway_rows_support_mouse_configuration_and_model_selection() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+        let area = app.state.settings_content_rect();
+
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            area.x + 2,
+            area.y + 3,
+        ));
+        assert_eq!(action, None);
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+        assert_eq!(
+            app.state.settings.gateways.detail_gateway_id.as_deref(),
+            Some("mindshub")
+        );
+
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            area.x + 2,
+            area.y + 4,
+        ));
+        assert_eq!(
+            action,
+            Some(SettingsAction::CycleGatewayModel {
+                gateway_id: "mindshub".into(),
+                target: GatewayModelTarget::Codex,
+                direction: 1,
+            })
+        );
     }
 
     #[test]
@@ -666,10 +1061,10 @@ mod tests {
                     } else {
                         0
                     };
-                    section.label().len() as u16 + 3 + badge_width
+                    section.tab_label(inner.width).len() as u16 + 3 + badge_width
                 })
                 .sum::<u16>();
-        let dotted_width = SettingsSection::Integrations.label().len() as u16 + 4;
+        let dotted_width = SettingsSection::Integrations.tab_label(inner.width).len() as u16 + 4;
 
         assert_eq!(
             state.settings_tab_at(integrations_x + dotted_width - 1, tab_y),
