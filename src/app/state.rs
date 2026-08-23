@@ -1201,6 +1201,20 @@ pub struct SettingsState {
     pub original_theme: Option<String>,
     /// Gateway list, detail, credential-entry, and connection-test UI state.
     pub gateways: GatewaySettingsState,
+    /// True while the finite first-run route setup is using the settings shell.
+    pub(crate) guided_setup: bool,
+    /// A launch/check error that belongs to the guided setup, never a secret.
+    pub(crate) guided_setup_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GuidedSetupStep {
+    CliCheck,
+    ConnectMindshub,
+    VerifyMindshub,
+    ChooseCodexModel,
+    ChooseClaudeModel,
+    Launch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1630,6 +1644,87 @@ impl Default for GatewaySettingsState {
             gateway_form: None,
             credential_removal: crate::gateway::CredentialRemoval::Keep,
         }
+    }
+}
+
+impl AppState {
+    pub(crate) fn guided_cli_available(
+        &self,
+        target: crate::api::schema::IntegrationTarget,
+    ) -> bool {
+        self.integration_recommendations
+            .iter()
+            .find(|recommendation| recommendation.target == target)
+            .is_some_and(|recommendation| recommendation.available)
+    }
+
+    pub(crate) fn guided_setup_step(&self) -> GuidedSetupStep {
+        let codex_available =
+            self.guided_cli_available(crate::api::schema::IntegrationTarget::Codex);
+        let claude_available =
+            self.guided_cli_available(crate::api::schema::IntegrationTarget::Claude);
+        if !codex_available && !claude_available {
+            return GuidedSetupStep::CliCheck;
+        }
+
+        let Some(gateway) = self.gateway_catalog.gateways.get("mindshub") else {
+            return GuidedSetupStep::ConnectMindshub;
+        };
+        let credential_ready = gateway.auth.mode == crate::gateway::AuthenticationMode::None
+            || self
+                .settings
+                .gateways
+                .credential_status
+                .get("mindshub")
+                .is_some_and(|status| *status == GatewayCredentialStatus::Stored);
+        if !credential_ready {
+            return GuidedSetupStep::ConnectMindshub;
+        }
+
+        let protocols_verified = [
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            crate::gateway::GatewayProtocol::AnthropicMessages,
+        ]
+        .into_iter()
+        .filter(|protocol| gateway.supports(*protocol))
+        .all(|protocol| {
+            gateway
+                .connection_test
+                .protocols
+                .get(&protocol)
+                .is_some_and(|test| test.status == crate::gateway::ConnectionStatus::Passed)
+        });
+        let models_discovered = gateway
+            .model_discovery
+            .cached_models
+            .iter()
+            .any(|model| model.enabled && !model.embedding);
+        if gateway.connection_test.status != crate::gateway::ConnectionStatus::Passed
+            || !protocols_verified
+            || !models_discovered
+        {
+            return GuidedSetupStep::VerifyMindshub;
+        }
+
+        let model_is_selectable =
+            |config_key: &str| {
+                gateway
+                    .default_models
+                    .get(config_key)
+                    .is_some_and(|selected| {
+                        !selected.is_empty()
+                            && gateway.model_discovery.cached_models.iter().any(|model| {
+                                model.enabled && !model.embedding && model.id == *selected
+                            })
+                    })
+            };
+        if codex_available && !model_is_selectable("codex") {
+            return GuidedSetupStep::ChooseCodexModel;
+        }
+        if claude_available && !model_is_selectable("claude") {
+            return GuidedSetupStep::ChooseClaudeModel;
+        }
+        GuidedSetupStep::Launch
     }
 }
 
@@ -2549,6 +2644,8 @@ impl AppState {
                 original_palette: None,
                 original_theme: None,
                 gateways: GatewaySettingsState::default(),
+                guided_setup: false,
+                guided_setup_error: None,
             },
             gateway_catalog: crate::gateway::GatewayCatalog::with_builtin_presets(),
             coding_agent_launch: CodingAgentLaunchState::new(

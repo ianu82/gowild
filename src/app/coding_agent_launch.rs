@@ -75,6 +75,48 @@ impl App {
         }
     }
 
+    pub(crate) fn launch_guided_coding_agent(&mut self, cli: crate::cli_adapter::CodingCli) {
+        let locator = PathExecutableLocator;
+        self.launch_guided_coding_agent_with(cli, &locator);
+    }
+
+    fn launch_guided_coding_agent_with(
+        &mut self,
+        cli: crate::cli_adapter::CodingCli,
+        locator: &dyn ExecutableLocator,
+    ) {
+        let Some(gateway) = self.state.gateway_catalog.gateways.get("mindshub") else {
+            self.state.settings.guided_setup_error =
+                Some("MindsHub Inference is no longer configured.".into());
+            return;
+        };
+        let Some(model) = gateway.default_models.get(cli.id()).cloned() else {
+            self.state.settings.guided_setup_error =
+                Some(format!("Choose a {} model before launch.", cli.id()));
+            return;
+        };
+        if self.state.gateway_catalog.default_gateway_id.as_deref() != Some("mindshub") {
+            self.save_default_gateway("mindshub");
+        }
+        let mut selection = CodingAgentLaunchState::new(&self.state.gateway_catalog);
+        selection.cli = cli;
+        selection.gateway_id = Some("mindshub".into());
+        selection.model = Some(model);
+        self.state.coding_agent_launch = selection;
+
+        match self.launch_selected_coding_agent_with(locator) {
+            Ok(()) => {
+                self.mark_onboarding_complete();
+                self.state.settings.guided_setup = false;
+                self.state.settings.guided_setup_error = None;
+            }
+            Err(error) => {
+                self.state.mode = Mode::Settings;
+                self.state.settings.guided_setup_error = Some(error);
+            }
+        }
+    }
+
     fn launch_selected_coding_agent_with(
         &mut self,
         locator: &dyn ExecutableLocator,
@@ -564,6 +606,68 @@ mod tests {
 
         assert!(error.contains("no credential configured"));
         assert_eq!(app.state.workspaces.len(), before);
+    }
+
+    #[tokio::test]
+    async fn guided_launch_completes_setup_only_after_a_managed_tab_exists() {
+        let _guard = crate::config::test_config_env_lock().lock().unwrap();
+        let config_path = unique_temp_path("guided-launch-config").join("config.toml");
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &config_path);
+
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.mode = Mode::Settings;
+        app.state.settings.guided_setup = true;
+        assert!(app.ensure_default_workspace());
+        app.gateway_credentials = Box::new(MemoryCredentialStore(
+            Credential::new("guided-launch-test-secret").unwrap(),
+        ));
+        app.state.gateway_catalog.default_gateway_id = Some("mindshub".into());
+        app.state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .default_models
+            .insert("claude".into(), "guided-claude-model".into());
+
+        app.launch_guided_coding_agent_with(
+            CodingCli::Claude,
+            &FixedLocator(PathBuf::from("/usr/bin/false")),
+        );
+
+        assert_eq!(
+            app.state.mode,
+            Mode::Terminal,
+            "guided launch error: {:?}",
+            app.state.settings.guided_setup_error
+        );
+        assert!(!app.state.settings.guided_setup);
+        assert_eq!(
+            active_gateway_route(&app),
+            Some(&crate::terminal::GatewayAgentRoute {
+                cli: "claude".into(),
+                gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "Anthropic Messages".into(),
+                model: "guided-claude-model".into(),
+            })
+        );
+        assert!(fs::read_to_string(&config_path)
+            .unwrap()
+            .contains("onboarding = false"));
+
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = fs::remove_dir_all(config_path.parent().unwrap());
     }
 
     #[test]

@@ -7,14 +7,15 @@ use ratatui::{
 };
 
 use super::widgets::{
-    action_button_row_rects, centered_popup_rect, modal_stack_areas, panel_contrast_fg,
-    render_action_button, render_modal_choice_list, render_panel_shell, ActionButtonSpec,
+    action_button_row_rects, action_button_width, centered_popup_rect, modal_stack_areas,
+    panel_contrast_fg, render_action_button, render_modal_choice_list, render_panel_shell,
+    ActionButtonSpec,
 };
 use crate::{
     app::{
         state::{
             CustomGatewayFormMode, GatewayCredentialStatus, GatewayDetailField, GatewayFormField,
-            GatewayNoticeKind, GatewaySettingsView, Palette,
+            GatewayNoticeKind, GatewaySettingsView, GuidedSetupStep, Palette,
         },
         AppState,
     },
@@ -64,7 +65,11 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
-            " settings",
+            if app.settings.guided_setup {
+                " GoWild setup"
+            } else {
+                " settings"
+            },
             Style::default().fg(p.text).add_modifier(Modifier::BOLD),
         )])),
         header_rows[0],
@@ -99,7 +104,11 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
         )
         .divider(" ")
         .padding(" ", " ");
-    frame.render_widget(tabs, header_rows[1]);
+    if app.settings.guided_setup {
+        render_guided_setup_progress(app, frame, header_rows[1]);
+    } else {
+        frame.render_widget(tabs, header_rows[1]);
+    }
 
     let sep = "─".repeat(inner.width as usize);
     frame.render_widget(
@@ -109,71 +118,75 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
 
     let content_area = stack.content;
 
-    match app.settings.section {
-        SettingsSection::Gateways => {
-            render_settings_gateways(app, frame, content_area);
-        }
-        SettingsSection::Theme => {
-            render_settings_theme(app, frame, content_area);
-        }
-        SettingsSection::Indicators => {
-            render_modal_choice_list(
-                frame,
-                content_area,
-                "agent status indicators",
-                "choose color dots or distinct symbols for each state",
-                &[
-                    ("color dots  ● ● ● ○ ·", StatusIndicatorStyle::Dots),
-                    ("distinct symbols  × ◐ ✓ ○ ·", StatusIndicatorStyle::Symbols),
-                ],
-                app.status_indicators,
-                app.settings.list.selected,
-                p,
-                1,
-            );
-        }
-        SettingsSection::Sound => {
-            render_settings_toggle(
-                frame,
-                content_area,
-                p,
-                "sound alerts",
-                "play sounds when agents change state in background",
-                app.sound_enabled(),
-                app.settings.list.selected,
-            );
-        }
-        SettingsSection::Toast => {
-            render_modal_choice_list(
-                frame,
-                content_area,
-                "notification popups",
-                "choose where background popup notifications should appear",
-                &[
-                    ("off", ToastDelivery::Off),
-                    ("inside gowild", ToastDelivery::GoWild),
-                    ("via terminal", ToastDelivery::Terminal),
-                    ("via system", ToastDelivery::System),
-                ],
-                app.toast_delivery(),
-                app.settings.list.selected,
-                p,
-                2,
-            );
-        }
-        SettingsSection::PaneLabels => {
-            render_settings_toggle(
-                frame,
-                content_area,
-                p,
-                "agent border labels",
-                "show detected agent names in split pane borders",
-                app.agent_border_labels_enabled(),
-                app.settings.list.selected,
-            );
-        }
-        SettingsSection::Integrations => {
-            render_settings_integrations(app, frame, content_area);
+    if app.settings.guided_setup {
+        render_guided_setup(app, frame, content_area);
+    } else {
+        match app.settings.section {
+            SettingsSection::Gateways => {
+                render_settings_gateways(app, frame, content_area);
+            }
+            SettingsSection::Theme => {
+                render_settings_theme(app, frame, content_area);
+            }
+            SettingsSection::Indicators => {
+                render_modal_choice_list(
+                    frame,
+                    content_area,
+                    "agent status indicators",
+                    "choose color dots or distinct symbols for each state",
+                    &[
+                        ("color dots  ● ● ● ○ ·", StatusIndicatorStyle::Dots),
+                        ("distinct symbols  × ◐ ✓ ○ ·", StatusIndicatorStyle::Symbols),
+                    ],
+                    app.status_indicators,
+                    app.settings.list.selected,
+                    p,
+                    1,
+                );
+            }
+            SettingsSection::Sound => {
+                render_settings_toggle(
+                    frame,
+                    content_area,
+                    p,
+                    "sound alerts",
+                    "play sounds when agents change state in background",
+                    app.sound_enabled(),
+                    app.settings.list.selected,
+                );
+            }
+            SettingsSection::Toast => {
+                render_modal_choice_list(
+                    frame,
+                    content_area,
+                    "notification popups",
+                    "choose where background popup notifications should appear",
+                    &[
+                        ("off", ToastDelivery::Off),
+                        ("inside gowild", ToastDelivery::GoWild),
+                        ("via terminal", ToastDelivery::Terminal),
+                        ("via system", ToastDelivery::System),
+                    ],
+                    app.toast_delivery(),
+                    app.settings.list.selected,
+                    p,
+                    2,
+                );
+            }
+            SettingsSection::PaneLabels => {
+                render_settings_toggle(
+                    frame,
+                    content_area,
+                    p,
+                    "agent border labels",
+                    "show detected agent names in split pane borders",
+                    app.agent_border_labels_enabled(),
+                    app.settings.list.selected,
+                );
+            }
+            SettingsSection::Integrations => {
+                render_settings_integrations(app, frame, content_area);
+            }
         }
     }
 
@@ -210,7 +223,11 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                 .add_modifier(Modifier::BOLD),
         );
 
-        let hint = if app.settings.section == SettingsSection::Gateways {
+        let hint = if app.settings.guided_setup && app.settings.gateways.editing_credential {
+            " input hidden locally  ^u clear  esc cancel"
+        } else if app.settings.guided_setup {
+            " a custom gateway  q skip setup  esc finish later"
+        } else if app.settings.section == SettingsSection::Gateways {
             match app.settings.gateways.view {
                 GatewaySettingsView::List => {
                     " ↑↓ select  ↵ configure  t test  space default  tab section"
@@ -256,6 +273,24 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
 }
 
 pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
+    if app.settings.guided_setup {
+        if app.settings.gateways.editing_credential {
+            return "store";
+        }
+        return match app.guided_setup_step() {
+            GuidedSetupStep::CliCheck => "check again",
+            GuidedSetupStep::ConnectMindshub => "connect MindsHub",
+            GuidedSetupStep::VerifyMindshub => "test",
+            GuidedSetupStep::ChooseCodexModel => "choose Codex model",
+            GuidedSetupStep::ChooseClaudeModel => "choose Claude model",
+            GuidedSetupStep::Launch
+                if app.guided_cli_available(crate::api::schema::IntegrationTarget::Codex) =>
+            {
+                "launch Codex"
+            }
+            GuidedSetupStep::Launch => "launch Claude",
+        };
+    }
     match app.settings.section {
         crate::app::state::SettingsSection::Gateways
             if app.settings.gateways.editing_credential =>
@@ -307,6 +342,23 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
 }
 
 pub(crate) fn settings_primary_button_hint(app: &AppState) -> &'static str {
+    if app.settings.guided_setup {
+        if app.settings.gateways.editing_credential {
+            return "↵";
+        }
+        return match app.guided_setup_step() {
+            GuidedSetupStep::CliCheck => "r",
+            GuidedSetupStep::ConnectMindshub => "↵",
+            GuidedSetupStep::VerifyMindshub => "t",
+            GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel => "↵",
+            GuidedSetupStep::Launch
+                if app.guided_cli_available(crate::api::schema::IntegrationTarget::Codex) =>
+            {
+                "c"
+            }
+            GuidedSetupStep::Launch => "l",
+        };
+    }
     if app.settings.section == crate::app::state::SettingsSection::Gateways
         && app.settings.gateways.view == GatewaySettingsView::Detail
         && !app.settings.gateways.editing_credential
@@ -326,6 +378,13 @@ pub(crate) fn settings_primary_button_hint(app: &AppState) -> &'static str {
 }
 
 pub(crate) fn settings_close_button_label(app: &AppState) -> &'static str {
+    if app.settings.guided_setup {
+        return if app.settings.gateways.editing_credential {
+            "cancel key"
+        } else {
+            "finish later"
+        };
+    }
     if app.settings.section == crate::app::state::SettingsSection::Gateways
         && (matches!(
             app.settings.gateways.view,
@@ -343,6 +402,9 @@ pub(crate) fn settings_close_button_label(app: &AppState) -> &'static str {
 }
 
 pub(crate) fn settings_show_primary_action(app: &AppState) -> bool {
+    if app.settings.guided_setup {
+        return true;
+    }
     match app.settings.section {
         crate::app::state::SettingsSection::Gateways => match app.settings.gateways.view {
             GatewaySettingsView::List => app
@@ -409,6 +471,316 @@ pub(crate) fn settings_button_rects(
         inner.height.saturating_sub(1),
     );
     (Some(rects[0]), rects[1])
+}
+
+fn guided_step_order(step: GuidedSetupStep) -> usize {
+    match step {
+        GuidedSetupStep::CliCheck => 0,
+        GuidedSetupStep::ConnectMindshub => 1,
+        GuidedSetupStep::VerifyMindshub => 2,
+        GuidedSetupStep::ChooseCodexModel | GuidedSetupStep::ChooseClaudeModel => 3,
+        GuidedSetupStep::Launch => 4,
+    }
+}
+
+fn render_guided_setup_progress(app: &AppState, frame: &mut Frame, area: Rect) {
+    let current = guided_step_order(app.guided_setup_step());
+    let mut spans = Vec::new();
+    for (index, label) in ["CLIs", "Key", "Verify", "Models", "Launch"]
+        .into_iter()
+        .enumerate()
+    {
+        if index > 0 {
+            spans.push(Span::raw("  "));
+        }
+        let symbol = if index < current {
+            "✓"
+        } else if index == current {
+            "→"
+        } else {
+            "○"
+        };
+        let style = if index == current {
+            Style::default()
+                .fg(app.palette.accent)
+                .add_modifier(Modifier::BOLD)
+        } else if index < current {
+            Style::default().fg(app.palette.green)
+        } else {
+            Style::default().fg(app.palette.overlay1)
+        };
+        spans.push(Span::styled(format!("{symbol} {label}"), style));
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+pub(crate) fn guided_setup_aux_button_rects(area: Rect) -> (Rect, Rect) {
+    let skip_width = action_button_width(Some("q"), "skip").min(area.width);
+    let skip = Rect::new(
+        area.x.saturating_add(area.width.saturating_sub(skip_width)),
+        area.y,
+        skip_width,
+        u16::from(area.height > 0),
+    );
+    let custom_width = action_button_width(Some("a"), "custom")
+        .min(skip.x.saturating_sub(area.x).saturating_sub(1));
+    let custom = Rect::new(
+        skip.x.saturating_sub(custom_width.saturating_add(1)),
+        area.y,
+        custom_width,
+        skip.height,
+    );
+    (custom, skip)
+}
+
+pub(crate) fn guided_setup_launch_button_rects(area: Rect) -> (Rect, Rect) {
+    let rects = action_button_row_rects(
+        area,
+        &[
+            ActionButtonSpec {
+                hint: Some("c"),
+                label: "Codex",
+            },
+            ActionButtonSpec {
+                hint: Some("l"),
+                label: "Claude",
+            },
+        ],
+        2,
+        area.height.saturating_sub(2),
+    );
+    (rects[0], rects[1])
+}
+
+fn guided_connection_status(
+    gateway: Option<&Gateway>,
+    protocol: GatewayProtocol,
+) -> ConnectionStatus {
+    gateway
+        .and_then(|gateway| gateway.connection_test.protocols.get(&protocol))
+        .map_or(ConnectionStatus::NotTested, |test| test.status)
+}
+
+fn render_guided_setup(app: &AppState, frame: &mut Frame, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let p = &app.palette;
+    frame.render_widget(
+        Paragraph::new(" open model cowork")
+            .style(Style::default().fg(p.text).add_modifier(Modifier::BOLD)),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    let (custom_rect, skip_rect) = guided_setup_aux_button_rects(area);
+    render_action_button(
+        frame,
+        custom_rect,
+        Some("a"),
+        "custom",
+        Style::default().fg(p.text).bg(p.surface0),
+    );
+    render_action_button(
+        frame,
+        skip_rect,
+        Some("q"),
+        "skip",
+        Style::default().fg(p.text).bg(p.surface0),
+    );
+
+    let codex = app.guided_cli_available(crate::api::schema::IntegrationTarget::Codex);
+    let claude = app.guided_cli_available(crate::api::schema::IntegrationTarget::Claude);
+    let available_label = |available| {
+        if available {
+            "✓ found"
+        } else {
+            "× not found"
+        }
+    };
+    if area.height > 1 {
+        frame.render_widget(
+            Paragraph::new(format!(
+                " CLIs      Codex {}  ·  Claude {}",
+                available_label(codex),
+                available_label(claude)
+            ))
+            .style(Style::default().fg(p.subtext0)),
+            Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+    }
+
+    let gateway = app.gateway_catalog.gateways.get("mindshub");
+    let credential = app
+        .settings
+        .gateways
+        .credential_status
+        .get("mindshub")
+        .copied()
+        .unwrap_or_default();
+    let credential_label = if app.settings.gateways.editing_credential {
+        if app.settings.gateways.secret_input.is_empty() {
+            "typing key: empty"
+        } else {
+            "typing key: ••••••••"
+        }
+    } else {
+        match credential {
+            GatewayCredentialStatus::Stored => "key stored",
+            GatewayCredentialStatus::Missing => "key missing",
+            GatewayCredentialStatus::Unknown => "key status unavailable",
+        }
+    };
+    if area.height > 2 {
+        frame.render_widget(
+            Paragraph::new(format!(
+                " MindsHub  {}  ·  Responses {}  ·  Messages {}",
+                credential_label,
+                status_symbol(guided_connection_status(
+                    gateway,
+                    GatewayProtocol::OpenAiResponses,
+                )),
+                status_symbol(guided_connection_status(
+                    gateway,
+                    GatewayProtocol::AnthropicMessages,
+                )),
+            ))
+            .style(Style::default().fg(p.subtext0)),
+            Rect::new(area.x, area.y + 2, area.width, 1),
+        );
+    }
+    if area.height > 3 {
+        let models = gateway
+            .map(|gateway| {
+                gateway
+                    .model_discovery
+                    .cached_models
+                    .iter()
+                    .filter(|model| model.enabled && !model.embedding)
+                    .count()
+            })
+            .unwrap_or_default();
+        let codex_model = gateway
+            .and_then(|gateway| gateway.default_models.get("codex"))
+            .map_or("not chosen", String::as_str);
+        let claude_model = gateway
+            .and_then(|gateway| gateway.default_models.get("claude"))
+            .map_or("not chosen", String::as_str);
+        let model_width = (area.width as usize).saturating_sub(37) / 2;
+        frame.render_widget(
+            Paragraph::new(format!(
+                " Models    {models} found  ·  Codex {}  ·  Claude {}",
+                compact_text(codex_model, model_width.max(8)),
+                compact_text(claude_model, model_width.max(8)),
+            ))
+            .style(Style::default().fg(p.subtext0)),
+            Rect::new(area.x, area.y + 3, area.width, 1),
+        );
+    }
+
+    let (title, description) = match app.guided_setup_step() {
+        GuidedSetupStep::CliCheck => (
+            "Install a coding CLI",
+            "Install Codex CLI or Claude Code, then check again. You can finish later or skip setup.",
+        ),
+        GuidedSetupStep::ConnectMindshub if app.settings.gateways.editing_credential => (
+            "Enter your MindsHub API key",
+            "Input is hidden and stored locally in the operating-system credential store.",
+        ),
+        GuidedSetupStep::ConnectMindshub => (
+            "Connect MindsHub Inference",
+            "Add the API key for the built-in MindsHub route. Custom gateways remain available above.",
+        ),
+        GuidedSetupStep::VerifyMindshub => (
+            "Verify the complete route",
+            "Test authentication, model discovery, OpenAI Responses, and Anthropic Messages.",
+        ),
+        GuidedSetupStep::ChooseCodexModel => (
+            "Choose the Codex default",
+            "Select the model Codex CLI should use through MindsHub. Use ←/→ or Enter.",
+        ),
+        GuidedSetupStep::ChooseClaudeModel => (
+            "Choose the Claude default",
+            "Select the model Claude Code should use through MindsHub. Use ←/→ or Enter.",
+        ),
+        GuidedSetupStep::Launch => (
+            "Launch your first managed agent",
+            "Choose a detected CLI. GoWild keeps the exact MindsHub route visible after handoff.",
+        ),
+    };
+    if area.height > 5 {
+        frame.render_widget(
+            Paragraph::new(format!(" {title}"))
+                .style(Style::default().fg(p.accent).add_modifier(Modifier::BOLD)),
+            Rect::new(area.x, area.y + 5, area.width, 1),
+        );
+    }
+    if area.height > 6 {
+        frame.render_widget(
+            Paragraph::new(format!(" {description}"))
+                .style(Style::default().fg(p.overlay1))
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            Rect::new(area.x, area.y + 6, area.width, 2.min(area.height - 6)),
+        );
+    }
+
+    if app.guided_setup_step() == GuidedSetupStep::Launch && area.height > 1 {
+        let (codex_rect, claude_rect) = guided_setup_launch_button_rects(area);
+        render_action_button(
+            frame,
+            codex_rect,
+            Some("c"),
+            "Codex",
+            Style::default()
+                .fg(if codex {
+                    panel_contrast_fg(p)
+                } else {
+                    p.overlay1
+                })
+                .bg(if codex { p.accent } else { p.surface0 })
+                .add_modifier(Modifier::BOLD),
+        );
+        render_action_button(
+            frame,
+            claude_rect,
+            Some("l"),
+            "Claude",
+            Style::default()
+                .fg(if claude {
+                    panel_contrast_fg(p)
+                } else {
+                    p.overlay1
+                })
+                .bg(if claude { p.accent } else { p.surface0 })
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+
+    let notice = app
+        .settings
+        .guided_setup_error
+        .as_deref()
+        .map(|message| (message, p.red))
+        .or_else(|| {
+            app.settings.gateways.notice.as_ref().map(|notice| {
+                let color = match notice.kind {
+                    GatewayNoticeKind::Info => p.blue,
+                    GatewayNoticeKind::Success => p.green,
+                    GatewayNoticeKind::Warning => p.yellow,
+                    GatewayNoticeKind::Error => p.red,
+                };
+                (notice.message.as_str(), color)
+            })
+        });
+    if let Some((notice, color)) = notice {
+        let notice_y = area.y.saturating_add(area.height.saturating_sub(1));
+        frame.render_widget(
+            Paragraph::new(format!(
+                " {}",
+                compact_text(notice, area.width.saturating_sub(1) as usize)
+            ))
+            .style(Style::default().fg(color)),
+            Rect::new(area.x, notice_y, area.width, 1),
+        );
+    }
 }
 
 fn compact_text(value: &str, max_chars: usize) -> String {
@@ -1340,6 +1712,108 @@ mod tests {
             .default_models
             .insert("codex".into(), "provider/model-alpha".into());
         app
+    }
+
+    fn guided_settings_state(ready: bool) -> AppState {
+        use crate::gateway::{ConnectionTest, ProtocolTest};
+
+        let mut app = AppState::test_new();
+        app.mode = Mode::Settings;
+        app.settings.section = SettingsSection::Gateways;
+        app.settings.guided_setup = true;
+        app.integration_recommendations = [
+            (crate::api::schema::IntegrationTarget::Codex, "codex"),
+            (crate::api::schema::IntegrationTarget::Claude, "claude"),
+        ]
+        .into_iter()
+        .map(
+            |(target, label)| crate::integration::IntegrationRecommendation {
+                target,
+                label,
+                command: label,
+                available: true,
+                path: std::path::PathBuf::from("/tmp/gowild-guided-render"),
+                state: crate::integration::IntegrationStatusKind::NotInstalled,
+            },
+        )
+        .collect();
+        if ready {
+            app.settings
+                .gateways
+                .credential_status
+                .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+            let gateway = app.gateway_catalog.gateways.get_mut("mindshub").unwrap();
+            gateway.connection_test = ConnectionTest {
+                status: ConnectionStatus::Passed,
+                checked_at: Some("fixture".into()),
+                protocols: [
+                    (
+                        GatewayProtocol::OpenAiResponses,
+                        ProtocolTest {
+                            status: ConnectionStatus::Passed,
+                            diagnostics: Vec::new(),
+                        },
+                    ),
+                    (
+                        GatewayProtocol::AnthropicMessages,
+                        ProtocolTest {
+                            status: ConnectionStatus::Passed,
+                            diagnostics: Vec::new(),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                diagnostics: Vec::new(),
+            };
+            gateway.model_discovery.cached_models = vec![CachedModel {
+                id: "provider/shared-coding-model".into(),
+                label: Some("Shared coding model".into()),
+                provider: Some("provider".into()),
+                enabled: true,
+                embedding: false,
+                reasoning_efforts: Vec::new(),
+            }];
+            gateway
+                .default_models
+                .insert("codex".into(), "provider/shared-coding-model".into());
+            gateway
+                .default_models
+                .insert("claude".into(), "provider/shared-coding-model".into());
+        }
+        app
+    }
+
+    #[test]
+    fn guided_setup_keeps_the_next_action_and_escape_hatches_visible_at_compact_sizes() {
+        for (width, height) in [(64, 20), (80, 24)] {
+            let rendered = rendered_gateway_settings(&guided_settings_state(false), width, height);
+            assert!(
+                rendered.contains("GoWild setup"),
+                "{width}x{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("Connect MindsHub"),
+                "{width}x{height}: {rendered}"
+            );
+            assert!(rendered.contains("custom"), "{width}x{height}: {rendered}");
+            assert!(rendered.contains("skip"), "{width}x{height}: {rendered}");
+            assert!(
+                rendered.contains("finish later"),
+                "{width}x{height}: {rendered}"
+            );
+            assert!(!rendered.contains("prefix+a"));
+        }
+    }
+
+    #[test]
+    fn guided_setup_completion_exposes_direct_codex_and_claude_launches() {
+        let rendered = rendered_gateway_settings(&guided_settings_state(true), 80, 24);
+
+        assert!(rendered.contains("Launch your first managed agent"));
+        assert!(rendered.contains("c Codex"));
+        assert!(rendered.contains("l Claude"));
+        assert!(rendered.contains("launch Codex"));
     }
 
     #[test]

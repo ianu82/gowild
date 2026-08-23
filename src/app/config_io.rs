@@ -41,6 +41,12 @@ impl App {
         });
     }
 
+    pub(super) fn mark_onboarding_started(&mut self) {
+        self.update_config_file("onboarding progress", |content| {
+            crate::config::upsert_top_level_bool(content, "onboarding", true)
+        });
+    }
+
     pub(super) fn save_theme(&mut self, name: &str) {
         if self.update_config_file("theme", |content| {
             let content = crate::config::upsert_section_value(

@@ -512,6 +512,12 @@ impl App {
             return;
         };
         inspection.apply_to(gateway);
+        if self.state.settings.guided_setup
+            && gateway_id == "mindshub"
+            && status == ConnectionStatus::Passed
+        {
+            candidate.default_gateway_id = Some(gateway_id.clone());
+        }
         let (kind, message) = match status {
             ConnectionStatus::Passed => (
                 GatewayNoticeKind::Success,

@@ -58,7 +58,7 @@ pub(crate) use self::{
     navigate::{
         terminal_direct_indexed_navigation_action, terminal_direct_non_indexed_navigation_action,
     },
-    settings::open_settings_at,
+    settings::{open_guided_setup, open_settings_at},
 };
 use self::{
     modal::{
@@ -470,6 +470,21 @@ impl App {
                                 self.state.settings.gateways.credential_removal =
                                     crate::gateway::CredentialRemoval::Keep;
                             }
+                        }
+                        SettingsAction::PauseGuidedSetup => {
+                            settings::cancel_settings(&mut self.state)
+                        }
+                        SettingsAction::SkipGuidedSetup => {
+                            self.mark_onboarding_complete();
+                            self.state.settings.guided_setup = false;
+                            settings::cancel_settings(&mut self.state);
+                        }
+                        SettingsAction::RefreshGuidedSetup => {
+                            self.refresh_integration_recommendations();
+                            self.state.settings.guided_setup_error = None;
+                        }
+                        SettingsAction::LaunchGuidedAgent(cli) => {
+                            self.launch_guided_coding_agent(cli);
                         }
                     },
                     MouseAction::FocusWorkspace { ws_idx } => {
