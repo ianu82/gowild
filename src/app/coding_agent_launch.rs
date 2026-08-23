@@ -284,12 +284,16 @@ mod tests {
     fn wait_for_file(path: &std::path::Path) -> String {
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
         while std::time::Instant::now() < deadline {
-            if let Ok(value) = fs::read_to_string(path) {
-                return value;
+            match fs::read_to_string(path) {
+                Ok(value) if value.contains("bedrock=") => return value,
+                _ => {}
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        panic!("timed out waiting for {}", path.display());
+        panic!(
+            "timed out waiting for complete output in {}",
+            path.display()
+        );
     }
 
     fn active_gateway_route(app: &App) -> Option<&crate::terminal::GatewayAgentRoute> {
