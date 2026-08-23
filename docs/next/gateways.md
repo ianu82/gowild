@@ -180,6 +180,18 @@ custom headers use the provider's `http_headers` table. Unauthenticated custom
 providers omit all auth fields. Fresh sessions and `codex resume <session-id>`
 receive the same provider configuration and secret environment.
 
+## Upstream CLI compatibility check
+
+The non-gating `just real-cli-gateway-routing-test` check starts a loopback-only
+recorder and invokes the locally installed Codex and Claude binaries with the
+same gateway contracts used by GoWild. Codex runs ephemerally without user
+configuration; Claude runs in bare mode without OAuth or keychain access. The
+check requires both CLIs to send the selected model and gateway authentication
+to `/v1/responses` and `/v1/messages`, rejects proprietary login prompts, and
+fails if the fake credential appears in process output. This is intentionally a
+release compatibility check rather than CI: upstream coding CLIs are not
+installed in the repository's normal test environment.
+
 The adapter contract follows the current [Codex configuration
 reference](https://developers.openai.com/codex/config-reference), [Codex CLI
 reference](https://developers.openai.com/codex/cli/reference), and [MindsHub

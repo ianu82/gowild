@@ -92,6 +92,11 @@ integration-assets-test:
 plugin-marketplace-test:
     cd workers/plugin-marketplace && bun install --frozen-lockfile && bun test
 
+# Non-gating compatibility check against locally installed upstream CLIs
+[unix]
+real-cli-gateway-routing-test:
+    python3 scripts/real_cli_gateway_routing_check.py
+
 # Build the vendored libghostty-vt source dist
 build-libghostty-vt:
     scripts/build_vendored_libghostty_vt.sh
