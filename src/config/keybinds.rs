@@ -308,6 +308,7 @@ pub struct Keybinds {
     pub navigate: NavigateKeybinds,
     pub help: ActionKeybinds,
     pub settings: ActionKeybinds,
+    pub launch_agent: ActionKeybinds,
     pub new_workspace: ActionKeybinds,
     pub new_worktree: ActionKeybinds,
     pub open_worktree: ActionKeybinds,
@@ -476,6 +477,7 @@ impl Config {
             },
             help: empty_action!(),
             settings: empty_action!(),
+            launch_agent: empty_action!(),
             new_workspace: empty_action!(),
             new_worktree: empty_action!(),
             open_worktree: empty_action!(),
@@ -604,6 +606,7 @@ impl Config {
             apply_navigate!(keybinds.navigate.pane_right, navigate_pane_right, source);
             apply_action!(keybinds.help, help, source);
             apply_action!(keybinds.settings, settings, source);
+            apply_action!(keybinds.launch_agent, launch_agent, source);
             apply_action!(keybinds.new_workspace, new_workspace, source);
             apply_action!(keybinds.new_worktree, new_worktree, source);
             apply_action!(keybinds.open_worktree, open_worktree, source);
