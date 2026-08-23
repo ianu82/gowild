@@ -1600,6 +1600,8 @@ mod tests {
         let gateway_route = crate::terminal::GatewayAgentRoute {
             cli: "codex".into(),
             gateway_id: "mindshub".into(),
+            gateway_name: "MindsHub Inference".into(),
+            protocol: "OpenAI Responses".into(),
             model: "minds/agentic-coding".into(),
         };
         snapshot.workspaces[0].tabs[0]

@@ -205,6 +205,8 @@ pub struct AgentInfo {
     pub tokens: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session: Option<AgentSessionInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_agent_route: Option<ManagedAgentRouteInfo>,
     pub workspace_id: String,
     pub tab_id: String,
     pub pane_id: String,
@@ -228,4 +230,17 @@ pub struct AgentSessionInfo {
     pub agent: String,
     pub kind: crate::agent_resume::AgentSessionRefKind,
     pub value: String,
+}
+
+/// The exact gateway route GoWild applied when launching or resuming an agent.
+///
+/// This is deliberately separate from screen-derived agent detection. Its
+/// presence is the authoritative signal that the CLI is managed by GoWild.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ManagedAgentRouteInfo {
+    pub cli: String,
+    pub gateway_id: String,
+    pub gateway_name: String,
+    pub protocol: String,
+    pub model: String,
 }

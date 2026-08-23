@@ -42,7 +42,13 @@ impl Tab {
                 let fallback_agent_label = terminal
                     .agent_name
                     .as_deref()
-                    .or(agent_kind_label.as_deref())?
+                    .or(agent_kind_label.as_deref())
+                    .or_else(|| {
+                        terminal
+                            .gateway_agent_route
+                            .as_ref()
+                            .map(crate::terminal::GatewayAgentRoute::cli_label)
+                    })?
                     .to_string();
                 let agent_label = terminal
                     .effective_display_agent()

@@ -569,6 +569,13 @@ mod tests {
         let route = crate::terminal::GatewayAgentRoute {
             cli: cli.to_string(),
             gateway_id: "mindshub".into(),
+            gateway_name: "MindsHub Inference".into(),
+            protocol: match cli {
+                "codex" => "OpenAI Responses",
+                "claude" => "Anthropic Messages",
+                _ => "",
+            }
+            .into(),
             model: model.to_string(),
         };
         let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();

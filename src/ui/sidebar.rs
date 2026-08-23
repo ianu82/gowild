@@ -37,6 +37,13 @@ pub(crate) struct AgentPanelEntry {
     pub last_agent_state_change_seq: Option<u64>,
     pub state_labels: std::collections::HashMap<String, String>,
     pub tokens: std::collections::HashMap<String, String>,
+    pub route_provenance: Option<AgentRouteProvenance>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AgentRouteProvenance {
+    Managed(crate::terminal::GatewayAgentRoute),
+    UnmanagedCli,
 }
 
 fn sidebar_section_heights(total_h: u16, split_ratio: f32) -> (u16, u16) {
@@ -160,6 +167,21 @@ fn collect_agent_panel_entries_with_runtimes(
                             .tabs
                             .get(detail.tab_idx)
                             .is_some_and(|tab| !tab.is_auto_named());
+                    let terminal = ws
+                        .tabs
+                        .get(detail.tab_idx)
+                        .and_then(|tab| tab.panes.get(&detail.pane_id))
+                        .and_then(|pane| app.terminals.get(&pane.attached_terminal_id));
+                    let route_provenance = terminal
+                        .and_then(|terminal| terminal.gateway_agent_route.clone())
+                        .map(AgentRouteProvenance::Managed)
+                        .or_else(|| {
+                            matches!(
+                                detail.agent,
+                                Some(crate::detect::Agent::Codex | crate::detect::Agent::Claude)
+                            )
+                            .then_some(AgentRouteProvenance::UnmanagedCli)
+                        });
                     AgentPanelEntry {
                         ws_idx,
                         tab_idx: detail.tab_idx,
@@ -177,6 +199,7 @@ fn collect_agent_panel_entries_with_runtimes(
                         last_agent_state_change_seq: detail.last_agent_state_change_seq,
                         state_labels: detail.state_labels,
                         tokens: detail.tokens,
+                        route_provenance,
                     }
                 })
         })
@@ -542,21 +565,87 @@ pub(crate) fn agent_panel_body_rect(area: Rect, has_scrollbar: bool) -> Rect {
     Rect::new(area.x, body_y, body_width, body_height)
 }
 
-fn resolved_agent_rows(app: &AppState, entry: &AgentPanelEntry) -> Vec<Vec<ResolvedToken>> {
+fn wrap_exact_text(value: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    let mut row_width = 0usize;
+    for character in value.chars() {
+        let mut encoded = [0; 4];
+        let character_width = display_width(character.encode_utf8(&mut encoded)).max(1);
+        if row_width > 0 && row_width.saturating_add(character_width) > width {
+            rows.push(std::mem::take(&mut row));
+            row_width = 0;
+        }
+        row.push(character);
+        row_width = row_width.saturating_add(character_width);
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    rows
+}
+
+fn route_provenance_rows(
+    provenance: &AgentRouteProvenance,
+    width: usize,
+) -> Vec<Vec<ResolvedToken>> {
+    let lines = match provenance {
+        AgentRouteProvenance::Managed(route) => {
+            let signature = format!("✓ {}", route.signature());
+            if display_width(&signature) <= width {
+                vec![signature]
+            } else {
+                [
+                    format!("✓ {}", route.gateway_label()),
+                    format!("→ {}", route.protocol_label()),
+                    format!("→ {}", route.model),
+                ]
+                .into_iter()
+                .flat_map(|line| wrap_exact_text(&line, width))
+                .collect()
+            }
+        }
+        AgentRouteProvenance::UnmanagedCli => vec!["◇ unmanaged CLI".to_string()],
+    };
+    lines
+        .into_iter()
+        .map(|row| {
+            let kind = match provenance {
+                AgentRouteProvenance::Managed(_) => ResolvedTokenKind::ManagedRoute(row),
+                AgentRouteProvenance::UnmanagedCli => ResolvedTokenKind::UnmanagedRoute(row),
+            };
+            vec![ResolvedToken::unstyled(kind)]
+        })
+        .collect()
+}
+
+fn resolved_agent_rows(
+    app: &AppState,
+    entry: &AgentPanelEntry,
+    max_width: u16,
+) -> Vec<Vec<ResolvedToken>> {
     let label = entry
         .state_labels
         .get(agent_panel_status_key(entry.state, entry.seen))
         .map(String::as_str)
         .unwrap_or_else(|| state_label(entry.state, entry.seen));
-    tokens::agent_rows(&app.sidebar_agents, entry, label)
+    let mut rows = tokens::agent_rows(&app.sidebar_agents, entry, label);
+    if let Some(provenance) = &entry.route_provenance {
+        let route_rows = route_provenance_rows(provenance, max_width.saturating_sub(3) as usize);
+        let insert_at = rows.len().min(1);
+        rows.splice(insert_at..insert_at, route_rows);
+    }
+    rows
 }
 
 pub(crate) fn agent_entry_height_in_body(
     app: &AppState,
     entry: &AgentPanelEntry,
+    body_width: u16,
     body_height: u16,
 ) -> u16 {
-    (resolved_agent_rows(app, entry)
+    (resolved_agent_rows(app, entry, body_width)
         .len()
         .max(1)
         .min(u16::MAX as usize) as u16)
@@ -581,7 +670,7 @@ fn agent_panel_visible_count_from(app: &AppState, area: Rect, scroll: usize) -> 
     let mut visible = 0usize;
     let entries = agent_panel_entries(app);
     for (index, entry) in entries.iter().enumerate().skip(scroll) {
-        let height = agent_entry_height_in_body(app, entry, body.height);
+        let height = agent_entry_height_in_body(app, entry, body.width, body.height);
         if used_rows.saturating_add(height) > body.height {
             break;
         }
@@ -601,7 +690,8 @@ fn agent_panel_bottom_start(app: &AppState, area: Rect) -> usize {
     let mut start = entries.len();
     for (index, entry) in entries.iter().enumerate().rev() {
         let gap = agent_entry_gap(app, index, entries.len());
-        let needed = agent_entry_height_in_body(app, entry, body.height).saturating_add(gap);
+        let needed =
+            agent_entry_height_in_body(app, entry, body.width, body.height).saturating_add(gap);
         if used_rows.saturating_add(needed) > body.height {
             break;
         }
@@ -1041,7 +1131,9 @@ fn resolved_token_spans(
             | ResolvedTokenKind::Agent(text)
             | ResolvedTokenKind::TerminalTitle(text)
             | ResolvedTokenKind::Branch(text)
-            | ResolvedTokenKind::Custom(text) => display_width(text),
+            | ResolvedTokenKind::Custom(text)
+            | ResolvedTokenKind::ManagedRoute(text)
+            | ResolvedTokenKind::UnmanagedRoute(text) => display_width(text),
             _ => 0,
         })
         .collect::<Vec<_>>();
@@ -1178,6 +1270,21 @@ fn resolved_token_spans(
                 spans.push(Span::styled(
                     truncate_end(text, budgets[index]),
                     apply_token_style(custom_style, token.style),
+                ));
+            }
+            ResolvedTokenKind::ManagedRoute(text) => {
+                spans.push(Span::styled(
+                    truncate_end(text, budgets[index]),
+                    apply_token_style(Style::default().fg(p.accent), token.style),
+                ));
+            }
+            ResolvedTokenKind::UnmanagedRoute(text) => {
+                spans.push(Span::styled(
+                    truncate_end(text, budgets[index]),
+                    apply_token_style(
+                        Style::default().fg(p.overlay0).add_modifier(Modifier::DIM),
+                        token.style,
+                    ),
                 ));
             }
         }
@@ -1494,7 +1601,7 @@ fn render_agent_detail(
     let body_bottom = body.y + body.height;
     for (index, detail) in details.iter().enumerate().skip(scroll) {
         let label_color = state_label_color(detail.state, detail.seen, p);
-        let rows = resolved_agent_rows(app, detail);
+        let rows = resolved_agent_rows(app, detail, body.width);
         let height = (rows.len().max(1) as u16).min(body.height);
         if row_y.saturating_add(height) > body_bottom {
             break;
@@ -1694,6 +1801,96 @@ mod tests {
         assert!(agent_style.add_modifier.contains(Modifier::DIM));
         assert!(!agent_style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(agent_style.bg, Some(app.palette.active_row_bg));
+    }
+
+    #[test]
+    fn managed_route_rows_preserve_every_structured_value_without_ellipsis() {
+        let mut app = crate::app::state::AppState::test_new();
+        let workspace = Workspace::test_new("one");
+        let pane_id = workspace.tabs[0].root_pane;
+        app.workspaces = vec![workspace];
+        app.ensure_test_terminals();
+        app.active = Some(0);
+        let terminal_id = app.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let route = crate::terminal::GatewayAgentRoute::applied(
+            "codex",
+            "mindshub",
+            "MindsHub Inference",
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            "provider/models/long-prefix-target-model",
+        );
+        app.terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .gateway_agent_route = Some(route.clone());
+
+        let entry = agent_panel_entries(&app)
+            .pop()
+            .expect("managed route entry");
+        assert_eq!(
+            entry.route_provenance,
+            Some(AgentRouteProvenance::Managed(route.clone()))
+        );
+        let route_text = resolved_agent_rows(&app, &entry, 25)
+            .into_iter()
+            .flatten()
+            .filter_map(|token| match token.kind {
+                ResolvedTokenKind::ManagedRoute(text) => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(route_text
+            .iter()
+            .any(|row| row.contains("MindsHub Inference")));
+        assert!(route_text
+            .iter()
+            .any(|row| row.contains("OpenAI Responses")));
+        let model_text = route_text
+            .iter()
+            .skip_while(|row| !row.starts_with("→ provider/"))
+            .cloned()
+            .collect::<String>();
+        assert_eq!(model_text, "→ provider/models/long-prefix-target-model");
+        assert!(!route_text.iter().any(|row| row.contains('…')));
+
+        let area = Rect::new(0, 0, 26, 20);
+        let mut rendered = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        rendered
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let (_, agent_area) = expanded_sidebar_sections(area, app.sidebar_section_split);
+        let body = agent_panel_body_rect(agent_area, false);
+        let visible = (body.y..body.y + body.height)
+            .map(|row| row_text(rendered.backend().buffer(), row, body.width))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(visible.contains("✓ MindsHub Inference"), "{visible}");
+        assert!(visible.contains("→ OpenAI Responses"), "{visible}");
+    }
+
+    #[test]
+    fn manually_launched_codex_is_explicitly_unmanaged() {
+        let mut app = crate::app::state::AppState::test_new();
+        let workspace = Workspace::test_new("one");
+        let pane_id = workspace.tabs[0].root_pane;
+        app.workspaces = vec![workspace];
+        app.ensure_test_terminals();
+        let terminal_id = app.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.terminals.get_mut(&terminal_id).unwrap().detected_agent = Some(Agent::Codex);
+
+        let entry = agent_panel_entries(&app).pop().expect("Codex entry");
+        assert_eq!(
+            entry.route_provenance,
+            Some(AgentRouteProvenance::UnmanagedCli)
+        );
+        let rows = resolved_agent_rows(&app, &entry, 25);
+        assert!(rows.iter().flatten().any(|token| {
+            matches!(&token.kind, ResolvedTokenKind::UnmanagedRoute(text) if text == "◇ unmanaged CLI")
+        }));
     }
 
     #[test]
@@ -1969,7 +2166,7 @@ rows = [[{ token = "git_status", fg = "#123456" }]]
         let mut app = crate::app::state::AppState::test_new();
         app.workspaces = vec![Workspace::test_new("one"), Workspace::test_new("two")];
         app.ensure_test_terminals();
-        for (workspace, agent) in app.workspaces.iter().zip([Agent::Pi, Agent::Claude]) {
+        for (workspace, agent) in app.workspaces.iter().zip([Agent::Pi, Agent::Gemini]) {
             let pane_id = workspace.tabs[0].root_pane;
             let terminal_id = workspace.tabs[0].panes[&pane_id]
                 .attached_terminal_id
@@ -1991,7 +2188,7 @@ rows = [[{ token = "git_status", fg = "#123456" }]]
         assert_eq!(metrics.viewport_rows, 2);
         assert_eq!(metrics.max_offset_from_bottom, 0);
         assert_eq!(row_text(buffer, body.y, body.width), " pi");
-        assert_eq!(row_text(buffer, body.y + 1, body.width), " claude");
+        assert_eq!(row_text(buffer, body.y + 1, body.width), " gemini");
     }
 
     #[test]
@@ -2154,7 +2351,12 @@ rows = [[{ token = "git_status", fg = "#123456" }]]
         assert_eq!(metrics.max_offset_from_bottom, 0);
         let entry = agent_panel_entries(&app).pop().unwrap();
         assert_eq!(
-            agent_entry_height_in_body(&app, &entry, agent_panel_body_rect(panel, false).height),
+            agent_entry_height_in_body(
+                &app,
+                &entry,
+                agent_panel_body_rect(panel, false).width,
+                agent_panel_body_rect(panel, false).height,
+            ),
             agent_panel_body_rect(panel, false).height
         );
     }

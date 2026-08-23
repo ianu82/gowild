@@ -2075,6 +2075,50 @@ mod tests {
         assert_eq!(scroll.viewport_rows, 5);
     }
 
+    #[test]
+    fn api_pane_get_exposes_exact_managed_route_without_credentials() {
+        let mut app = app_with_linked_worktree();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.state
+            .terminals
+            .get_mut(&terminal_id)
+            .expect("terminal")
+            .gateway_agent_route = Some(crate::terminal::GatewayAgentRoute::applied(
+            "codex",
+            "mindshub",
+            "MindsHub Inference",
+            crate::gateway::GatewayProtocol::OpenAiResponses,
+            "provider/team/long-model-id",
+        ));
+
+        let response = app.handle_pane_get(
+            "req".into(),
+            PaneTarget {
+                pane_id: app.public_pane_id(0, pane_id).unwrap(),
+            },
+        );
+
+        assert!(!response.contains("api_key"));
+        assert!(!response.contains("credential"));
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::PaneInfo { pane } = success.result else {
+            panic!("expected pane info response");
+        };
+        assert_eq!(
+            pane.managed_agent_route,
+            Some(crate::api::schema::ManagedAgentRouteInfo {
+                cli: "codex".into(),
+                gateway_id: "mindshub".into(),
+                gateway_name: "MindsHub Inference".into(),
+                protocol: "OpenAI Responses".into(),
+                model: "provider/team/long-model-id".into(),
+            })
+        );
+    }
+
     #[tokio::test]
     async fn api_pane_read_reports_when_older_rows_are_omitted() {
         let (mut app, public_pane_id, _pane_id) = app_with_scrollback_runtime();

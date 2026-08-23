@@ -951,6 +951,7 @@ mod tests {
             state_labels: HashMap::new(),
             tokens: HashMap::new(),
             agent_session: None,
+            managed_agent_route: None,
             scroll: None,
             revision: 0,
         }
