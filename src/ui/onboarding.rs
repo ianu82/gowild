@@ -48,11 +48,20 @@ fn render_onboarding_welcome(app: &AppState, frame: &mut Frame, area: Rect) {
     .areas::<4>(stack.content);
 
     frame.render_widget(
-        Paragraph::new("  gowild").style(
-            Style::default()
-                .fg(app.palette.text)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  >_",
+                Style::default()
+                    .fg(app.palette.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " gowild",
+                Style::default()
+                    .fg(app.palette.text)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])),
         header_rows[0],
     );
     frame.render_widget(

@@ -2,6 +2,8 @@ use serde::Deserialize;
 use tracing::warn;
 
 pub const THEME_NAMES: &[&str] = &[
+    "cowork",
+    "cowork-light",
     "catppuccin",
     "catppuccin-latte",
     "terminal",
@@ -24,6 +26,8 @@ pub const THEME_NAMES: &[&str] = &[
 
 pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
     match name.to_lowercase().replace([' ', '_'], "-").as_str() {
+        "cowork" | "cowork-dark" | "gowild" | "gowild-dark" => Some("cowork"),
+        "cowork-light" | "gowild-light" => Some("cowork-light"),
         "catppuccin" | "catppuccin-mocha" => Some("catppuccin"),
         "catppuccin-latte" | "latte" | "light" => Some("catppuccin-latte"),
         "terminal" => Some("terminal"),
@@ -50,7 +54,7 @@ pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
 ///
 /// ```toml
 /// [theme]
-/// name = "tokyo-night"  # built-in: catppuccin, terminal, dracula, nord, etc.
+/// name = "cowork"  # built-in: cowork, cowork-light, terminal, etc.
 ///
 /// [theme.custom]        # override individual tokens on top of the base
 /// accent = "#f5c2e7"
@@ -59,7 +63,7 @@ pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ThemeConfig {
-    /// Built-in theme name. Default: "catppuccin".
+    /// Built-in theme name. Default: "cowork".
     pub name: Option<String>,
     /// Follow host terminal light/dark appearance and switch between theme names.
     pub auto_switch: bool,
@@ -75,12 +79,12 @@ impl ThemeConfig {
     pub(crate) fn diagnostics(&self) -> Vec<String> {
         let valid = THEME_NAMES.join(", ");
         [
-            ("theme.name", self.name.as_deref(), "catppuccin"),
-            ("theme.dark_name", self.dark_name.as_deref(), "catppuccin"),
+            ("theme.name", self.name.as_deref(), "cowork"),
+            ("theme.dark_name", self.dark_name.as_deref(), "cowork"),
             (
                 "theme.light_name",
                 self.light_name.as_deref(),
-                "catppuccin-latte",
+                "cowork-light",
             ),
         ]
         .into_iter()
@@ -219,15 +223,23 @@ light_name = "lattee"
         let diagnostics = config.theme.diagnostics();
         assert_eq!(diagnostics.len(), 3);
         assert!(diagnostics[0].contains("theme.name = \"catppucin\""));
-        assert!(diagnostics[0].contains("using \"catppuccin\""));
+        assert!(diagnostics[0].contains("using \"cowork\""));
         assert!(diagnostics[1].contains("theme.dark_name = \"tokio-night\""));
         assert!(diagnostics[2].contains("theme.light_name = \"lattee\""));
-        assert!(diagnostics[2].contains("using \"catppuccin-latte\""));
+        assert!(diagnostics[2].contains("using \"cowork-light\""));
     }
 
     #[test]
     fn theme_name_aliases_are_valid() {
-        for name in ["catppuccin-mocha", "tokyonight", "gruvbox-dark", "dawn"] {
+        for name in [
+            "gowild",
+            "cowork-dark",
+            "gowild-light",
+            "catppuccin-mocha",
+            "tokyonight",
+            "gruvbox-dark",
+            "dawn",
+        ] {
             assert!(canonical_theme_name(name).is_some(), "alias: {name}");
         }
     }

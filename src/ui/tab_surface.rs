@@ -302,9 +302,10 @@ mod tests {
         assert!(!app.view.split_borders.is_empty());
         assert!(frame.cursor.is_some());
         assert_eq!(frame.hyperlinks, vec![uri.to_owned()]);
+        assert_eq!(app.palette, crate::app::state::Palette::cowork());
         assert_eq!(
             frame_digest(&frame),
-            "a7c21fa42305a41231c7ae254f264f6ef923f46301d8fc4cd35ab6dfdd651b6b"
+            "6d73c01a09bba4cdba80fd2e25e120c59ae51707c32fa5d435d3d22e8e549b8d"
         );
     }
 
@@ -319,9 +320,10 @@ mod tests {
         assert_eq!(app.view.mobile_header_rect, Rect::new(0, 0, 44, 2));
         assert_eq!(app.view.terminal_area, Rect::new(0, 2, 44, 18));
         assert_eq!(frame.cursor, None);
+        assert_eq!(app.palette, crate::app::state::Palette::cowork());
         assert_eq!(
             frame_digest(&frame),
-            "c358e205d8531c460b88d831f071d3c784b7d225ee3ae6ac8cc08930517a06ad"
+            "310a4f77ae858f002e999bd6fd840a4afd3a48e35aba95b7bbf14ea7f959dd82"
         );
     }
 }

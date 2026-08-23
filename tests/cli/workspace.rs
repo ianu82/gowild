@@ -515,10 +515,13 @@ fn config_check_reports_unknown_theme_names() {
     let stdout = String::from_utf8_lossy(&checked.stdout);
     assert!(stdout.contains("config: issues found"), "{stdout}");
     assert!(
-        stdout.contains("unknown theme name theme.name = \"catppucin\"; using \"catppuccin\""),
+        stdout.contains("unknown theme name theme.name = \"catppucin\"; using \"cowork\""),
         "{stdout}"
     );
-    assert!(stdout.contains("valid themes: catppuccin"), "{stdout}");
+    assert!(
+        stdout.contains("valid themes: cowork, cowork-light, catppuccin"),
+        "{stdout}"
+    );
 
     cleanup_test_base(&base);
 }

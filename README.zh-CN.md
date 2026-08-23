@@ -1,5 +1,9 @@
 # GoWild
 
+<p align="center">
+  <img src="assets/logo.svg" width="128" alt="GoWild 多路由终端标志">
+</p>
+
 [English](README.md) · 简体中文
 
 GoWild 是面向编程智能体的持久化终端运行时。编程 CLI、LLM 网关和模型是三个相互独立的选择。
@@ -9,6 +13,7 @@ GoWild 是面向编程智能体的持久化终端运行时。编程 CLI、LLM �
 ## 当前功能
 
 - 持久化工作区、标签页、窗格、会话、智能体状态和远程重连。
+- 默认使用源自 Cowork 的深色主题，同时提供配套的 `cowork-light` 主题，并可在启用后跟随主机外观切换。
 - 首次启动及设置界面中的网关配置，并使用安全的凭据引用。
 - 经过身份验证的模型发现，以及 Codex 和 Claude 各自的默认模型。
 - 对身份验证、模型列表、Responses、Messages、流式传输和工具调用的网关测试。

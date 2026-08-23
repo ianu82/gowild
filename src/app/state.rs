@@ -110,7 +110,57 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// Catppuccin Mocha — the default.
+    /// MindsHub Cowork dark — GoWild's default product theme.
+    pub fn cowork() -> Self {
+        Self {
+            accent: Color::Rgb(34, 211, 238),
+            panel_bg: Color::Rgb(14, 22, 38),
+            sidebar_bg: Color::Reset,
+            active_row_bg: Color::Rgb(19, 29, 49),
+            selection_bg: Color::Rgb(26, 38, 64),
+            surface0: Color::Rgb(19, 29, 49),
+            surface1: Color::Rgb(26, 38, 64),
+            surface_dim: Color::Rgb(8, 13, 24),
+            overlay0: Color::Rgb(92, 107, 133),
+            overlay1: Color::Rgb(138, 151, 174),
+            text: Color::Rgb(242, 246, 255),
+            subtext0: Color::Rgb(199, 210, 229),
+            mauve: Color::Rgb(8, 178, 207),
+            green: Color::Rgb(74, 222, 128),
+            yellow: Color::Rgb(251, 191, 36),
+            red: Color::Rgb(248, 113, 113),
+            blue: Color::Rgb(34, 211, 238),
+            teal: Color::Rgb(8, 178, 207),
+            peach: Color::Rgb(253, 230, 138),
+        }
+    }
+
+    /// MindsHub Cowork light.
+    pub fn cowork_light() -> Self {
+        Self {
+            accent: Color::Rgb(31, 156, 176),
+            panel_bg: Color::Rgb(255, 255, 255),
+            sidebar_bg: Color::Reset,
+            active_row_bg: Color::Rgb(244, 244, 244),
+            selection_bg: Color::Rgb(229, 244, 247),
+            surface0: Color::Rgb(244, 244, 244),
+            surface1: Color::Rgb(236, 236, 234),
+            surface_dim: Color::Rgb(250, 250, 250),
+            overlay0: Color::Rgb(155, 159, 163),
+            overlay1: Color::Rgb(107, 111, 115),
+            text: Color::Rgb(14, 15, 16),
+            subtext0: Color::Rgb(58, 61, 64),
+            mauve: Color::Rgb(17, 85, 98),
+            green: Color::Rgb(21, 128, 61),
+            yellow: Color::Rgb(180, 83, 9),
+            red: Color::Rgb(185, 28, 28),
+            blue: Color::Rgb(31, 156, 176),
+            teal: Color::Rgb(17, 85, 98),
+            peach: Color::Rgb(180, 83, 9),
+        }
+    }
+
+    /// Catppuccin Mocha.
     pub fn catppuccin() -> Self {
         Self {
             accent: Color::Rgb(137, 180, 250), // blue
@@ -563,6 +613,8 @@ impl Palette {
     /// Resolve a theme by name. Returns None for unknown names.
     pub fn from_name(name: &str) -> Option<Self> {
         match crate::config::canonical_theme_name(name)? {
+            "cowork" => Some(Self::cowork()),
+            "cowork-light" => Some(Self::cowork_light()),
             "catppuccin" => Some(Self::catppuccin()),
             "catppuccin-latte" => Some(Self::catppuccin_latte()),
             "terminal" => Some(Self::terminal()),
@@ -2479,12 +2531,12 @@ impl AppState {
             local_sound_playback: false,
             toast_config: ToastConfig::default(),
             keybinds: Keybinds::default(),
-            palette: Palette::catppuccin(),
-            theme_name: "catppuccin".to_string(),
+            palette: Palette::cowork(),
+            theme_name: "cowork".to_string(),
             theme_runtime: ThemeRuntimeConfig {
-                manual_name: "catppuccin".to_string(),
-                dark_name: "catppuccin".to_string(),
-                light_name: "catppuccin-latte".to_string(),
+                manual_name: "cowork".to_string(),
+                dark_name: "cowork".to_string(),
+                light_name: "cowork-light".to_string(),
                 auto_switch: false,
                 custom: None,
                 legacy_accent: None,
@@ -3024,6 +3076,56 @@ mod tests {
                 Palette::from_name(name).is_some(),
                 "theme should resolve: {name}"
             );
+        }
+    }
+
+    #[test]
+    fn cowork_themes_use_current_product_tokens() {
+        let dark = Palette::cowork();
+        assert_eq!(dark.accent, Color::Rgb(34, 211, 238));
+        assert_eq!(dark.panel_bg, Color::Rgb(14, 22, 38));
+        assert_eq!(dark.text, Color::Rgb(242, 246, 255));
+        assert_eq!(dark.green, Color::Rgb(74, 222, 128));
+        assert_eq!(dark.yellow, Color::Rgb(251, 191, 36));
+        assert_eq!(dark.red, Color::Rgb(248, 113, 113));
+
+        let light = Palette::cowork_light();
+        assert_eq!(light.accent, Color::Rgb(31, 156, 176));
+        assert_eq!(light.panel_bg, Color::Rgb(255, 255, 255));
+        assert_eq!(light.text, Color::Rgb(14, 15, 16));
+        assert_eq!(light.green, Color::Rgb(21, 128, 61));
+        assert_eq!(light.yellow, Color::Rgb(180, 83, 9));
+        assert_eq!(light.red, Color::Rgb(185, 28, 28));
+    }
+
+    #[test]
+    fn cowork_semantic_colors_remain_legible() {
+        for (name, palette) in [
+            ("cowork", Palette::cowork()),
+            ("cowork-light", Palette::cowork_light()),
+        ] {
+            assert!(
+                contrast_ratio(palette.text, palette.panel_bg) >= 7.0,
+                "primary text contrast regressed for {name}"
+            );
+            assert!(
+                contrast_ratio(palette.overlay1, palette.panel_bg) >= 4.5,
+                "secondary text contrast regressed for {name}"
+            );
+            assert!(
+                contrast_ratio(palette.accent, palette.panel_bg) >= 3.0,
+                "focus contrast regressed for {name}"
+            );
+            for (role, color) in [
+                ("success", palette.green),
+                ("working", palette.yellow),
+                ("blocked", palette.red),
+            ] {
+                assert!(
+                    contrast_ratio(color, palette.panel_bg) >= 4.5,
+                    "{role} contrast regressed for {name}"
+                );
+            }
         }
     }
 

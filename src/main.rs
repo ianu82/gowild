@@ -117,27 +117,27 @@ const DEFAULT_CONFIG: &str = r##"# gowild configuration
 # onboarding = true
 
 [theme]
-# Built-in themes: catppuccin, terminal, tokyo-night, dracula, nord,
-#                  gruvbox, one-dark, solarized, kanagawa, rose-pine,
-#                  vesper
-# name = "catppuccin"
+# Built-in themes: cowork, cowork-light, catppuccin, terminal, tokyo-night,
+#                  dracula, nord, gruvbox, one-dark, solarized, kanagawa,
+#                  rose-pine, vesper
+# name = "cowork"
 
 # Follow host terminal light/dark appearance and switch GoWild UI themes.
 # Existing manual behavior is unchanged unless this is true.
 # auto_switch = false
-# dark_name = "catppuccin"
-# light_name = "catppuccin-latte"
+# dark_name = "cowork"
+# light_name = "cowork-light"
 
 # Override individual color tokens on top of the base theme.
 # Accepts: hex (#rrggbb), named colors, rgb(r,g,b), or panel_bg = "reset"
 # [theme.custom]
-# sidebar_bg = "#181825"
-# active_row_bg = "#1e1e2e"
-# selection_bg = "#313244"
+# sidebar_bg = "#080d18"
+# active_row_bg = "#131d31"
+# selection_bg = "#1a2640"
 # panel_bg = "reset"
-# accent = "#f5c2e7"
-# red = "#ff6188"
-# green = "#a6e3a1"
+# accent = "#22d3ee"
+# red = "#f87171"
+# green = "#4ade80"
 
 [terminal]
 # Executable used for new interactive panes.

@@ -1,5 +1,9 @@
 # GoWild
 
+<p align="center">
+  <img src="assets/logo.svg" width="128" alt="GoWild multi-route terminal logo">
+</p>
+
 GoWild is a persistent terminal runtime for coding agents where the coding CLI,
 LLM gateway, and model are independent choices.
 
@@ -13,6 +17,8 @@ adapter architecture.
 
 - Persistent workspaces, tabs, panes, sessions, agent status, and remote
   reattachment.
+- A default Cowork-derived dark theme, a matching `cowork-light` theme, and
+  host-appearance switching when enabled.
 - First-run and settings-based gateway setup with secure credential references.
 - Authenticated model discovery and separate defaults for Codex and Claude.
 - Gateway tests for authentication, model listing, Responses, Messages,

@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_DOCS = (
     Path("README.md"),
     Path("README.zh-CN.md"),
+    Path("assets/BRAND.md"),
     Path("docs/README.md"),
     Path("docs/next/README.md"),
     Path("docs/next/README.zh-CN.md"),
@@ -116,6 +117,39 @@ def check_frozen_website(repo_root: Path = REPO_ROOT) -> list[str]:
     return errors
 
 
+def check_brand_assets(repo_root: Path = REPO_ROOT) -> list[str]:
+    errors: list[str] = []
+    logo_svg = repo_root / "assets/logo.svg"
+    logo_png = repo_root / "assets/logo.png"
+    if not logo_svg.is_file():
+        errors.append("assets/logo.svg: GoWild logo source is missing")
+    else:
+        svg = logo_svg.read_text(encoding="utf-8")
+        if 'aria-label="GoWild logo"' not in svg:
+            errors.append("assets/logo.svg: accessible GoWild label is missing")
+        for color in ("#080D18", "#0E1626", "#22D3EE"):
+            if color not in svg:
+                errors.append(f"assets/logo.svg: Cowork palette color {color} is missing")
+
+    png = logo_png.read_bytes() if logo_png.is_file() else b""
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        errors.append("assets/logo.png: rendered GoWild PNG is missing or invalid")
+    elif len(png) < 24 or (
+        int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
+    ) != (512, 512):
+        errors.append("assets/logo.png: rendered GoWild PNG must remain 512x512")
+
+    cargo_manifest = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    for asset in ("assets/BRAND.md", "assets/logo.png", "assets/logo.svg"):
+        if f'"{asset}"' not in cargo_manifest:
+            errors.append(f"Cargo.toml: packaged GoWild brand asset {asset} is missing")
+
+    for retired in ("assets/og-card.png", "assets/screenshot.png"):
+        if (repo_root / retired).exists():
+            errors.append(f"{retired}: imported user-visible asset must remain retired")
+    return errors
+
+
 def check_release_recipes(repo_root: Path = REPO_ROOT) -> list[str]:
     justfile = (repo_root / "justfile").read_text(encoding="utf-8")
     required_errors = (
@@ -163,6 +197,7 @@ def check_install_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
 def check(repo_root: Path = REPO_ROOT) -> list[str]:
     return [
         *check_active_surfaces(repo_root),
+        *check_brand_assets(repo_root),
         *check_frozen_website(repo_root),
         *check_release_recipes(repo_root),
         *check_install_boundaries(repo_root),
