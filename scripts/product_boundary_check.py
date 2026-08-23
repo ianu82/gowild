@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -38,6 +39,9 @@ ACTIVE_CODE_FILES = (
 )
 
 ROOT_READMES = (Path("README.md"), Path("README.zh-CN.md"))
+IMPORTED_APACHE_LICENSE_SHA256 = (
+    "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+)
 
 FROZEN_WEBSITE_COMMANDS = ("dev", "test", "build", "build:draft", "preview")
 DISABLED_WEBSITE_SCRIPT = "node scripts/product-boundary-disabled.mjs"
@@ -206,6 +210,38 @@ def check_install_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
     return errors
 
 
+def check_license_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
+    errors: list[str] = []
+    root_license = repo_root / "LICENSE"
+    if (
+        not root_license.is_file()
+        or root_license.read_text(encoding="utf-8").strip() != "TBD"
+    ):
+        errors.append("LICENSE: GoWild project licence must remain TBD until selected")
+
+    imported_license = repo_root / "ACKNOWLEDGEMENTS/LICENSES/APACHE-2.0.txt"
+    if not imported_license.is_file():
+        errors.append("ACKNOWLEDGEMENTS: imported Apache License 2.0 copy is missing")
+    elif (
+        hashlib.sha256(imported_license.read_bytes()).hexdigest()
+        != IMPORTED_APACHE_LICENSE_SHA256
+    ):
+        errors.append("ACKNOWLEDGEMENTS: imported Apache License 2.0 copy was altered")
+
+    cargo_manifest = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    if 'license = "Apache-2.0"' in cargo_manifest:
+        errors.append("Cargo.toml: must not claim Apache-2.0 as GoWild's project licence")
+    if 'license-file = "LICENSE"' not in cargo_manifest:
+        errors.append("Cargo.toml: project licence status must point to LICENSE")
+    for required_path in (
+        "ACKNOWLEDGEMENTS/README.md",
+        "ACKNOWLEDGEMENTS/LICENSES/APACHE-2.0.txt",
+    ):
+        if f'"{required_path}"' not in cargo_manifest:
+            errors.append(f"Cargo.toml: source package must include {required_path}")
+    return errors
+
+
 def check(repo_root: Path = REPO_ROOT) -> list[str]:
     return [
         *check_active_surfaces(repo_root),
@@ -213,6 +249,7 @@ def check(repo_root: Path = REPO_ROOT) -> list[str]:
         *check_frozen_website(repo_root),
         *check_release_recipes(repo_root),
         *check_install_boundaries(repo_root),
+        *check_license_boundaries(repo_root),
     ]
 
 

@@ -1,8 +1,8 @@
 # Contributing to GoWild
 
 GoWild development happens only in [ianu82/gowild](https://github.com/ianu82/gowild).
-It is an independent Apache-2.0 project. Historical source attribution is
-recorded under [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS/README.md).
+Its project licence is currently TBD. Historical source licensing and
+attribution are recorded under [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS/README.md).
 
 Keep changes small, focused, and testable. Before opening a pull request:
 

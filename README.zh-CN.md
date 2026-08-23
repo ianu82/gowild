@@ -61,4 +61,4 @@ cargo run -- --help
 
 ## 许可证
 
-Apache License 2.0，详见 [`LICENSE`](LICENSE)。历史归属信息见 [`ACKNOWLEDGEMENTS`](ACKNOWLEDGEMENTS/README.md)。
+GoWild 的项目许可证尚未确定，目前为 [`TBD`](LICENSE)。历史来源的许可证与必要归属信息保留在 [`ACKNOWLEDGEMENTS`](ACKNOWLEDGEMENTS/README.md) 中。

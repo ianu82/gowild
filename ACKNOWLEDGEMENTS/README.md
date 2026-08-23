@@ -15,8 +15,13 @@ snapshot of Herdr.
 
 The GoWild baseline is a standalone root commit whose file tree exactly matches
 the recorded source tree. Later GoWild commits contain the derivative product
-changes. The Apache 2.0 licence is retained in [`LICENSE`](../LICENSE), together
-with copyright and attribution material present in the imported source.
+changes.
+
+GoWild's project licence has not yet been selected and is recorded as
+[`TBD`](../LICENSE). That does not remove or supersede the Apache License 2.0
+terms that apply to the imported source. The required licence copy is retained
+at [`LICENSES/APACHE-2.0.txt`](LICENSES/APACHE-2.0.txt), together with copyright
+and attribution material present in the imported source.
 
 GoWild is not affiliated with, endorsed by, or maintained by the Herdr project.
 GoWild development, issues, pull requests, releases, and support belong only to
