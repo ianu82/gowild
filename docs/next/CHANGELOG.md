@@ -21,6 +21,10 @@ claims, support commitments, or current install instructions.
   confirmation; built-in presets remain non-deletable.
 
 ### Fixed
+- Claude Code launches through the built-in MindsHub Inference route now use a
+  loopback compatibility bridge that supplies GoWild's upstream request
+  identity and converts complete Messages responses into Claude's streaming
+  event contract, including tool calls and usage metadata.
 - Codex CLI launches through the built-in MindsHub Inference route now bridge
   MindsHub's non-streaming Responses payloads into the streaming event contract
   Codex requires, including function-call arguments and usage metadata.

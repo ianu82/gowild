@@ -265,7 +265,7 @@ impl App {
             mode,
             passthrough_args: Vec::new(),
         };
-        let (spec, bridge) = {
+        let (spec, responses_bridge, anthropic_bridge) = {
             let registry = AdapterRegistry::with_builtin_adapters();
             let resolver = crate::cli_adapter::GatewayResolver::new(
                 &self.state.gateway_catalog,
@@ -276,7 +276,7 @@ impl App {
             let mut resolved = planner
                 .resolve(cli, &request)
                 .map_err(|error| error.to_string())?;
-            let bridge = if crate::cli_adapter::ResponsesBridge::is_required(&resolved) {
+            let responses_bridge = if crate::cli_adapter::ResponsesBridge::is_required(&resolved) {
                 match self.mindshub_responses_bridge.as_ref() {
                     Some(existing) => {
                         resolved.endpoint = existing.local_base_url().to_string();
@@ -292,13 +292,32 @@ impl App {
             } else {
                 None
             };
+            let anthropic_bridge = if crate::cli_adapter::AnthropicBridge::is_required(&resolved) {
+                match self.mindshub_anthropic_bridge.as_ref() {
+                    Some(existing) => {
+                        resolved.endpoint = existing.local_base_url().to_string();
+                        None
+                    }
+                    None => {
+                        let bridge =
+                            crate::cli_adapter::AnthropicBridge::start_required(&resolved)?;
+                        resolved.endpoint = bridge.local_base_url().to_string();
+                        Some(bridge)
+                    }
+                }
+            } else {
+                None
+            };
             let spec = planner
                 .plan_resolved(cli, &request, &resolved)
                 .map_err(|error| error.to_string())?;
-            (spec, bridge)
+            (spec, responses_bridge, anthropic_bridge)
         };
-        if let Some(bridge) = bridge {
+        if let Some(bridge) = responses_bridge {
             self.mindshub_responses_bridge = Some(bridge);
+        }
+        if let Some(bridge) = anthropic_bridge {
+            self.mindshub_anthropic_bridge = Some(bridge);
         }
         pane_command_parts(spec.into_pane_parts())
     }
@@ -804,6 +823,58 @@ mod tests {
             .0
             .join(" ");
         assert!(second.contains(&bridge_url));
+    }
+
+    #[test]
+    fn official_mindshub_claude_launch_reuses_a_loopback_streaming_bridge() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.gateway_credentials = Box::new(MissingCredentialStore);
+        let mut environment = MemoryEnvironment::default();
+        environment.0.insert(
+            "GOWILD_API_KEY".into(),
+            "environment-only-test-secret".into(),
+        );
+
+        app.plan_coding_agent_launch_with_environment(
+            CodingCli::Claude,
+            "mindshub",
+            "gpt-codex",
+            LaunchMode::Fresh,
+            &FixedLocator(PathBuf::from("/bin/false")),
+            &environment,
+        )
+        .unwrap();
+        let bridge_url = app
+            .mindshub_anthropic_bridge
+            .as_ref()
+            .unwrap()
+            .local_base_url()
+            .to_string();
+        assert!(bridge_url.starts_with("http://127.0.0.1:"));
+
+        app.plan_coding_agent_launch_with_environment(
+            CodingCli::Claude,
+            "mindshub",
+            "gpt-codex",
+            LaunchMode::Fresh,
+            &FixedLocator(PathBuf::from("/bin/false")),
+            &environment,
+        )
+        .unwrap();
+        assert_eq!(
+            app.mindshub_anthropic_bridge
+                .as_ref()
+                .unwrap()
+                .local_base_url(),
+            bridge_url
+        );
     }
 
     #[cfg(unix)]

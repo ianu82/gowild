@@ -150,6 +150,14 @@ Foundry mode selectors so the chosen gateway cannot be bypassed by the parent
 shell. MindsHub uses the bearer path and the host-only
 `https://api.mindshub.ai` base URL.
 
+For the built-in MindsHub route, GoWild places a tokenized loopback bridge
+between Claude Code and the service. The bridge identifies upstream requests as
+GoWild, requests a complete message, and emits the equivalent Anthropic event
+sequence locally. This keeps Claude's native streaming and tool-use UI stable
+when the service returns a complete JSON message to a streaming client. The
+credential remains a child-only secret header and is never stored by the
+bridge. Custom Anthropic-compatible gateways continue to connect directly.
+
 When a model is selected, GoWild passes it through Claude's `--model` option
 and exposes it as the custom model-picker entry. Background and subagent work
 is pinned to the same gateway model so a custom catalog cannot fall through to

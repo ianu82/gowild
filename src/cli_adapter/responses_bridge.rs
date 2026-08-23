@@ -1,28 +1,27 @@
 use std::collections::BTreeSet;
 use std::fmt;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT};
 use reqwest::{StatusCode, Url};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
+#[cfg(test)]
+use super::bridge_http::BridgeRequest;
+use super::bridge_http::{
+    read_request, route_token, write_error, write_response, MAX_RESPONSE_BODY_BYTES,
+};
 use super::ResolvedGateway;
 use crate::gateway::{GatewayPreset, GatewayProtocol, MINDSHUB_RESPONSES_BASE_URL};
 
-const MAX_HEADER_BYTES: usize = 64 * 1024;
-const MAX_REQUEST_BODY_BYTES: usize = 16 * 1024 * 1024;
-const MAX_RESPONSE_BODY_BYTES: usize = 32 * 1024 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(180);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(10);
-
-static BRIDGE_NONCE: AtomicU64 = AtomicU64::new(1);
 
 /// Keeps a loopback-only compatibility bridge alive for one managed Codex route.
 ///
@@ -90,6 +89,7 @@ impl ResponsesBridge {
             let client = match Client::builder()
                 .timeout(IO_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
+                .user_agent(concat!("gowild/", env!("CARGO_PKG_VERSION")))
                 .build()
             {
                 Ok(client) => client,
@@ -155,19 +155,6 @@ fn requires_bridge(resolved: &ResolvedGateway) -> bool {
     resolved.protocol == GatewayProtocol::OpenAiResponses
         && resolved.gateway.preset == Some(GatewayPreset::MindsHubInference)
         && resolved.endpoint.trim_end_matches('/') == MINDSHUB_RESPONSES_BASE_URL
-}
-
-fn route_token(port: u16) -> String {
-    let nonce = BRIDGE_NONCE.fetch_add(1, Ordering::Relaxed);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let digest = Sha256::digest(format!("{}:{port}:{nonce}:{now}", std::process::id()));
-    digest[..16]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 fn run_bridge(
@@ -332,115 +319,6 @@ fn handle_connection(
     }
 }
 
-struct BridgeRequest {
-    method: String,
-    path: String,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-#[derive(Debug)]
-struct RequestReadError(&'static str);
-
-impl RequestReadError {
-    fn message(&self) -> &'static str {
-        self.0
-    }
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<BridgeRequest, RequestReadError> {
-    let mut bytes = Vec::new();
-    let header_end = loop {
-        if bytes.len() >= MAX_HEADER_BYTES {
-            return Err(RequestReadError("request headers are too large"));
-        }
-        let mut chunk = [0_u8; 4096];
-        let read = stream
-            .read(&mut chunk)
-            .map_err(|_| RequestReadError("request could not be read"))?;
-        if read == 0 {
-            return Err(RequestReadError("request ended before its headers"));
-        }
-        bytes.extend_from_slice(&chunk[..read]);
-        if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-            break position + 4;
-        }
-    };
-    let header_text = std::str::from_utf8(&bytes[..header_end])
-        .map_err(|_| RequestReadError("request headers are invalid"))?;
-    let mut lines = header_text.split("\r\n");
-    let mut request_line = lines
-        .next()
-        .ok_or(RequestReadError("request line is missing"))?
-        .split_whitespace();
-    let method = request_line
-        .next()
-        .ok_or(RequestReadError("request method is missing"))?
-        .to_string();
-    let path = request_line
-        .next()
-        .ok_or(RequestReadError("request path is missing"))?
-        .to_string();
-    let version = request_line
-        .next()
-        .ok_or(RequestReadError("request version is missing"))?;
-    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") || request_line.next().is_some() {
-        return Err(RequestReadError("request line is invalid"));
-    }
-
-    let mut headers = Vec::new();
-    let mut content_length = None;
-    for line in lines.filter(|line| !line.is_empty()) {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or(RequestReadError("request header is invalid"))?;
-        let name = name.trim().to_ascii_lowercase();
-        let value = value.trim().to_string();
-        if name == "transfer-encoding" {
-            return Err(RequestReadError("chunked requests are not supported"));
-        }
-        if name == "content-length" {
-            if content_length.is_some() {
-                return Err(RequestReadError("request has multiple content lengths"));
-            }
-            content_length = Some(
-                value
-                    .parse::<usize>()
-                    .map_err(|_| RequestReadError("request content length is invalid"))?,
-            );
-        }
-        headers.push((name, value));
-    }
-    let content_length =
-        content_length.ok_or(RequestReadError("request body length is missing"))?;
-    if content_length > MAX_REQUEST_BODY_BYTES {
-        return Err(RequestReadError("request body is too large"));
-    }
-
-    let mut body = bytes[header_end..].to_vec();
-    if body.len() > content_length {
-        body.truncate(content_length);
-    }
-    while body.len() < content_length {
-        let remaining = content_length - body.len();
-        let mut chunk = vec![0_u8; remaining.min(8192)];
-        let read = stream
-            .read(&mut chunk)
-            .map_err(|_| RequestReadError("request body could not be read"))?;
-        if read == 0 {
-            return Err(RequestReadError("request body ended early"));
-        }
-        body.extend_from_slice(&chunk[..read]);
-    }
-
-    Ok(BridgeRequest {
-        method,
-        path,
-        headers,
-        body,
-    })
-}
-
 fn response_to_sse(body: &[u8]) -> Result<Vec<u8>, ()> {
     let response: Value = serde_json::from_slice(body).map_err(|_| ())?;
     let response_object = response.as_object().ok_or(())?;
@@ -539,30 +417,6 @@ fn response_to_sse(body: &[u8]) -> Result<Vec<u8>, ()> {
     Ok(sse)
 }
 
-fn write_error(stream: &mut TcpStream, status: StatusCode, message: &str) -> io::Result<()> {
-    let body = serde_json::to_vec(&json!({"error": {"message": message}}))
-        .unwrap_or_else(|_| b"{\"error\":{\"message\":\"bridge error\"}}".to_vec());
-    write_response(stream, status, "application/json", &body)
-}
-
-fn write_response(
-    stream: &mut TcpStream,
-    status: StatusCode,
-    content_type: &str,
-    body: &[u8],
-) -> io::Result<()> {
-    write!(
-        stream,
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        status.as_u16(),
-        status.canonical_reason().unwrap_or("Response"),
-        content_type,
-        body.len(),
-    )?;
-    stream.write_all(body)?;
-    stream.flush()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,6 +503,14 @@ mod tests {
                 .find(|(name, _)| name == "authorization")
                 .map(|(_, value)| value.as_str()),
             Some("Bearer test-secret")
+        );
+        assert_eq!(
+            forwarded
+                .headers
+                .iter()
+                .find(|(name, _)| name == "user-agent")
+                .map(|(_, value)| value.as_str()),
+            Some(concat!("gowild/", env!("CARGO_PKG_VERSION")))
         );
     }
 
