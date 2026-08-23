@@ -74,6 +74,7 @@ pub(super) fn modal_action_from_buttons<A: Copy>(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GlobalMenuAction {
+    LaunchAgent,
     Detach,
     WhatsNew,
     Keybinds,
@@ -83,6 +84,7 @@ pub(crate) enum GlobalMenuAction {
 
 pub(super) fn global_menu_actions(state: &AppState) -> Vec<GlobalMenuAction> {
     let mut actions = vec![
+        GlobalMenuAction::LaunchAgent,
         GlobalMenuAction::Settings,
         GlobalMenuAction::Keybinds,
         GlobalMenuAction::ReloadConfig,
@@ -130,6 +132,11 @@ pub(super) fn request_detach(state: &mut AppState) {
 
 pub(super) fn apply_global_menu_action(state: &mut AppState, action: GlobalMenuAction) {
     match action {
+        GlobalMenuAction::LaunchAgent => {
+            state.coding_agent_launch =
+                crate::app::state::CodingAgentLaunchState::new(&state.gateway_catalog);
+            state.mode = Mode::CodingAgentLaunch;
+        }
         GlobalMenuAction::Detach => {
             leave_modal(state);
             request_detach(state);

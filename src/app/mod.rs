@@ -1297,7 +1297,10 @@ impl App {
         let previous_mode = self.state.mode;
         let preserve_mode = matches!(
             previous_mode,
-            Mode::ReleaseNotes | Mode::ProductAnnouncement | Mode::Settings
+            Mode::ReleaseNotes
+                | Mode::ProductAnnouncement
+                | Mode::Settings
+                | Mode::CodingAgentLaunch
         );
         let cwd = self.resolve_new_terminal_cwd(None);
 
@@ -2000,6 +2003,9 @@ impl App {
             }
             Mode::Settings => {
                 self.handle_settings_key(key_event);
+            }
+            Mode::CodingAgentLaunch => {
+                self.handle_coding_agent_launch_key(key_event);
             }
             Mode::Navigator => {
                 input::handle_navigator_key(&mut self.state, &self.terminal_runtimes, key_event);

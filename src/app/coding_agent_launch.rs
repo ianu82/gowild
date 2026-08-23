@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use crossterm::event::{KeyCode, KeyEvent};
+
 use crate::app::{App, Mode};
 use crate::cli_adapter::{
     AdapterRegistry, Environment, ExecutableLocator, LaunchMode, LaunchPlanner, LaunchRequest,
@@ -9,7 +11,7 @@ use crate::cli_adapter::{
 use crate::pane::PaneLaunchEnv;
 
 mod state;
-pub(crate) use state::CodingAgentLaunchState;
+pub(crate) use state::{CodingAgentLaunchField, CodingAgentLaunchState};
 
 struct ConfiguredEnvironment;
 
@@ -20,7 +22,42 @@ impl Environment for ConfiguredEnvironment {
 }
 
 impl App {
-    #[allow(dead_code)] // invoked by the selector UI in the next stacked change
+    pub(crate) fn handle_coding_agent_launch_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.close_coding_agent_launch(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.state.coding_agent_launch.move_field(-1);
+            }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                self.state.coding_agent_launch.move_field(1);
+            }
+            KeyCode::BackTab => self.state.coding_agent_launch.move_field(-1),
+            KeyCode::Left | KeyCode::Char('h') => self
+                .state
+                .coding_agent_launch
+                .cycle_selected(&self.state.gateway_catalog, -1),
+            KeyCode::Right | KeyCode::Char('l') => self
+                .state
+                .coding_agent_launch
+                .cycle_selected(&self.state.gateway_catalog, 1),
+            KeyCode::Char('s') => crate::app::input::open_settings_at(
+                &mut self.state,
+                crate::app::state::SettingsSection::Gateways,
+            ),
+            KeyCode::Enter => self.launch_selected_coding_agent(),
+            _ => {}
+        }
+    }
+
+    fn close_coding_agent_launch(&mut self) {
+        self.state.mode = if self.state.active.is_some() {
+            Mode::Terminal
+        } else {
+            Mode::Navigate
+        };
+        self.state.coding_agent_launch.error = None;
+    }
+
     pub(crate) fn launch_selected_coding_agent(&mut self) {
         let locator = PathExecutableLocator;
         if let Err(error) = self.launch_selected_coding_agent_with(&locator) {
@@ -297,6 +334,53 @@ mod tests {
 
         assert_eq!(selection.gateway_id.as_deref(), Some("mindshub"));
         assert_eq!(selection.model, None);
+    }
+
+    #[test]
+    fn keyboard_selector_cycles_cli_and_opens_gateway_settings() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            true,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        let gateway = app
+            .state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap();
+        gateway
+            .default_models
+            .insert("codex".into(), "codex-model".into());
+        gateway
+            .default_models
+            .insert("claude".into(), "claude-model".into());
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.mode = Mode::CodingAgentLaunch;
+        app.state.settings.section = crate::app::state::SettingsSection::Theme;
+
+        app.handle_coding_agent_launch_key(KeyEvent::new(
+            KeyCode::Right,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert_eq!(app.state.coding_agent_launch.cli, CodingCli::Claude);
+        assert_eq!(
+            app.state.coding_agent_launch.model.as_deref(),
+            Some("claude-model")
+        );
+
+        app.handle_coding_agent_launch_key(KeyEvent::new(
+            KeyCode::Char('s'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert_eq!(app.state.mode, Mode::Settings);
+        assert_eq!(
+            app.state.settings.section,
+            crate::app::state::SettingsSection::Gateways
+        );
     }
 
     #[test]

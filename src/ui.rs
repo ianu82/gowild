@@ -5,6 +5,7 @@ use ratatui::{
     Frame,
 };
 
+mod coding_agent_launch;
 mod dialogs;
 mod keybind_help;
 mod menus;
@@ -22,6 +23,7 @@ mod tabs;
 mod text;
 mod widgets;
 
+use self::coding_agent_launch::render_coding_agent_launch_overlay;
 use self::dialogs::{
     render_confirm_close_overlay, render_new_linked_worktree_overlay,
     render_open_existing_worktree_overlay, render_remove_worktree_overlay, render_rename_overlay,
@@ -64,6 +66,10 @@ pub(crate) use self::tab_surface::{
 };
 use self::tabs::render_tab_bar;
 pub(crate) use self::{
+    coding_agent_launch::{
+        coding_agent_launch_action_rects, coding_agent_launch_field_rect,
+        coding_agent_launch_inner_rect,
+    },
     dialogs::{
         confirm_close_button_rects, confirm_close_popup_rect, new_linked_worktree_button_rects,
         new_linked_worktree_inner_rect, open_existing_worktree_button_rects,
@@ -447,6 +453,7 @@ pub fn render_with_runtime_registry(
             render_context_menu(app, frame);
         }
         Mode::Settings => render_settings_overlay(app, frame, frame.area()),
+        Mode::CodingAgentLaunch => render_coding_agent_launch_overlay(app, frame, frame.area()),
         Mode::RenameWorkspace | Mode::RenameTab | Mode::RenamePane => {
             render_rename_overlay(app, frame, frame.area())
         }

@@ -26,6 +26,7 @@ use super::{
 };
 
 pub(super) enum MouseAction {
+    LaunchCodingAgent,
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -125,6 +126,10 @@ impl AppState {
 
         if self.mode == Mode::Settings {
             return self.handle_settings_mouse(mouse).map(MouseAction::Settings);
+        }
+
+        if self.mode == Mode::CodingAgentLaunch {
+            return self.handle_coding_agent_launch_mouse(mouse);
         }
 
         let launcher_enabled = self.view.layout != ViewLayout::Mobile
@@ -1150,6 +1155,62 @@ impl AppState {
         None
     }
 
+    fn handle_coding_agent_launch_mouse(&mut self, mouse: MouseEvent) -> Option<MouseAction> {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                self.coding_agent_launch
+                    .cycle_selected(&self.gateway_catalog, -1);
+                return None;
+            }
+            MouseEventKind::ScrollDown => {
+                self.coding_agent_launch
+                    .cycle_selected(&self.gateway_catalog, 1);
+                return None;
+            }
+            MouseEventKind::Down(MouseButton::Left) => {}
+            _ => return None,
+        }
+
+        let inner = crate::ui::coding_agent_launch_inner_rect(self.screen_rect())?;
+        for (index, field) in crate::app::state::CodingAgentLaunchField::ALL
+            .iter()
+            .copied()
+            .enumerate()
+        {
+            let rect = crate::ui::coding_agent_launch_field_rect(inner, index);
+            if rect_contains(rect, mouse.column, mouse.row) {
+                let already_selected = self.coding_agent_launch.selected_field == field;
+                self.coding_agent_launch.selected_field = field;
+                self.coding_agent_launch.error = None;
+                if already_selected {
+                    let direction = if mouse.column < rect.x + rect.width / 2 {
+                        -1
+                    } else {
+                        1
+                    };
+                    self.coding_agent_launch
+                        .cycle_selected(&self.gateway_catalog, direction);
+                }
+                return None;
+            }
+        }
+
+        let (launch, settings, cancel) = crate::ui::coding_agent_launch_action_rects(inner);
+        if rect_contains(launch, mouse.column, mouse.row) {
+            return Some(MouseAction::LaunchCodingAgent);
+        }
+        if rect_contains(settings, mouse.column, mouse.row) {
+            super::settings::open_settings(self);
+            return None;
+        }
+        if rect_contains(cancel, mouse.column, mouse.row)
+            || !rect_contains(inner, mouse.column, mouse.row)
+        {
+            leave_modal(self);
+        }
+        None
+    }
+
     fn handle_mobile_mouse(&mut self, mouse: MouseEvent) -> MobileMouseResult {
         if self.mode == Mode::Navigate {
             match mouse.kind {
@@ -2002,10 +2063,53 @@ mod tests {
     use super::*;
     use crate::app::input::modal::handle_context_menu_key;
     use crate::{
-        app::state::{ContextMenuKind, ContextMenuState, MenuListState, Mode, ViewLayout},
+        app::state::{
+            CodingAgentLaunchField, CodingAgentLaunchState, ContextMenuKind, ContextMenuState,
+            MenuListState, Mode, ViewLayout,
+        },
         detect::{Agent, AgentState},
         workspace::Workspace,
     };
+
+    #[test]
+    fn coding_agent_launch_rows_and_settings_are_mouse_accessible() {
+        let mut app = app_for_mouse_test();
+        app.state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .default_models
+            .insert("codex".into(), "first-model".into());
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.mode = Mode::CodingAgentLaunch;
+        let area = Rect::new(0, 0, 80, 24);
+        crate::ui::compute_view(&mut app.state, area);
+        let inner = crate::ui::coding_agent_launch_inner_rect(area).unwrap();
+
+        let gateway_row = crate::ui::coding_agent_launch_field_rect(inner, 1);
+        app.handle_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            gateway_row.x + 2,
+            gateway_row.y,
+        ));
+        assert_eq!(
+            app.state.coding_agent_launch.selected_field,
+            CodingAgentLaunchField::Gateway
+        );
+
+        let (_, settings, _) = crate::ui::coding_agent_launch_action_rects(inner);
+        app.handle_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            settings.x + 1,
+            settings.y,
+        ));
+        assert_eq!(app.state.mode, Mode::Settings);
+        assert_eq!(
+            app.state.settings.section,
+            crate::app::state::SettingsSection::Gateways
+        );
+    }
 
     #[test]
     fn tab_click_survives_stray_drag_report_off_the_tab_bar() {

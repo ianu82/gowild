@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(frame.cursor, None);
         assert_eq!(
             frame_digest(&frame),
-            "295608a66067f1e1f066c0adb3cf427e8a2d68bba8f68949fb72d464dcd8baab"
+            "c358e205d8531c460b88d831f071d3c784b7d225ee3ae6ac8cc08930517a06ad"
         );
     }
 }

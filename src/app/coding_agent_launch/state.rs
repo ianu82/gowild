@@ -43,7 +43,6 @@ impl CodingAgentLaunchState {
         }
     }
 
-    #[allow(dead_code)] // invoked by the selector UI in the next stacked change
     pub(crate) fn move_field(&mut self, direction: i8) {
         let current = Self::field_index(self.selected_field);
         let next = if direction.is_negative() {
@@ -55,7 +54,6 @@ impl CodingAgentLaunchState {
         self.error = None;
     }
 
-    #[allow(dead_code)] // invoked by the selector UI in the next stacked change
     pub(crate) fn cycle_selected(
         &mut self,
         catalog: &crate::gateway::GatewayCatalog,
