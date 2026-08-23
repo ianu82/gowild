@@ -29,6 +29,6 @@ GoWild 尚无公开二进制版本、托管安装程序、网站或更新通道�
 
 ## 历史文档
 
-嵌套的 `website/` 树以及同级的 `docs/preview` 和 `docs/versions` 树是冻结的源代码导入记录。它们描述的是被导入的产品，而不是 GoWild，绝不能作为 GoWild 文档构建或发布。请参阅 [`docs/README.md`](../README.md) 和 [`PROVENANCE.md`](../../PROVENANCE.md)。
+嵌套的 `website/` 树以及同级的 `docs/preview` 和 `docs/versions` 树是冻结的源代码导入记录。它们描述的是被导入的产品，而不是 GoWild，绝不能作为 GoWild 文档构建或发布。请参阅 [`docs/README.md`](../README.md) 和 [`ACKNOWLEDGEMENTS`](../../ACKNOWLEDGEMENTS/README.md)。
 
 所有 GoWild 工作仅属于 [`ianu82/gowild`](https://github.com/ianu82/gowild)。不得向源代码出处项目发送代码、issue、PR、请求或同步自动化。

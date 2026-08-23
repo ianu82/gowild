@@ -9,7 +9,7 @@ model routing. The only project repository is `ianu82/gowild`.
   issues or pull requests there, contact its maintainers, or configure it as a
   Git remote.
 - The only permitted Herdr access is the already-completed read-only source
-  import recorded in `PROVENANCE.md`. Do not fetch or merge later Herdr changes
+  import recorded in `ACKNOWLEDGEMENTS/README.md`. Do not fetch or merge later Herdr changes
   without explicit authorization from the GoWild owner.
 - `origin` must resolve to `https://github.com/ianu82/gowild.git` before any
   push. No other push-capable remote is allowed.

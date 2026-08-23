@@ -32,7 +32,7 @@ gowild --version
 Cargo places the executable under its install root, normally
 `$HOME/.cargo/bin/gowild`. The application creates only GoWild-owned config,
 state, data, runtime, and credential paths. It does not inspect or migrate
-Herdr-owned state.
+state owned by the imported source application.
 
 ## Clean verification
 

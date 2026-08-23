@@ -30,6 +30,18 @@ class ProductBoundaryCheckTests(unittest.TestCase):
             [],
         )
 
+    def test_source_attribution_is_confined_to_acknowledgements(self) -> None:
+        self.assertEqual(
+            len(boundary.scan_root_readme_attribution(Path("README.md"), "Herdr")),
+            1,
+        )
+        self.assertEqual(
+            boundary.scan_root_readme_attribution(
+                Path("ACKNOWLEDGEMENTS/README.md"), "Herdr"
+            ),
+            [],
+        )
+
     def test_retained_installers_and_crate_publish_fail_closed(self) -> None:
         self.assertEqual(boundary.check_install_boundaries(), [])
 
