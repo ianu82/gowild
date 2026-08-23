@@ -584,7 +584,7 @@ pub(crate) fn guided_setup_launch_button_rects(area: Rect) -> (Rect, Rect) {
             },
         ],
         2,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(3),
     );
     (rects[0], rects[1])
 }
@@ -808,14 +808,13 @@ fn render_guided_setup(app: &AppState, frame: &mut Frame, area: Rect) {
             })
         });
     if let Some((notice, color)) = notice {
-        let notice_y = area.y.saturating_add(area.height.saturating_sub(1));
+        let notice_height = 2.min(area.height);
+        let notice_y = area.bottom().saturating_sub(notice_height);
         frame.render_widget(
-            Paragraph::new(format!(
-                " {}",
-                compact_text(notice, area.width.saturating_sub(1) as usize)
-            ))
-            .style(Style::default().fg(color)),
-            Rect::new(area.x, notice_y, area.width, 1),
+            Paragraph::new(format!(" {notice}"))
+                .style(Style::default().fg(color))
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            Rect::new(area.x, notice_y, area.width, notice_height),
         );
     }
 }
@@ -1649,21 +1648,61 @@ fn render_settings_integrations(app: &AppState, frame: &mut Frame, area: Rect) {
 }
 
 fn render_settings_theme(app: &AppState, frame: &mut Frame, area: Rect) {
-    use crate::app::state::THEME_NAMES;
+    use crate::app::state::{ThemeChoice, THEME_CHOICES};
 
     let p = &app.palette;
-    let items: Vec<ListItem> = THEME_NAMES
-        .iter()
-        .map(|name| {
-            let is_current = name.to_lowercase().replace([' ', '_'], "-")
-                == app.theme_name.to_lowercase().replace([' ', '_'], "-");
-            let marker = if is_current { " ✓" } else { "" };
-            ListItem::new(Line::from(vec![
-                Span::styled(*name, Style::default().fg(p.subtext0)),
-                Span::styled(marker, Style::default().fg(p.green)),
-            ]))
-        })
-        .collect();
+    if area.height == 0 {
+        return;
+    }
+    let dark = theme_display_name(&app.theme_runtime.dark_name);
+    let light = theme_display_name(&app.theme_runtime.light_name);
+    let host = app
+        .host_terminal_appearance
+        .map_or("awaiting terminal", |appearance| match appearance {
+            crate::terminal_theme::HostAppearance::Dark => "host dark",
+            crate::terminal_theme::HostAppearance::Light => "host light",
+        });
+    for (offset, line) in [
+        " theme  live preview · enter apply · esc restore".to_string(),
+        format!(" auto pair  dark {dark}"),
+        format!("            light {light} · {host}"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if area.height <= offset as u16 {
+            break;
+        }
+        frame.render_widget(
+            Paragraph::new(compact_text(&line, area.width as usize))
+                .style(Style::default().fg(if offset == 0 { p.text } else { p.overlay1 })),
+            Rect::new(area.x, area.y + offset as u16, area.width, 1),
+        );
+    }
+
+    let mut items = Vec::with_capacity(THEME_CHOICES.len() + 1);
+    for (index, choice) in THEME_CHOICES.iter().copied().enumerate() {
+        if index == 3 {
+            items.push(ListItem::new(Line::from(Span::styled(
+                " ── optional classic themes ──",
+                Style::default().fg(p.overlay0),
+            ))));
+        }
+        let marker = if index == app.settings.theme_choice_selected {
+            " ✓"
+        } else {
+            ""
+        };
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(choice.label(), Style::default().fg(p.subtext0)),
+            Span::styled(marker, Style::default().fg(p.green)),
+            if choice == ThemeChoice::FollowTerminal {
+                Span::styled("  dark ↔ light", Style::default().fg(p.overlay1))
+            } else {
+                Span::raw("")
+            },
+        ])));
+    }
 
     let list = List::new(items)
         .highlight_style(
@@ -1675,8 +1714,56 @@ fn render_settings_theme(app: &AppState, frame: &mut Frame, area: Rect) {
         .highlight_symbol(" ▸ ")
         .style(Style::default().fg(p.subtext0));
 
-    let mut state = ListState::default().with_selected(Some(app.settings.list.selected));
-    frame.render_stateful_widget(list, area, &mut state);
+    let list_area = theme_list_area(area);
+    let selected_visual = theme_choice_visual_index(app.settings.list.selected);
+    let mut state = ListState::default().with_selected(Some(selected_visual));
+    frame.render_stateful_widget(list, list_area, &mut state);
+}
+
+fn theme_display_name(name: &str) -> String {
+    crate::app::state::THEME_CHOICES
+        .iter()
+        .copied()
+        .find(|choice| {
+            choice.manual_name().is_some_and(|candidate| {
+                candidate.to_lowercase().replace([' ', '_'], "-")
+                    == name.to_lowercase().replace([' ', '_'], "-")
+            })
+        })
+        .map_or_else(|| name.to_string(), |choice| choice.label().to_string())
+}
+
+fn theme_list_area(area: Rect) -> Rect {
+    Rect::new(
+        area.x,
+        area.y.saturating_add(4),
+        area.width,
+        area.height.saturating_sub(4),
+    )
+}
+
+fn theme_choice_visual_index(choice_index: usize) -> usize {
+    choice_index + usize::from(choice_index >= 3)
+}
+
+pub(crate) fn theme_choice_index_at(area: Rect, selected: usize, row: u16) -> Option<usize> {
+    let list = theme_list_area(area);
+    if row < list.y || row >= list.bottom() || list.height == 0 {
+        return None;
+    }
+    let item_count = crate::app::state::THEME_CHOICES.len() + 1;
+    let selected_visual = theme_choice_visual_index(selected);
+    let visible = list.height as usize;
+    let scroll = selected_visual
+        .saturating_add(1)
+        .saturating_sub(visible)
+        .min(item_count.saturating_sub(visible));
+    let visual = scroll + (row - list.y) as usize;
+    match visual {
+        3 => None,
+        0..=2 => Some(visual),
+        _ => (visual - 1 < crate::app::state::THEME_CHOICES.len()).then_some(visual - 1),
+    }
 }
 
 fn render_settings_toggle(
@@ -1748,6 +1835,18 @@ mod tests {
         gateway
             .default_models
             .insert("codex".into(), "provider/model-alpha".into());
+        app
+    }
+
+    fn theme_settings_state() -> AppState {
+        let mut app = AppState::test_new();
+        app.mode = Mode::Settings;
+        app.settings.section = SettingsSection::Theme;
+        app.settings.list.selected = 2;
+        app.settings.theme_choice_selected = 2;
+        app.theme_runtime.dark_name = "cowork".into();
+        app.theme_runtime.light_name = "cowork-light".into();
+        app.host_terminal_appearance = Some(crate::terminal_theme::HostAppearance::Light);
         app
     }
 
@@ -1854,6 +1953,35 @@ mod tests {
     }
 
     #[test]
+    fn guided_setup_wraps_complete_error_recovery_at_compact_size() {
+        let mut app = guided_settings_state(false);
+        app.settings
+            .gateways
+            .credential_status
+            .insert("mindshub".into(), GatewayCredentialStatus::Stored);
+        app.settings.gateways.notice = Some(crate::app::state::GatewayNotice {
+            kind: GatewayNoticeKind::Error,
+            message: "MindsHub verification failed. Check the stored key and network, then press t to test again."
+                .into(),
+        });
+
+        let rendered = rendered_gateway_settings(&app, 64, 20);
+
+        assert!(
+            rendered.contains("MindsHub verification failed"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("network, then press t"), "{rendered}");
+        assert!(rendered.contains("to test again."), "{rendered}");
+
+        let area = Rect::new(0, 0, 56, 12);
+        let (codex, claude) = guided_setup_launch_button_rects(area);
+        let notice_y = area.bottom() - 2;
+        assert!(codex.bottom() <= notice_y);
+        assert!(claude.bottom() <= notice_y);
+    }
+
+    #[test]
     fn gateway_list_remains_legible_at_supported_and_constrained_sizes() {
         let app = gateway_settings_state();
         for (width, height) in [(80, 24), (100, 30), (64, 20)] {
@@ -1880,6 +2008,51 @@ mod tests {
         assert_eq!(wide_160.height, 33);
         assert!(wide.width >= 150, "{wide:?}");
         assert!(wide.height >= 45, "{wide:?}");
+    }
+
+    #[test]
+    fn theme_panel_keeps_primary_modes_pair_and_host_state_visible() {
+        let app = theme_settings_state();
+
+        for (width, height) in [(64, 20), (80, 24), (100, 30), (160, 45), (207, 62)] {
+            let rendered = rendered_gateway_settings(&app, width, height);
+            assert!(
+                rendered.contains("Cowork dark"),
+                "{width}×{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("Cowork light"),
+                "{width}×{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("Follow terminal"),
+                "{width}×{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("host light"),
+                "{width}×{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("dark ↔ light"),
+                "{width}×{height}: {rendered}"
+            );
+            assert!(
+                rendered.contains("optional classic themes"),
+                "{width}×{height}: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn theme_mouse_mapping_skips_the_classic_separator() {
+        let area = Rect::new(10, 5, 70, 15);
+        let list = theme_list_area(area);
+
+        assert_eq!(theme_choice_index_at(area, 2, list.y), Some(0));
+        assert_eq!(theme_choice_index_at(area, 2, list.y + 1), Some(1));
+        assert_eq!(theme_choice_index_at(area, 2, list.y + 2), Some(2));
+        assert_eq!(theme_choice_index_at(area, 2, list.y + 3), None);
+        assert_eq!(theme_choice_index_at(area, 2, list.y + 4), Some(3));
     }
 
     #[test]

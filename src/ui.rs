@@ -35,9 +35,9 @@ use self::menus::{
     render_navigate_overlay, render_prefix_overlay, render_resize_overlay,
 };
 use self::mobile::{
-    compute_mobile_header_hit_areas, is_mobile_width, mobile_switcher_max_scroll_for_height,
-    mobile_toast_banner_rect, render_mobile_header, render_mobile_panel,
-    render_mobile_toast_banner,
+    compute_mobile_header_hit_areas, is_mobile_width, mobile_header_height,
+    mobile_switcher_max_scroll_for_height, mobile_toast_banner_rect, render_mobile_header,
+    render_mobile_panel, render_mobile_toast_banner,
 };
 use self::model_chooser::render_model_chooser_overlay;
 use self::navigator::render_navigator_overlay;
@@ -83,6 +83,7 @@ pub(crate) use self::{
         gateway_add_button_rect, gateway_detail_button_rects, gateway_detail_delete_button_rect,
         guided_setup_aux_button_rects, guided_setup_launch_button_rects, settings_button_rects,
         settings_is_compact, settings_popup_rect, settings_show_primary_action,
+        theme_choice_index_at,
     },
     sidebar::{
         agent_entry_gap, agent_entry_height_in_body, agent_panel_body_rect, agent_panel_entries,
@@ -340,7 +341,7 @@ fn compute_mobile_view(
     resize_panes: bool,
     cell_size: crate::kitty_graphics::HostCellSize,
 ) {
-    let header_h = area.height.min(2);
+    let header_h = mobile_header_height(app, area);
     let (header_rect, terminal_area) = if area.height > header_h {
         let [header_rect, terminal_area] =
             Layout::vertical([Constraint::Length(header_h), Constraint::Min(1)]).areas(area);

@@ -432,7 +432,7 @@ impl App {
                         self.begin_tui_workspace_create("tui.mouse.workspace.create")
                     }
                     MouseAction::Settings(action) => match action {
-                        SettingsAction::SaveTheme(name) => self.save_theme(&name),
+                        SettingsAction::SaveTheme(choice) => self.save_theme_choice(choice),
                         SettingsAction::SaveStatusIndicators(style) => {
                             self.save_status_indicators(style)
                         }
