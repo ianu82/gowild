@@ -4,6 +4,11 @@ GoWild currently supports source installation only. Public binaries, hosted
 install scripts, Homebrew or mise packages, self-update, and remote release
 downloads are not published yet.
 
+The retained Unix and Windows package installers fail before network access
+unless release automation supplies an explicit manifest URL or a verified local
+Windows package. This is intentional and must remain true until GoWild owns a
+signed release channel.
+
 ## Prerequisites
 
 - Git
@@ -38,6 +43,9 @@ temporary_root="$(mktemp -d)"
 cargo install --path . --locked --root "$temporary_root"
 "$temporary_root/bin/gowild" --version
 ```
+
+The repository automates the same check with `just source-install-test`, and a
+dedicated CI job runs it from a clean checkout.
 
 On Windows, use an empty temporary directory with `cargo install --root` and
 verify `bin\\gowild.exe --version`. The Windows CI additionally builds and tests

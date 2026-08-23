@@ -78,6 +78,25 @@ New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
 Copy-Item -LiteralPath $archive -Destination (Join-Path $webRoot "gowild-windows-x86_64.zip")
 $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
 
+$oldManifestUrl = $env:GOWILD_MANIFEST_URL
+Remove-Item Env:GOWILD_MANIFEST_URL -ErrorAction SilentlyContinue
+$missingManifestRejected = $false
+try {
+    & $installerPath -InstallDir (Join-Path $root "disabled-hosted-install")
+} catch {
+    if ($_.Exception.Message -notlike "Hosted GoWild installation is disabled*") {
+        throw
+    }
+    $missingManifestRejected = $true
+} finally {
+    if ($null -ne $oldManifestUrl) {
+        $env:GOWILD_MANIFEST_URL = $oldManifestUrl
+    }
+}
+if (-not $missingManifestRejected) {
+    throw "installer accepted hosted mode without an explicit manifest"
+}
+
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
