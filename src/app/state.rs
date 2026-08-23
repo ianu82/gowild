@@ -9,6 +9,8 @@ use crate::detect::AgentState;
 use crate::layout::{PaneId, PaneInfo, SplitBorder};
 use crate::selection::Selection;
 
+pub(crate) use super::coding_agent_launch::CodingAgentLaunchState;
+
 pub(crate) type InstalledPluginRegistry =
     std::collections::HashMap<String, crate::api::schema::InstalledPluginInfo>;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2101,6 +2103,8 @@ pub struct AppState {
     pub settings: SettingsState,
     /// Non-secret gateway metadata loaded from GoWild's gateway repository.
     pub(crate) gateway_catalog: crate::gateway::GatewayCatalog,
+    /// Pre-launch route selection for GoWild-managed coding-agent tabs.
+    pub(crate) coding_agent_launch: CodingAgentLaunchState,
     /// Cached integration recommendations for onboarding/settings UI.
     pub integration_recommendations: Vec<crate::integration::IntegrationRecommendation>,
     /// Cached detection manifest source/version summaries for runtime/API status.
@@ -2493,6 +2497,9 @@ impl AppState {
                 gateways: GatewaySettingsState::default(),
             },
             gateway_catalog: crate::gateway::GatewayCatalog::with_builtin_presets(),
+            coding_agent_launch: CodingAgentLaunchState::new(
+                &crate::gateway::GatewayCatalog::with_builtin_presets(),
+            ),
             integration_recommendations: Vec::new(),
             agent_manifest_summaries: Vec::new(),
             agent_manifest_update_status:

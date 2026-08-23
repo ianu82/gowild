@@ -14,14 +14,6 @@ pub(crate) trait Environment {
     fn get(&self, key: &str) -> Option<String>;
 }
 
-pub(crate) struct OsEnvironment;
-
-impl Environment for OsEnvironment {
-    fn get(&self, key: &str) -> Option<String> {
-        std::env::var(key).ok()
-    }
-}
-
 pub(crate) struct GatewayResolver<'a> {
     catalog: &'a GatewayCatalog,
     credentials: &'a dyn CredentialStore,
