@@ -1153,6 +1153,7 @@ pub(crate) enum GatewaySettingsView {
     List,
     Detail,
     Form,
+    DeleteConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1554,6 +1555,7 @@ pub(crate) struct GatewaySettingsState {
     pub(crate) test_in_flight: Option<(u64, String)>,
     pub(crate) next_test_generation: u64,
     pub(crate) gateway_form: Option<CustomGatewayFormState>,
+    pub(crate) credential_removal: crate::gateway::CredentialRemoval,
 }
 
 impl Default for GatewaySettingsState {
@@ -1570,6 +1572,7 @@ impl Default for GatewaySettingsState {
             test_in_flight: None,
             next_test_generation: 1,
             gateway_form: None,
+            credential_removal: crate::gateway::CredentialRemoval::Keep,
         }
     }
 }

@@ -54,6 +54,15 @@ custom definition and never copies the source credential. Save the definition
 first, then add its API key from the gateway detail when authentication requires
 one.
 
+Custom gateway details also offer **delete**. Deletion always opens a separate
+confirmation screen and defaults to removing only the gateway definition while
+keeping its stored credential. Choose **delete stored credential too** before
+confirming when the key should also be removed; credentials shared by another
+gateway are retained automatically. Built-in presets never expose a delete
+action. GoWild saves the updated gateway catalog before attempting credential
+removal, so a keychain failure cannot restore a gateway that the UI reports as
+deleted.
+
 The key editor accepts typing and paste, never renders the entered value, and
 clears its zeroizing buffer on save, cancel, section change, or modal close.
 Connection status, per-protocol status, redacted diagnostics, and the discovered
