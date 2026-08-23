@@ -4,9 +4,8 @@
 //! credential storage. CLI-specific launch translation belongs in adapters,
 //! not here.
 
-// The next stacked change connects these types to the adapter registry. Keep
-// this foundation independently reviewable without weakening warnings in the
-// rest of the application.
+// Custom-gateway CRUD lands in the next stack. Keep currently dormant model
+// fields available without weakening warnings in the rest of the application.
 #![allow(dead_code)]
 
 mod credentials;
@@ -15,13 +14,17 @@ mod redact;
 mod repository;
 mod service;
 
-pub(crate) use credentials::{Credential, CredentialStore};
 #[cfg(test)]
-pub(crate) use credentials::{CredentialBackend, CredentialStoreError};
+pub(crate) use credentials::CredentialStoreError;
+pub(crate) use credentials::{
+    Credential, CredentialBackend, CredentialStore, SystemCredentialStore,
+};
+#[cfg(test)]
+pub(crate) use model::CachedModel;
 pub(crate) use model::{
-    AuthenticationMode, Gateway, GatewayCatalog, GatewayFeature, GatewayProtocol, ValidationError,
+    AuthenticationMode, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature, GatewayProtocol,
+    ValidationError,
 };
 pub(crate) use redact::redact;
-// This is the stable gateway-testing seam consumed by the next stacked UI change.
-#[allow(unused_imports)]
+pub(crate) use repository::GatewayRepository;
 pub(crate) use service::{GatewayInspection, GatewayTester, GatewayTesterError};

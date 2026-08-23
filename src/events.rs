@@ -167,6 +167,13 @@ pub enum AppEvent {
         stderr: String,
         error: Option<String>,
     },
+    /// A configured gateway connection test finished off the render thread.
+    #[allow(dead_code)] // Emitted by the immediately stacked gateway settings TUI.
+    GatewayTestFinished {
+        generation: u64,
+        gateway_id: String,
+        result: Result<Box<crate::gateway::GatewayInspection>, crate::gateway::GatewayTesterError>,
+    },
     /// Background `git worktree add` completed.
     WorktreeAddFinished(Box<WorktreeAddResult>),
     /// Background `git worktree remove` completed.

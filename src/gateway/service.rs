@@ -388,6 +388,7 @@ impl GatewayTester {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct GatewayInspection {
     pub(crate) discovered_models: Option<Vec<CachedModel>>,
     pub(crate) connection_test: ConnectionTest,

@@ -55,7 +55,7 @@ pub(crate) enum CredentialBackend {
     RestrictedFile,
 }
 
-pub(crate) trait CredentialStore {
+pub(crate) trait CredentialStore: Send + Sync {
     fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError>;
     fn set(
         &self,
