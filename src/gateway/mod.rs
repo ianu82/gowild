@@ -22,8 +22,8 @@ pub(crate) use credentials::{
 #[cfg(test)]
 pub(crate) use model::CachedModel;
 pub(crate) use model::{
-    AuthenticationMode, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature, GatewayProtocol,
-    ValidationError,
+    AuthenticationMode, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature, GatewayPreset,
+    GatewayProtocol, ValidationError, MINDSHUB_RESPONSES_BASE_URL,
 };
 pub(crate) use redact::redact;
 pub(crate) use repository::GatewayRepository;
