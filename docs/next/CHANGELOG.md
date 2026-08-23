@@ -25,9 +25,6 @@ claims, support commitments, or current install instructions.
   loopback compatibility bridge that supplies GoWild's upstream request
   identity and converts complete Messages responses into Claude's streaming
   event contract, including tool calls and usage metadata.
-- Unsigned Unix development builds now store gateway credentials in GoWild's
-  existing owner-only file backend, avoiding repeated Keychain prompts after
-  every debug rebuild; release builds retain operating-system credential storage.
 - Codex CLI launches through the built-in MindsHub Inference route now bridge
   MindsHub's non-streaming Responses payloads into the streaming event contract
   Codex requires, including function-call arguments and usage metadata.
