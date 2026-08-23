@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use super::bridge_http::BridgeRequest;
 use super::bridge_http::{
     read_request, route_token, write_error, write_response, MAX_RESPONSE_BODY_BYTES,
+    UPSTREAM_INFERENCE_TIMEOUT,
 };
 use super::ResolvedGateway;
 use crate::gateway::{GatewayPreset, GatewayProtocol, MINDSHUB_RESPONSES_BASE_URL};
@@ -87,7 +88,7 @@ impl ResponsesBridge {
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::spawn(move || {
             let client = match Client::builder()
-                .timeout(IO_TIMEOUT)
+                .timeout(UPSTREAM_INFERENCE_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent(concat!("gowild/", env!("CARGO_PKG_VERSION")))
                 .build()
@@ -202,7 +203,9 @@ fn handle_connection(
     let request = match read_request(&mut stream) {
         Ok(request) => request,
         Err(error) => {
-            write_error(&mut stream, StatusCode::BAD_REQUEST, error.message())?;
+            if error.should_respond() {
+                write_error(&mut stream, StatusCode::BAD_REQUEST, error.message())?;
+            }
             return Ok(());
         }
     };
@@ -326,11 +329,35 @@ fn response_to_sse(body: &[u8]) -> Result<Vec<u8>, ()> {
         .get("output")
         .and_then(Value::as_array)
         .ok_or(())?;
-    let mut initial_response = response.clone();
-    initial_response
-        .as_object_mut()
-        .ok_or(())?
-        .insert("output".to_string(), Value::Array(Vec::new()));
+    // Some compatible gateways echo the complete request (including every
+    // instruction and tool schema) in the response object. Repeating that
+    // object in lifecycle events creates enormous single-line SSE frames that
+    // Codex's HTTP decoder rejects. Codex only consumes the lifecycle fields
+    // below; output items are delivered by their dedicated events.
+    let lifecycle_response = |status: Option<&str>| {
+        let mut compact = serde_json::Map::new();
+        for key in [
+            "id",
+            "object",
+            "created_at",
+            "model",
+            "status",
+            "usage",
+            "error",
+            "incomplete_details",
+            "end_turn",
+        ] {
+            if let Some(value) = response_object.get(key) {
+                compact.insert(key.to_string(), value.clone());
+            }
+        }
+        if let Some(status) = status {
+            compact.insert("status".to_string(), Value::String(status.into()));
+        }
+        compact.insert("output".to_string(), Value::Array(Vec::new()));
+        Value::Object(compact)
+    };
+    let initial_response = lifecycle_response(Some("in_progress"));
 
     let mut events = vec![
         json!({"type": "response.created", "response": initial_response}),
@@ -404,7 +431,12 @@ fn response_to_sse(body: &[u8]) -> Result<Vec<u8>, ()> {
             "item": item,
         }));
     }
-    events.push(json!({"type": "response.completed", "response": response}));
+    let final_event = match response_object.get("status").and_then(Value::as_str) {
+        Some("incomplete") => "response.incomplete",
+        Some("failed") => "response.failed",
+        _ => "response.completed",
+    };
+    events.push(json!({"type": final_event, "response": lifecycle_response(None)}));
 
     let mut sse = Vec::new();
     for event in events {
@@ -413,7 +445,6 @@ fn response_to_sse(body: &[u8]) -> Result<Vec<u8>, ()> {
         serde_json::to_writer(&mut sse, &event).map_err(|_| ())?;
         sse.extend_from_slice(b"\n\n");
     }
-    sse.extend_from_slice(b"data: [DONE]\n\n");
     Ok(sse)
 }
 
@@ -476,7 +507,17 @@ mod tests {
         let response = Client::new()
             .post(format!("{}/responses", bridge.local_base_url()))
             .bearer_auth("test-secret")
-            .json(&json!({"model": "deepseek", "input": "read a file", "stream": true}))
+            .json(&json!({
+                "model": "deepseek",
+                "input": "read a file",
+                "tools": [{
+                    "type": "function",
+                    "name": "exec_command",
+                    "description": "run a command",
+                    "parameters": {"type": "object"},
+                }],
+                "stream": true,
+            }))
             .send()
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -491,11 +532,15 @@ mod tests {
         assert!(body.contains("event: response.output_text.delta"));
         assert!(body.contains("\"delta\":\"READY\""));
         assert!(body.contains("event: response.completed"));
-        assert!(body.ends_with("data: [DONE]\n\n"));
+        assert!(body.ends_with("\n\n"));
+        assert!(!body.contains("[DONE]"));
 
         let forwarded = received.recv_timeout(Duration::from_secs(1)).unwrap();
         let forwarded_payload: Value = serde_json::from_slice(&forwarded.body).unwrap();
         assert_eq!(forwarded_payload["stream"], false);
+        assert_eq!(forwarded_payload["input"], "read a file");
+        assert_eq!(forwarded_payload["tools"][0]["name"], "exec_command");
+        assert_eq!(forwarded.path, "/v1/responses");
         assert_eq!(
             forwarded
                 .headers
@@ -537,5 +582,37 @@ mod tests {
         assert!(sse.contains("event: response.function_call_arguments.delta"));
         assert!(sse.contains("event: response.function_call_arguments.done"));
         assert!(sse.contains("cat route-proof.txt"));
+    }
+
+    #[test]
+    fn lifecycle_events_do_not_repeat_large_gateway_echoes() {
+        let echoed_instructions = "x".repeat(256 * 1024);
+        let sse = response_to_sse(
+            &serde_json::to_vec(&json!({
+                "id": "resp_large",
+                "object": "response",
+                "status": "completed",
+                "model": "gpt-codex",
+                "instructions": echoed_instructions,
+                "tools": [{"description": "y".repeat(256 * 1024)}],
+                "output": [{
+                    "id": "msg_large",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [{"type": "output_text", "text": "READY"}],
+                }],
+                "usage": {"input_tokens": 3, "output_tokens": 1, "total_tokens": 4},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let sse = String::from_utf8(sse).unwrap();
+
+        assert!(sse.len() < 16 * 1024);
+        assert!(!sse.contains(&"x".repeat(1024)));
+        assert!(!sse.contains(&"y".repeat(1024)));
+        assert!(sse.contains("event: response.completed"));
+        assert!(sse.contains("\"id\":\"resp_large\""));
     }
 }
