@@ -13,6 +13,7 @@ mod credentials;
 mod model;
 mod redact;
 mod repository;
+mod service;
 
 pub(crate) use credentials::{Credential, CredentialStore};
 #[cfg(test)]
@@ -21,3 +22,6 @@ pub(crate) use model::{
     AuthenticationMode, Gateway, GatewayCatalog, GatewayFeature, GatewayProtocol, ValidationError,
 };
 pub(crate) use redact::redact;
+// This is the stable gateway-testing seam consumed by the next stacked UI change.
+#[allow(unused_imports)]
+pub(crate) use service::{GatewayInspection, GatewayTester, GatewayTesterError};
