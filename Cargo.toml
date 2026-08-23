@@ -30,6 +30,7 @@ crossterm = "0.29"
 ctrlc = { version = "3", features = ["termination"] }
 interprocess = "2.4.2"
 jsonc-parser = { version = "0.33.1", default-features = false, features = ["cst", "serde_json"] }
+keyring = "4.1.6"
 libc = "0.2"
 portable-pty = "=0.9.0"
 png = "0.17"
@@ -45,6 +46,8 @@ toml = "0.8"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-width = "0.2"
+url = "2.5"
+zeroize = { version = "1.8", features = ["serde"] }
 schemars = { version = "1.2.1", features = ["derive"] }
 
 [patch.crates-io]
