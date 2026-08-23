@@ -10,6 +10,8 @@ struct PendingAgentResumeCandidate {
     terminal_id: crate::terminal::TerminalId,
     cwd: std::path::PathBuf,
     plan: crate::agent_resume::AgentResumePlan,
+    gateway_route: Option<crate::terminal::GatewayAgentRoute>,
+    persisted_session: Option<crate::agent_resume::PersistedAgentSession>,
     rows: u16,
     cols: u16,
 }
@@ -42,12 +44,15 @@ impl App {
 
     pub(crate) fn start_pending_agent_resumes(&mut self, allow_empty_theme: bool) -> bool {
         let pending = self.pending_agent_resume_candidates();
+        let locator = crate::cli_adapter::PathExecutableLocator;
         let mut changed = false;
         for PendingAgentResumeCandidate {
             pane_id,
             terminal_id,
             cwd,
             plan,
+            gateway_route,
+            persisted_session,
             rows,
             cols,
         } in pending
@@ -60,9 +65,12 @@ impl App {
                 terminal_id,
                 cwd,
                 plan,
+                gateway_route,
+                persisted_session,
                 rows,
                 cols,
                 allow_empty_theme,
+                &locator,
             );
         }
 
@@ -109,6 +117,8 @@ impl App {
                         terminal_id: pane.attached_terminal_id.clone(),
                         cwd: terminal.cwd.clone(),
                         plan,
+                        gateway_route: terminal.gateway_agent_route.clone(),
+                        persisted_session: terminal.persisted_agent_session.clone(),
                         rows: info.inner_rect.height,
                         cols: info.inner_rect.width,
                     });
@@ -165,33 +175,41 @@ impl App {
         if self.terminal_runtimes.get(terminal_id).is_some() {
             return false;
         }
-        let Some((pane_id, cwd, plan)) = self.state.workspaces.iter().find_map(|ws| {
-            ws.tabs.iter().find_map(|tab| {
-                tab.layout.pane_ids().into_iter().find_map(|pane_id| {
-                    let pane = tab.panes.get(&pane_id)?;
-                    if &pane.attached_terminal_id != terminal_id {
-                        return None;
-                    }
-                    let terminal = self.state.terminals.get(terminal_id)?;
-                    Some((
-                        pane_id,
-                        terminal.cwd.clone(),
-                        terminal.pending_agent_resume_plan.clone()?,
-                    ))
+        let Some((pane_id, cwd, plan, gateway_route, persisted_session)) =
+            self.state.workspaces.iter().find_map(|ws| {
+                ws.tabs.iter().find_map(|tab| {
+                    tab.layout.pane_ids().into_iter().find_map(|pane_id| {
+                        let pane = tab.panes.get(&pane_id)?;
+                        if &pane.attached_terminal_id != terminal_id {
+                            return None;
+                        }
+                        let terminal = self.state.terminals.get(terminal_id)?;
+                        Some((
+                            pane_id,
+                            terminal.cwd.clone(),
+                            terminal.pending_agent_resume_plan.clone()?,
+                            terminal.gateway_agent_route.clone(),
+                            terminal.persisted_agent_session.clone(),
+                        ))
+                    })
                 })
             })
-        }) else {
+        else {
             return false;
         };
 
+        let locator = crate::cli_adapter::PathExecutableLocator;
         let changed = self.start_pending_agent_resume(
             pane_id,
             terminal_id.clone(),
             cwd,
             plan,
+            gateway_route,
+            persisted_session,
             rows,
             cols,
             allow_empty_theme,
+            &locator,
         );
         if changed {
             self.schedule_session_save();
@@ -208,13 +226,30 @@ impl App {
         terminal_id: crate::terminal::TerminalId,
         cwd: std::path::PathBuf,
         plan: crate::agent_resume::AgentResumePlan,
+        gateway_route: Option<crate::terminal::GatewayAgentRoute>,
+        persisted_session: Option<crate::agent_resume::PersistedAgentSession>,
         rows: u16,
         cols: u16,
         allow_empty_theme: bool,
+        locator: &dyn crate::cli_adapter::ExecutableLocator,
     ) -> bool {
         let host_terminal_theme = self.state.host_terminal_theme;
         if host_terminal_theme.is_empty() && !allow_empty_theme {
             return false;
+        }
+
+        if let Some(route) = gateway_route {
+            return self.start_pending_gateway_agent_resume(
+                pane_id,
+                terminal_id,
+                cwd,
+                plan,
+                route,
+                persisted_session,
+                rows,
+                cols,
+                locator,
+            );
         }
 
         let Some(resume_command) = shell_command_from_argv(&plan.argv) else {
@@ -350,7 +385,86 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use std::path::PathBuf;
+    #[cfg(unix)]
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
     use super::*;
+
+    #[cfg(unix)]
+    struct FixedLocator(PathBuf);
+
+    #[cfg(unix)]
+    impl crate::cli_adapter::ExecutableLocator for FixedLocator {
+        fn locate(&self, _candidates: &[&str]) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+    }
+
+    #[cfg(unix)]
+    struct MemoryCredentialStore(crate::gateway::Credential);
+
+    #[cfg(unix)]
+    impl crate::gateway::CredentialStore for MemoryCredentialStore {
+        fn get(
+            &self,
+            credential_ref: &str,
+        ) -> Result<Option<crate::gateway::Credential>, crate::gateway::CredentialStoreError>
+        {
+            Ok((credential_ref == "gateway:mindshub").then(|| self.0.clone()))
+        }
+
+        fn set(
+            &self,
+            _credential_ref: &str,
+            _credential: &crate::gateway::Credential,
+        ) -> Result<crate::gateway::CredentialBackend, crate::gateway::CredentialStoreError>
+        {
+            unreachable!()
+        }
+
+        fn delete(
+            &self,
+            _credential_ref: &str,
+        ) -> Result<(), crate::gateway::CredentialStoreError> {
+            unreachable!()
+        }
+    }
+
+    #[cfg(unix)]
+    struct MissingCredentialStore;
+
+    #[cfg(unix)]
+    impl crate::gateway::CredentialStore for MissingCredentialStore {
+        fn get(
+            &self,
+            _credential_ref: &str,
+        ) -> Result<Option<crate::gateway::Credential>, crate::gateway::CredentialStoreError>
+        {
+            Ok(None)
+        }
+
+        fn set(
+            &self,
+            _credential_ref: &str,
+            _credential: &crate::gateway::Credential,
+        ) -> Result<crate::gateway::CredentialBackend, crate::gateway::CredentialStoreError>
+        {
+            unreachable!()
+        }
+
+        fn delete(
+            &self,
+            _credential_ref: &str,
+        ) -> Result<(), crate::gateway::CredentialStoreError> {
+            unreachable!()
+        }
+    }
 
     #[cfg(unix)]
     fn test_app() -> App {
@@ -376,6 +490,215 @@ mod tests {
             "-c".into(),
             "printf '%s' 'restored agent: shell quoted | marker'; sleep 5".into(),
         ]
+    }
+
+    #[cfg(unix)]
+    fn unique_temp_path(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("gowild-{label}-{}-{stamp}", std::process::id()))
+    }
+
+    #[cfg(unix)]
+    fn wait_for_file(path: &std::path::Path) -> String {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if let Ok(value) = fs::read_to_string(path) {
+                return value;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("timed out waiting for {}", path.display());
+    }
+
+    #[cfg(unix)]
+    fn managed_resume_fixture(
+        cli: &str,
+        model: &str,
+    ) -> (
+        App,
+        crate::layout::PaneId,
+        crate::terminal::TerminalId,
+        crate::agent_resume::AgentResumePlan,
+        crate::terminal::GatewayAgentRoute,
+        crate::agent_resume::PersistedAgentSession,
+    ) {
+        let mut app = test_app();
+        let workspace = crate::workspace::Workspace::test_new("managed-resume");
+        let pane_id = workspace.tabs[0].root_pane;
+        let terminal_id = workspace.terminal_id(pane_id).cloned().unwrap();
+        app.state.workspaces = vec![workspace];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        app.state.host_terminal_theme = crate::terminal_theme::TerminalTheme {
+            foreground: Some(crate::terminal_theme::RgbColor {
+                r: 220,
+                g: 220,
+                b: 220,
+            }),
+            background: Some(crate::terminal_theme::RgbColor {
+                r: 20,
+                g: 20,
+                b: 20,
+            }),
+            ..Default::default()
+        };
+        let gateway = app
+            .state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap();
+        gateway.endpoints.openai_responses = Some("https://route.invalid/openai/v1".into());
+        gateway.endpoints.anthropic_messages = Some("https://route.invalid/anthropic".into());
+
+        let source = format!("gowild:{cli}");
+        let session_ref = crate::agent_resume::AgentSessionRef::id("saved-session").unwrap();
+        let persisted_session = crate::agent_resume::PersistedAgentSession {
+            source: source.clone(),
+            agent: cli.to_string(),
+            session_ref: session_ref.clone(),
+        };
+        let plan = crate::agent_resume::plan(&source, cli, &session_ref).unwrap();
+        let route = crate::terminal::GatewayAgentRoute {
+            cli: cli.to_string(),
+            gateway_id: "mindshub".into(),
+            model: model.to_string(),
+        };
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.pending_agent_resume_plan = Some(plan.clone());
+        terminal.gateway_agent_route = Some(route.clone());
+        terminal.persisted_agent_session = Some(persisted_session.clone());
+
+        (app, pane_id, terminal_id, plan, route, persisted_session)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_resumes_reapply_codex_and_claude_gateway_routes() {
+        for (cli, model) in [
+            ("codex", "codex-route-model"),
+            ("claude", "claude-route-model"),
+        ] {
+            let output_path = unique_temp_path(&format!("{cli}-resume-output"));
+            let executable_path = unique_temp_path(&format!("{cli}-resume-stub"));
+            let script = format!(
+                "#!/bin/sh\n{{\n  printf 'args=%s\\n' \"$*\"\n  printf 'codex_secret=%s\\n' \"${{GOWILD_CODEX_API_KEY:+present}}\"\n  printf 'openai_secret=%s\\n' \"${{OPENAI_API_KEY:+present}}\"\n  printf 'anthropic_base=%s\\n' \"${{ANTHROPIC_BASE_URL:-absent}}\"\n  printf 'anthropic_token=%s\\n' \"${{ANTHROPIC_AUTH_TOKEN:+present}}\"\n  printf 'bedrock=%s\\n' \"${{CLAUDE_CODE_USE_BEDROCK:+present}}\"\n}} > '{}'\n",
+                output_path.display()
+            );
+            fs::write(&executable_path, script).unwrap();
+            let mut permissions = fs::metadata(&executable_path).unwrap().permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(&executable_path, permissions).unwrap();
+
+            let (mut app, pane_id, terminal_id, plan, route, persisted_session) =
+                managed_resume_fixture(cli, model);
+            app.gateway_credentials = Box::new(MemoryCredentialStore(
+                crate::gateway::Credential::new("test-resume-secret").unwrap(),
+            ));
+            let locator = FixedLocator(executable_path.clone());
+
+            assert!(app.start_pending_agent_resume(
+                pane_id,
+                terminal_id.clone(),
+                std::env::current_dir().unwrap(),
+                plan,
+                Some(route),
+                Some(persisted_session),
+                24,
+                80,
+                false,
+                &locator,
+            ));
+
+            let output = wait_for_file(&output_path);
+            assert!(output.contains("saved-session"));
+            assert!(!output.contains("test-resume-secret"));
+            match cli {
+                "codex" => {
+                    assert!(output.contains("model_provider=\"gowild\""));
+                    assert!(output.contains("https://route.invalid/openai/v1"));
+                    assert!(output.contains("resume saved-session"));
+                    assert!(output.contains("codex_secret=present"));
+                    assert!(output.contains("openai_secret="));
+                }
+                "claude" => {
+                    assert!(output.contains("--model claude-route-model"));
+                    assert!(output.contains("--resume saved-session"));
+                    assert!(output.contains("anthropic_base=https://route.invalid/anthropic"));
+                    assert!(output.contains("anthropic_token=present"));
+                    assert!(output.contains("bedrock="));
+                }
+                _ => unreachable!(),
+            }
+            assert!(app.state.terminals[&terminal_id]
+                .pending_agent_resume_plan
+                .is_none());
+            assert!(app.terminal_runtimes.get(&terminal_id).is_some());
+
+            for (_, runtime) in app.terminal_runtimes.drain() {
+                runtime.shutdown();
+            }
+            let _ = fs::remove_file(output_path);
+            let _ = fs::remove_file(executable_path);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_resume_failure_opens_safe_shell_without_starting_vendor_cli() {
+        let marker_path = unique_temp_path("failed-resume-vendor-marker");
+        let executable_path = unique_temp_path("failed-resume-vendor-stub");
+        fs::write(
+            &executable_path,
+            format!("#!/bin/sh\nprintf started > '{}'\n", marker_path.display()),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable_path, permissions).unwrap();
+
+        let (mut app, pane_id, terminal_id, plan, route, persisted_session) =
+            managed_resume_fixture("codex", "codex-route-model");
+        app.gateway_credentials = Box::new(MissingCredentialStore);
+        let locator = FixedLocator(executable_path.clone());
+
+        assert!(app.start_pending_agent_resume(
+            pane_id,
+            terminal_id.clone(),
+            std::env::current_dir().unwrap(),
+            plan,
+            Some(route.clone()),
+            Some(persisted_session.clone()),
+            24,
+            80,
+            false,
+            &locator,
+        ));
+
+        assert!(!marker_path.exists(), "the vendor CLI must not start");
+        let terminal = &app.state.terminals[&terminal_id];
+        assert!(terminal.pending_agent_resume_plan.is_none());
+        assert_eq!(terminal.gateway_agent_route.as_ref(), Some(&route));
+        assert_eq!(
+            terminal.persisted_agent_session.as_ref(),
+            Some(&persisted_session)
+        );
+        let history = app
+            .terminal_runtimes
+            .get(&terminal_id)
+            .and_then(crate::terminal::TerminalRuntime::snapshot_history)
+            .unwrap_or_default();
+        assert!(history.contains("GoWild did not resume codex"));
+        assert!(history.contains("no credential configured"));
+
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
+        let _ = fs::remove_file(marker_path);
+        let _ = fs::remove_file(executable_path);
     }
 
     #[cfg(unix)]

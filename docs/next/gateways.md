@@ -118,10 +118,11 @@ partial, and failed checks and contains only redacted diagnostics.
 Every coding CLI declares the protocol it needs. GoWild resolves the selected
 gateway before invoking the adapter and refuses to launch when that gateway
 does not advertise a matching endpoint. Fresh launches persist their non-secret
-CLI, gateway, and model route for future resume planning. Until a restored
-session has been replanned through that route, GoWild suppresses the legacy raw
-vendor resume command and opens a shell instead of risking a proprietary
-fallback.
+CLI, gateway, and model route for future resume planning. Restored sessions run
+through the same gateway resolver and adapter as fresh sessions; GoWild never
+executes the legacy raw vendor resume command for a gateway-managed pane. If the
+saved route cannot be applied, GoWild opens a safe shell with an actionable
+error instead of risking a proprietary fallback.
 
 The managed launch screen starts from the saved gateway and per-CLI model
 defaults, then records any choices there as explicit per-launch values. Parent

@@ -9,6 +9,7 @@ mod agent_resume;
 pub(crate) mod agent_view;
 mod agents;
 mod coding_agent_launch;
+mod gateway_agent_resume;
 pub(crate) use agents::{AGENT_START_SETTLE_DELAY, MAX_AGENT_START_TIMEOUT};
 mod api;
 mod api_helpers;
