@@ -478,7 +478,14 @@ fn main() {
         } catch {
             Write-Host "server stop during cleanup failed: $($_.Exception.Message)"
         }
-        Wait-Process -Id $server.Id -Timeout 10 -ErrorAction SilentlyContinue
+        $serverExitDeadline = (Get-Date).AddSeconds(10)
+        do {
+            $server.Refresh()
+            if ($server.HasExited) {
+                break
+            }
+            Start-Sleep -Milliseconds 100
+        } while ((Get-Date) -lt $serverExitDeadline)
         $server.Refresh()
         if (-not $server.HasExited) {
             & taskkill.exe /PID $server.Id /T /F 2>&1 | Out-Null
