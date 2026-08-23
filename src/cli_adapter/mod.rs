@@ -18,3 +18,4 @@ pub(crate) use launch::{
 };
 pub(crate) use registry::AdapterRegistry;
 pub(crate) use resolver::{Environment, GatewayResolutionError, GatewayResolver, ResolvedGateway};
+pub(crate) use responses_bridge::ResponsesBridge;

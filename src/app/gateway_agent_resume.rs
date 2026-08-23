@@ -83,7 +83,7 @@ impl App {
     }
 
     fn plan_gateway_agent_resume(
-        &self,
+        &mut self,
         plan: &crate::agent_resume::AgentResumePlan,
         route: &crate::terminal::GatewayAgentRoute,
         persisted_session: Option<&crate::agent_resume::PersistedAgentSession>,

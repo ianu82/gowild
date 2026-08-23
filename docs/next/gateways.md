@@ -27,6 +27,11 @@ available, it can use a separate `credentials.json` fallback with a `0700`
 directory and `0600` file. Windows fails closed because ordinary Unix mode bits
 cannot establish an owner-only ACL there.
 
+Unsigned Unix development builds deliberately use that owner-only file backend
+directly. This avoids repeated Keychain authorization prompts when rebuilding a
+debug binary changes its application identity. Release builds continue to use
+the operating system credential store by default.
+
 The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
 credentials and common key formats before persistence.
@@ -78,9 +83,10 @@ and footer actions are also mouse-accessible.
 
 ## Starting a managed agent
 
-Choose **launch agent** from GoWild's global menu, or from the switcher on a
-narrow terminal. The launch screen makes the complete child-process route
-visible before anything starts: coding CLI, gateway, protocol, and model. Use
+Press `prefix+a` or choose **launch agent** from GoWild's global menu (or from
+the switcher on a narrow terminal). The launch screen makes the complete
+child-process route visible before anything starts: coding CLI, gateway,
+protocol, and model. Use
 `↑`/`↓` to select a row, `←`/`→` to change its value, and `Enter` to launch. The
 same controls are mouse-accessible. Gateway settings remain one key away with
 `s`.
@@ -125,13 +131,19 @@ saved route cannot be applied, GoWild opens a safe shell with an actionable
 error instead of risking a proprietary fallback.
 
 The managed launch screen starts from the saved gateway and per-CLI model
-defaults, then records any choices there as explicit per-launch values. Parent
-process environment variables cannot silently replace the route shown in the
-screen. The resolved credential is passed to an adapter as a secret value,
-rejected if the adapter places it in argv or an ordinary environment value, and
-exposed only to the spawned child process. Launch specifications, pane
-environment diagnostics, and the structured route log redact all environment
-values.
+defaults. For CI and advanced use, `GOWILD_GATEWAY` and `GOWILD_MODEL` override
+those saved defaults when the screen opens, so the resulting route remains
+visible before launch; changing a value on the screen is an explicit
+per-launch choice and takes precedence. `GOWILD_API_KEY` overrides the stored
+credential, while `GOWILD_RESPONSES_BASE_URL` and
+`GOWILD_MESSAGES_BASE_URL` override the selected gateway's corresponding saved
+endpoint. Empty override values are ignored, and invalid gateway or model
+values fail closed.
+
+The resolved credential is passed to an adapter as a secret value, rejected if
+the adapter places it in argv or an ordinary environment value, and exposed
+only to the spawned child process. Launch specifications, pane environment
+diagnostics, and the structured route log redact all environment values.
 
 ## Claude Code adapter
 
@@ -179,6 +191,14 @@ are applied inside the secret environment value rather than argv. Non-secret
 custom headers use the provider's `http_headers` table. Unauthenticated custom
 providers omit all auth fields. Fresh sessions and `codex resume <session-id>`
 receive the same provider configuration and secret environment.
+
+For the built-in MindsHub Inference Responses route, GoWild also starts a
+loopback-only compatibility bridge. MindsHub currently accepts complete
+Responses payloads while Codex requires streaming events, so the bridge requests
+the same response non-streaming upstream and translates it into standard
+Responses events locally. Prompts, tool definitions, tool outputs, model choice,
+usage metadata, and the child-only authentication header otherwise pass through
+unchanged. The bridge is not enabled for custom gateway endpoints.
 
 ## Upstream CLI compatibility check
 
