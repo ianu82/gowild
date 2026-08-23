@@ -13,9 +13,9 @@ fn named_sessions_share_live_plugin_registry() {
     ] {
         fs::create_dir_all(dir).unwrap();
         fs::write(
-            dir.join("herdr-plugin.toml"),
+            dir.join("gowild-plugin.toml"),
             format!(
-                "id = \"{id}\"\nname = \"{id}\"\nversion = \"0.1.0\"\nmin_herdr_version = \"0.6.10\"\n\n[[actions]]\nid = \"run\"\ntitle = \"Run\"\ncommand = [\"sh\", \"-c\", \"echo run\"]\n"
+                "id = \"{id}\"\nname = \"{id}\"\nversion = \"0.1.0\"\nmin_gowild_version = \"0.1.0\"\n\n[[actions]]\nid = \"run\"\ntitle = \"Run\"\ncommand = [\"sh\", \"-c\", \"echo run\"]\n"
             ),
         )
         .unwrap();
@@ -119,12 +119,12 @@ fn plugin_link_works_offline_and_is_global() {
     let plugin_dir = base.join("plugins").join("offline");
     fs::create_dir_all(&plugin_dir).unwrap();
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.offline"
 name = "Offline Plugin"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 "#,
     )
@@ -178,17 +178,17 @@ fn plugin_install_through_named_server_is_global() {
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.global-plugin"
 name = "Global Plugin"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 "#,
     )
     .unwrap();
-    run_git(&source_repo, &["add", "global-plugin/herdr-plugin.toml"]);
+    run_git(&source_repo, &["add", "global-plugin/gowild-plugin.toml"]);
     run_git(&source_repo, &["commit", "--quiet", "-m", "add plugin"]);
 
     let git_config = base.join("gitconfig");
@@ -252,17 +252,17 @@ fn plugin_link_list_unlink_cli_smoke_test() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let plugin_dir = base.join("plugins").join("layout");
     fs::create_dir_all(&plugin_dir).unwrap();
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.layout"
 name = "Layout"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
-description = "Apply a preferred Herdr layout"
+min_gowild_version = "0.1.0"
+description = "Apply a preferred GoWild layout"
 
 [[actions]]
 id = "apply"
@@ -283,7 +283,7 @@ command = ["sh", "-c", "sleep 5"]
     )
     .unwrap();
 
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let workspace = run_cli_json(
         &socket_path,
@@ -358,7 +358,7 @@ command = ["sh", "-c", "sleep 5"]
             "--entrypoint",
             "board",
             "--env",
-            "HERDR_ROLE=board",
+            "GOWILD_ROLE=board",
             "--no-focus",
         ],
     );
@@ -384,7 +384,7 @@ command = ["sh", "-c", "sleep 5"]
     let listed = run_cli_json(&socket_path, &["plugin", "list", "--json"]);
     assert!(listed["result"]["plugins"].as_array().unwrap().is_empty());
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -397,16 +397,16 @@ fn plugin_install_list_uninstall_offline_cli_smoke_test() {
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.worktree-bootstrap"
 name = "Worktree Bootstrap"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
-command = ["sh", "-c", "echo built > built.txt; if [ -n \"$HERDR_SESSION\" ]; then echo \"$HERDR_SESSION\" > leaked-session.txt; fi"]
+command = ["sh", "-c", "echo built > built.txt; if [ -n \"$GOWILD_SESSION\" ]; then echo \"$GOWILD_SESSION\" > leaked-session.txt; fi"]
 
 [[actions]]
 id = "bootstrap"
@@ -417,7 +417,7 @@ command = ["sh", "-c", "echo bootstrap"]
     .unwrap();
     run_git(
         &source_repo,
-        &["add", "worktree-bootstrap/herdr-plugin.toml"],
+        &["add", "worktree-bootstrap/gowild-plugin.toml"],
     );
     run_git(&source_repo, &["commit", "--quiet", "-m", "add plugin"]);
 
@@ -427,7 +427,7 @@ command = ["sh", "-c", "echo bootstrap"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -441,12 +441,12 @@ command = ["sh", "-c", "echo bootstrap"]
             "plugins",
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/worktree-bootstrap",
+            "ogulcancelik/gowild-plugin-examples/worktree-bootstrap",
             "--yes",
         ],
         &[
             ("GIT_CONFIG_GLOBAL", &git_config),
-            ("HERDR_SESSION", Path::new("leaked-session")),
+            ("GOWILD_SESSION", Path::new("leaked-session")),
         ],
     );
     assert!(
@@ -465,7 +465,7 @@ command = ["sh", "-c", "echo bootstrap"]
     assert_eq!(plugin["plugin_id"], "example.worktree-bootstrap");
     assert_eq!(plugin["source"]["kind"], "github");
     assert_eq!(plugin["source"]["owner"], "ogulcancelik");
-    assert_eq!(plugin["source"]["repo"], "herdr-plugin-examples");
+    assert_eq!(plugin["source"]["repo"], "gowild-plugin-examples");
     assert_eq!(plugin["source"]["subdir"], "worktree-bootstrap");
     assert!(plugin["source"]["resolved_commit"].as_str().is_some());
     let managed_path = PathBuf::from(plugin["source"]["managed_path"].as_str().unwrap());
@@ -483,7 +483,7 @@ command = ["sh", "-c", "echo bootstrap"]
             .join("worktree-bootstrap")
             .join("leaked-session.txt")
             .exists(),
-        "build command should not inherit HERDR_SESSION"
+        "build command should not inherit GOWILD_SESSION"
     );
 
     let uninstall = run_named_cli(
@@ -528,12 +528,12 @@ fn plugin_install_build_failure_does_not_register_or_create_checkout() {
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.build-fail"
 name = "Build Fail"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
@@ -546,7 +546,7 @@ command = ["sh", "-c", "echo should-not-install"]
 "#,
     )
     .unwrap();
-    run_git(&source_repo, &["add", "build-fail/herdr-plugin.toml"]);
+    run_git(&source_repo, &["add", "build-fail/gowild-plugin.toml"]);
     run_git(
         &source_repo,
         &["commit", "--quiet", "-m", "add failing plugin"],
@@ -558,7 +558,7 @@ command = ["sh", "-c", "echo should-not-install"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -572,7 +572,7 @@ command = ["sh", "-c", "echo should-not-install"]
             "plugins",
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/build-fail",
+            "ogulcancelik/gowild-plugin-examples/build-fail",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],
@@ -622,16 +622,16 @@ fn plugin_install_build_spawn_failure_prints_clean_error() {
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.missing-tool"
 name = "Missing Tool"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
-command = ["definitely-missing-herdr-build-tool-xyz"]
+command = ["definitely-missing-gowild-build-tool-xyz"]
 
 [[actions]]
 id = "run"
@@ -640,7 +640,7 @@ command = ["sh", "-c", "echo should-not-install"]
 "#,
     )
     .unwrap();
-    run_git(&source_repo, &["add", "missing-tool/herdr-plugin.toml"]);
+    run_git(&source_repo, &["add", "missing-tool/gowild-plugin.toml"]);
     run_git(
         &source_repo,
         &["commit", "--quiet", "-m", "add missing tool plugin"],
@@ -652,7 +652,7 @@ command = ["sh", "-c", "echo should-not-install"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -666,7 +666,7 @@ command = ["sh", "-c", "echo should-not-install"]
             "plugins",
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/missing-tool",
+            "ogulcancelik/gowild-plugin-examples/missing-tool",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],
@@ -684,7 +684,7 @@ command = ["sh", "-c", "echo should-not-install"]
     );
     assert!(stderr.contains("  build: 1/1"), "{stderr}");
     assert!(
-        stderr.contains("  command: definitely-missing-herdr-build-tool-xyz"),
+        stderr.contains("  command: definitely-missing-gowild-build-tool-xyz"),
         "{stderr}"
     );
     assert!(stderr.contains("  error: failed to start:"), "{stderr}");
@@ -711,12 +711,12 @@ fn plugin_install_rejects_manifest_changed_by_build() {
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.manifest-mutator"
 name = "Manifest Mutator"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
@@ -731,11 +731,11 @@ command = ["sh", "-c", "echo reviewed"]
     .unwrap();
     fs::write(
         plugin_dir.join("mutate.sh"),
-        r#"cat > herdr-plugin.toml <<'EOF'
+        r#"cat > gowild-plugin.toml <<'EOF'
 id = "example.manifest-mutator"
 name = "Manifest Mutator"
 version = "0.1.0"
-min_herdr_version = "0.0.1"
+min_gowild_version = "0.0.1"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
@@ -761,7 +761,7 @@ EOF
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -775,7 +775,7 @@ EOF
             "plugins",
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/manifest-mutator",
+            "ogulcancelik/gowild-plugin-examples/manifest-mutator",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],
@@ -786,7 +786,7 @@ EOF
     );
     let stderr = String::from_utf8_lossy(&install.stderr);
     assert!(
-        stderr.contains("plugin build changed herdr-plugin.toml after install preview"),
+        stderr.contains("plugin build changed gowild-plugin.toml after install preview"),
         "{stderr}"
     );
 
@@ -810,18 +810,18 @@ fn plugin_install_restores_previous_checkout_when_registration_fails() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("fake-herdr.sock");
+    let socket_path = runtime_dir.join("fake-gowild.sock");
     let source_repo = base.join("source-repo");
     let plugin_dir = source_repo.join("worktree-bootstrap");
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.worktree-bootstrap"
 name = "Worktree Bootstrap"
 version = "0.2.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
@@ -833,14 +833,14 @@ command = ["sh", "-c", "echo new"]
     .unwrap();
     run_git(
         &source_repo,
-        &["add", "worktree-bootstrap/herdr-plugin.toml"],
+        &["add", "worktree-bootstrap/gowild-plugin.toml"],
     );
     run_git(&source_repo, &["commit", "--quiet", "-m", "add plugin"]);
 
     fs::create_dir_all(&config_home).unwrap();
     fs::create_dir_all(&runtime_dir).unwrap();
     let managed_checkout = config_home
-        .join("herdr-dev")
+        .join("gowild-dev")
         .join("plugins")
         .join("github")
         .join(WORKTREE_BOOTSTRAP_MANAGED_COMPONENT);
@@ -851,7 +851,7 @@ command = ["sh", "-c", "echo new"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -874,14 +874,14 @@ command = ["sh", "-c", "echo new"]
                         "plugin_id": "example.worktree-bootstrap",
                         "name": "Worktree Bootstrap",
                         "version": "0.1.0",
-                        "min_herdr_version": "0.6.10",
-                        "manifest_path": managed_checkout_for_server.join("herdr-plugin.toml").display().to_string(),
+                        "min_gowild_version": "0.1.0",
+                        "manifest_path": managed_checkout_for_server.join("gowild-plugin.toml").display().to_string(),
                         "plugin_root": managed_checkout_for_server.display().to_string(),
                         "enabled": true,
                         "source": {
                             "kind": "github",
                             "owner": "ogulcancelik",
-                            "repo": "herdr-plugin-examples",
+                            "repo": "gowild-plugin-examples",
                             "subdir": "worktree-bootstrap",
                             "resolved_commit": "old",
                             "managed_path": managed_checkout_for_server.display().to_string(),
@@ -912,7 +912,7 @@ command = ["sh", "-c", "echo new"]
         &[
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/worktree-bootstrap",
+            "ogulcancelik/gowild-plugin-examples/worktree-bootstrap",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],
@@ -936,18 +936,18 @@ fn plugin_install_rejects_server_that_drops_source_metadata() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("fake-herdr.sock");
+    let socket_path = runtime_dir.join("fake-gowild.sock");
     let source_repo = base.join("source-repo");
     let plugin_dir = source_repo.join("worktree-bootstrap");
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.worktree-bootstrap"
 name = "Worktree Bootstrap"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
@@ -959,14 +959,14 @@ command = ["sh", "-c", "echo install"]
     .unwrap();
     run_git(
         &source_repo,
-        &["add", "worktree-bootstrap/herdr-plugin.toml"],
+        &["add", "worktree-bootstrap/gowild-plugin.toml"],
     );
     run_git(&source_repo, &["commit", "--quiet", "-m", "add plugin"]);
 
     fs::create_dir_all(&config_home).unwrap();
     fs::create_dir_all(&runtime_dir).unwrap();
     let managed_checkout = config_home
-        .join("herdr-dev")
+        .join("gowild-dev")
         .join("plugins")
         .join("github")
         .join(WORKTREE_BOOTSTRAP_MANAGED_COMPONENT);
@@ -974,7 +974,7 @@ command = ["sh", "-c", "echo install"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -1006,8 +1006,8 @@ command = ["sh", "-c", "echo install"]
                         "plugin_id": "example.worktree-bootstrap",
                         "name": "Worktree Bootstrap",
                         "version": "0.1.0",
-                        "min_herdr_version": "0.6.10",
-                        "manifest_path": managed_checkout_for_server.join("herdr-plugin.toml").display().to_string(),
+                        "min_gowild_version": "0.1.0",
+                        "manifest_path": managed_checkout_for_server.join("gowild-plugin.toml").display().to_string(),
                         "plugin_root": managed_checkout_for_server.display().to_string(),
                         "enabled": true,
                         "source": {"kind": "local"}
@@ -1040,7 +1040,7 @@ command = ["sh", "-c", "echo install"]
         &[
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/worktree-bootstrap",
+            "ogulcancelik/gowild-plugin-examples/worktree-bootstrap",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],
@@ -1064,18 +1064,18 @@ fn plugin_install_keeps_checkout_when_incompatible_server_cleanup_fails() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("fake-herdr.sock");
+    let socket_path = runtime_dir.join("fake-gowild.sock");
     let source_repo = base.join("source-repo");
     let plugin_dir = source_repo.join("worktree-bootstrap");
     fs::create_dir_all(&plugin_dir).unwrap();
     create_committed_repo(&source_repo);
     fs::write(
-        plugin_dir.join("herdr-plugin.toml"),
+        plugin_dir.join("gowild-plugin.toml"),
         r#"
 id = "example.worktree-bootstrap"
 name = "Worktree Bootstrap"
 version = "0.1.0"
-min_herdr_version = "0.6.10"
+min_gowild_version = "0.1.0"
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
@@ -1087,14 +1087,14 @@ command = ["sh", "-c", "echo install"]
     .unwrap();
     run_git(
         &source_repo,
-        &["add", "worktree-bootstrap/herdr-plugin.toml"],
+        &["add", "worktree-bootstrap/gowild-plugin.toml"],
     );
     run_git(&source_repo, &["commit", "--quiet", "-m", "add plugin"]);
 
     fs::create_dir_all(&config_home).unwrap();
     fs::create_dir_all(&runtime_dir).unwrap();
     let managed_checkout = config_home
-        .join("herdr-dev")
+        .join("gowild-dev")
         .join("plugins")
         .join("github")
         .join(WORKTREE_BOOTSTRAP_MANAGED_COMPONENT);
@@ -1102,7 +1102,7 @@ command = ["sh", "-c", "echo install"]
     fs::write(
         &git_config,
         format!(
-            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/herdr-plugin-examples.git\n",
+            "[url \"file://{}\"]\n    insteadOf = https://github.com/ogulcancelik/gowild-plugin-examples.git\n",
             source_repo.display()
         ),
     )
@@ -1130,8 +1130,8 @@ command = ["sh", "-c", "echo install"]
                         "plugin_id": "example.worktree-bootstrap",
                         "name": "Worktree Bootstrap",
                         "version": "0.1.0",
-                        "min_herdr_version": "0.6.10",
-                        "manifest_path": managed_checkout_for_server.join("herdr-plugin.toml").display().to_string(),
+                        "min_gowild_version": "0.1.0",
+                        "manifest_path": managed_checkout_for_server.join("gowild-plugin.toml").display().to_string(),
                         "plugin_root": managed_checkout_for_server.display().to_string(),
                         "enabled": true,
                         "source": {"kind": "local"}
@@ -1160,7 +1160,7 @@ command = ["sh", "-c", "echo install"]
         &[
             "plugin",
             "install",
-            "ogulcancelik/herdr-plugin-examples/worktree-bootstrap",
+            "ogulcancelik/gowild-plugin-examples/worktree-bootstrap",
             "--yes",
         ],
         &[("GIT_CONFIG_GLOBAL", &git_config)],

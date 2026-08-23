@@ -91,7 +91,7 @@ const FOREGROUND_PROCESS_SNAPSHOT_CACHE_TTL: Duration = Duration::from_millis(25
 const FOREGROUND_SELECTION_RECHECK: Duration = Duration::from_secs(5);
 const FOREGROUND_SELECTION_CACHE_CAPACITY: usize = 1_024;
 const FOREGROUND_SELECTION_CACHE_RETENTION: Duration = Duration::from_secs(60);
-const PANE_RUNTIME_MARKER_ENV_VAR: &str = "HERDR_PANE_RUNTIME_ID";
+const PANE_RUNTIME_MARKER_ENV_VAR: &str = "GOWILD_PANE_RUNTIME_ID";
 
 pub(crate) fn terminal_title_for_presentation(title: &str) -> &str {
     title.strip_prefix("Administrator: ").unwrap_or(title)
@@ -134,7 +134,7 @@ pub(crate) fn create_remote_ssh_config_dir(_control_socket_name: &str) -> std::i
     }
     Err(std::io::Error::new(
         std::io::ErrorKind::AlreadyExists,
-        "failed to create private herdr ssh config directory",
+        "failed to create private gowild ssh config directory",
     ))
 }
 
@@ -1993,7 +1993,7 @@ pub fn show_desktop_notification(title: &str, body: Option<&str>) -> std::io::Re
     let body = body.unwrap_or(&title).to_owned();
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
-        .name("herdr-windows-notification".into())
+        .name("gowild-windows-notification".into())
         .spawn(move || show_desktop_notification_on_thread(&title, &body, ready_tx))?;
     ready_rx
         .recv_timeout(Duration::from_secs(2))
@@ -2014,7 +2014,7 @@ fn show_desktop_notification_on_thread(
     ready_tx: std::sync::mpsc::SyncSender<std::io::Result<bool>>,
 ) {
     let class_name = wide_null("STATIC");
-    let window_name = wide_null("Herdr notifications");
+    let window_name = wide_null("GoWild notifications");
     let hwnd = unsafe {
         CreateWindowExW(
             0,
@@ -2045,11 +2045,11 @@ fn show_desktop_notification_on_thread(
     if !notification.hIcon.is_null() {
         notification.uFlags |= NIF_ICON;
     }
-    copy_wide_truncated(&mut notification.szTip, "Herdr");
+    copy_wide_truncated(&mut notification.szTip, "GoWild");
 
     if unsafe { Shell_NotifyIconW(NIM_ADD, &notification) } == 0 {
         let _ = ready_tx.send(Err(std::io::Error::other(
-            "failed to add Herdr notification-area icon",
+            "failed to add GoWild notification-area icon",
         )));
         unsafe {
             DestroyWindow(hwnd);
@@ -2067,7 +2067,7 @@ fn show_desktop_notification_on_thread(
             DestroyWindow(hwnd);
         }
         let _ = ready_tx.send(Err(std::io::Error::other(
-            "failed to show Herdr desktop notification",
+            "failed to show GoWild desktop notification",
         )));
         return;
     }
@@ -2212,7 +2212,7 @@ fn read_unicode_string(process: HANDLE, unicode: UNICODE_STRING) -> Option<Strin
 
 // Prefix-mode ASCII input source support (see `switch_ascii_input_source_in_prefix`).
 //
-// Windows IMEs live in the terminal-emulator process, not in herdr. Empirically:
+// Windows IMEs live in the terminal-emulator process, not in gowild. Empirically:
 //   - `WM_IME_CONTROL` / `IMC_GETOPENSTATUS` reads whether the IME is open
 //     (composing native characters) reliably across the process boundary (this
 //     is what kren-select uses), so we detect state with it. The read goes
@@ -2256,7 +2256,7 @@ const IME_STATUS_READ_TIMEOUT_MS: u32 = 200;
 /// Reads the IME open status (`IMC_GETOPENSTATUS`) with a bounded timeout.
 ///
 /// `WM_IME_CONTROL` crosses into the terminal-emulator process, and a plain
-/// `SendMessageW` would block herdr's client thread until that process responds
+/// `SendMessageW` would block gowild's client thread until that process responds
 /// (indefinitely if it is hung). `SendMessageTimeoutW` with `SMTO_ABORTIFHUNG`
 /// caps the wait; on timeout or failure this returns `None` and callers leave
 /// the IME untouched rather than blocking or guessing.
@@ -2530,7 +2530,7 @@ mod tests {
     #[test]
     fn private_remote_directory_supports_long_paths() {
         let base = std::env::temp_dir().join(format!(
-            "herdr-private-remote-dir-test-{}",
+            "gowild-private-remote-dir-test-{}",
             std::process::id()
         ));
         fs::create_dir_all(&base).expect("create test base");
@@ -2680,7 +2680,7 @@ mod tests {
     fn windows_shells_round_trip_agent_arguments_through_a_real_command() {
         let _lock = crate::integration::integration_env_lock();
         let base = std::env::temp_dir().join(format!(
-            "herdr-agent-argv-{}-{}",
+            "gowild-agent-argv-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2691,7 +2691,7 @@ mod tests {
         let helper = base.join("pi.cmd");
         fs::write(
             &helper,
-            "@echo off\r\n>\"%HERDR_ARGV_CAPTURE%\" (\r\necho(%~1\r\necho(%~2\r\necho(%~3\r\necho(%~4\r\necho(%~5\r\necho(%~6\r\n)\r\n",
+            "@echo off\r\n>\"%GOWILD_ARGV_CAPTURE%\" (\r\necho(%~1\r\necho(%~2\r\necho(%~3\r\necho(%~4\r\necho(%~5\r\necho(%~6\r\n)\r\n",
         )
         .unwrap();
         let argv = vec![
@@ -2717,7 +2717,7 @@ mod tests {
             };
             process
                 .env("PATH", &path)
-                .env("HERDR_ARGV_CAPTURE", capture)
+                .env("GOWILD_ARGV_CAPTURE", capture)
                 .status()
                 .unwrap()
         };
@@ -2747,9 +2747,9 @@ mod tests {
         let _ = fs::remove_dir_all(base);
     }
 
-    const CONSOLE_TEST_CHILD_ENV: &str = "HERDR_TEST_CONSOLE_CHILD_MODE";
-    const CONSOLE_TEST_PARENT_PID_ENV: &str = "HERDR_TEST_CONSOLE_PARENT_PID";
-    const WMI_DAEMON_TEST_CHILD_ENV: &str = "HERDR_TEST_WMI_DAEMON_CHILD";
+    const CONSOLE_TEST_CHILD_ENV: &str = "GOWILD_TEST_CONSOLE_CHILD_MODE";
+    const CONSOLE_TEST_PARENT_PID_ENV: &str = "GOWILD_TEST_CONSOLE_PARENT_PID";
+    const WMI_DAEMON_TEST_CHILD_ENV: &str = "GOWILD_TEST_WMI_DAEMON_CHILD";
 
     #[test]
     fn windows_environment_keys_use_unicode_case_insensitive_ordering() {
@@ -2776,7 +2776,7 @@ mod tests {
         }
 
         let base = std::env::temp_dir().join(format!(
-            "herdr-wmi-daemon-test-{}-{}",
+            "gowild-wmi-daemon-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2959,7 +2959,7 @@ mod tests {
     #[test]
     fn detached_custom_command_preserves_quoted_command_tail() {
         let path = std::env::temp_dir().join(format!(
-            "herdr-raw-command-quotes-{}.txt",
+            "gowild-raw-command-quotes-{}.txt",
             std::process::id()
         ));
         let command = format!(r#"echo "hi" > "{}""#, path.display());
@@ -2977,7 +2977,7 @@ mod tests {
 
     #[test]
     fn windows_process_cwd_reads_child_launch_directory() {
-        let cwd = std::env::temp_dir().join(format!("herdr-cwd-test-{}", std::process::id()));
+        let cwd = std::env::temp_dir().join(format!("gowild-cwd-test-{}", std::process::id()));
         fs::create_dir_all(&cwd).expect("create cwd fixture");
 
         let shell =
@@ -3503,7 +3503,7 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\codex\\bin\\codex.js",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\codex\\bin\\codex.js",
                 ],
             ),
         ];
@@ -3527,7 +3527,7 @@ mod tests {
                     "/D",
                     "/S",
                     "/C",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\codex.cmd --model gpt-5",
                 ],
             ),
         ];
@@ -3548,14 +3548,14 @@ mod tests {
                 "node.exe",
                 &[
                     "node.exe",
-                    "C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js",
+                    "C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js",
                 ],
             ),
             test_entry(
                 30,
                 20,
                 "codex.exe",
-                &["C:\\Users\\herdr\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe"],
+                &["C:\\Users\\gowild\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe"],
             ),
             test_entry(40, 30, "node_repl.exe", &["node_repl.exe"]),
             test_entry(
@@ -3730,7 +3730,7 @@ mod tests {
 
     #[test]
     fn scrollback_editor_argv_uses_editor_env_and_appends_path() {
-        let path = std::path::Path::new(r"C:\Users\User\AppData\Local\Temp\herdr scrollback.txt");
+        let path = std::path::Path::new(r"C:\Users\User\AppData\Local\Temp\gowild scrollback.txt");
         let argv = super::scrollback_editor_argv_with_env(
             path,
             Some(r#""C:\Program Files\Microsoft VS Code\Code.exe" --wait"#),
@@ -3744,7 +3744,7 @@ mod tests {
 
     #[test]
     fn scrollback_editor_argv_falls_back_to_notepad() {
-        let path = std::path::Path::new(r"C:\Temp\herdr-scrollback.txt");
+        let path = std::path::Path::new(r"C:\Temp\gowild-scrollback.txt");
         let argv = super::scrollback_editor_argv_with_env(path, None).unwrap();
 
         assert_eq!(
@@ -3810,7 +3810,7 @@ mod tests {
 
     #[test]
     fn process_environment_variable_parser_reads_case_insensitive_marker() {
-        let environment: Vec<u16> = "PATH=C:\\Windows\0herdr_pane_runtime_id=pane-a\0\0"
+        let environment: Vec<u16> = "PATH=C:\\Windows\0gowild_pane_runtime_id=pane-a\0\0"
             .encode_utf16()
             .collect();
 
@@ -3835,7 +3835,7 @@ mod tests {
     #[test]
     fn pane_runtime_marker_is_added_only_to_git_bash_environment() {
         let root = std::env::temp_dir().join(format!(
-            "herdr-git-bash-test-{}",
+            "gowild-git-bash-test-{}",
             super::next_pane_runtime_marker()
         ));
         fs::create_dir_all(root.join("bin")).expect("create Git Bash bin fixture");

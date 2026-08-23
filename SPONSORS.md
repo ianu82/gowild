@@ -1,9 +1,9 @@
-# Past sponsors
+# Historical source sponsors
 
-herdr's sponsorship program is closed to new sponsors.
-This file permanently lists everyone who backed herdr.
-
-→ Enterprise / partnership: hey@herdr.dev
+This imported attribution records the people and organisations listed as Herdr
+sponsors in the source snapshot identified by `PROVENANCE.md`. It is not a
+GoWild sponsorship or contact page. Please do not contact the Herdr project
+about GoWild.
 
 ## Gold
 
@@ -64,4 +64,4 @@ This file permanently lists everyone who backed herdr.
 
 ---
 
-Thank you to everyone who supported herdr. 🐑
+This list is retained as historical attribution to the source project.

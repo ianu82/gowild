@@ -1290,7 +1290,7 @@ impl App {
                 ContextMenuKind::Pane {
                     ws_idx, pane_id, ..
                 },
-                Some(action @ ("Send right-clicks to pane" | "Use Herdr right-click menu")),
+                Some(action @ ("Send right-clicks to pane" | "Use GoWild right-click menu")),
             ) => {
                 if let Some(pane_id) = self.public_pane_id(ws_idx, pane_id) {
                     self.runtime_pane_input_set(
@@ -1300,7 +1300,7 @@ impl App {
                             right_click: if action == "Send right-clicks to pane" {
                                 crate::api::schema::PaneRightClickTarget::Pane
                             } else {
-                                crate::api::schema::PaneRightClickTarget::Herdr
+                                crate::api::schema::PaneRightClickTarget::GoWild
                             },
                         },
                     );
@@ -1424,7 +1424,7 @@ mod tests {
 
     fn temp_config_path(name: &str) -> std::path::PathBuf {
         let unique = format!(
-            "herdr-modal-{name}-{}-{}",
+            "gowild-modal-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1464,8 +1464,8 @@ mod tests {
     fn mark_worktree_space_member(state: &mut AppState, ws_idx: usize, key: &str) {
         state.workspaces[ws_idx].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: key.into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
             checkout_path: format!("/repo/worktree-{ws_idx}").into(),
             is_linked_worktree: ws_idx != 0,
         });
@@ -2164,9 +2164,9 @@ mod tests {
         state.selected = 1;
         state.workspaces[1].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: "repo-key".into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
-            checkout_path: "/repo/herdr-issue".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
+            checkout_path: "/repo/gowild-issue".into(),
             is_linked_worktree: true,
         });
 
@@ -2188,16 +2188,16 @@ mod tests {
         state.selected = 1;
         state.workspaces[0].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: "repo-key".into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
-            checkout_path: "/repo/herdr".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
+            checkout_path: "/repo/gowild".into(),
             is_linked_worktree: false,
         });
         state.workspaces[1].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: "repo-key".into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
-            checkout_path: "/repo/herdr-issue".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
+            checkout_path: "/repo/gowild-issue".into(),
             is_linked_worktree: true,
         });
         let menu = ContextMenuState {
@@ -2264,16 +2264,16 @@ mod tests {
         state.selected = 1;
         state.workspaces[0].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: "repo-key".into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
-            checkout_path: "/repo/herdr".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
+            checkout_path: "/repo/gowild".into(),
             is_linked_worktree: false,
         });
         state.workspaces[1].worktree_space = Some(crate::workspace::WorktreeSpaceMembership {
             key: "repo-key".into(),
-            label: "herdr".into(),
-            repo_root: "/repo/herdr".into(),
-            checkout_path: "/repo/herdr-issue".into(),
+            label: "gowild".into(),
+            repo_root: "/repo/gowild".into(),
+            checkout_path: "/repo/gowild-issue".into(),
             is_linked_worktree: true,
         });
         let pane_id = state.workspaces[0].tabs[0].root_pane;

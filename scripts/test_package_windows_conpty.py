@@ -110,13 +110,13 @@ class WindowsConptyPackageTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            herdr = root / "input-herdr.exe"
-            herdr.write_bytes(b"herdr")
+            gowild = root / "input-gowild.exe"
+            gowild.write_bytes(b"gowild")
             stage = root / "stage"
-            package.stage_bundle(metadata_path, "x86_64", nupkg, herdr, stage)
+            package.stage_bundle(metadata_path, "x86_64", nupkg, gowild, stage)
             package.validate_stage(metadata_path, "x86_64", stage)
 
-            output = root / "herdr.zip"
+            output = root / "gowild.zip"
             package.archive_bundle(metadata_path, "x86_64", stage, output)
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(

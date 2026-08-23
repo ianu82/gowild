@@ -32,7 +32,7 @@ pub(crate) fn set_host_kitty_keyboard_report_all<W: Write>(
         );
     }
     // Older iTerm2 releases clear the keyboard stack on SET, so a later pop
-    // cannot restore the host state. Replace only Herdr's top entry instead.
+    // cannot restore the host state. Replace only GoWild's top entry instead.
     crossterm::execute!(
         writer,
         PopKeyboardEnhancementFlags,
@@ -53,7 +53,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn host_keyboard_report_all_replaces_the_current_herdr_stack_entry() {
+    fn host_keyboard_report_all_replaces_the_current_gowild_stack_entry() {
         let mut output = Vec::new();
 
         set_host_kitty_keyboard_report_all(&mut output, true).unwrap();

@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 use super::{agent_label, parse_agent_label, Agent};
 
 pub(crate) const MANIFEST_ENGINE_VERSION: u32 = 3;
-const DEFAULT_CATALOG_URL: &str = "https://herdr.dev/agent-detection/index.toml";
-const CATALOG_URL_ENV: &str = "HERDR_AGENT_DETECTION_MANIFEST_CATALOG_URL";
+const DEFAULT_CATALOG_URL: &str =
+    "https://raw.githubusercontent.com/ianu82/gowild/main/website/agent-detection/index.toml";
+const CATALOG_URL_ENV: &str = "GOWILD_AGENT_DETECTION_MANIFEST_CATALOG_URL";
 const MAX_FETCH_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone)]
@@ -200,6 +201,12 @@ pub(crate) struct ManifestUpdateOutput {
 }
 
 pub(crate) fn check_and_update() -> Result<ManifestUpdateOutput, String> {
+    if !crate::update::UPDATE_INFRASTRUCTURE_ENABLED {
+        return Err(
+            "remote manifest updates are disabled until GoWild owns a signed update channel"
+                .to_string(),
+        );
+    }
     check_and_update_from_url(&catalog_url())
 }
 
@@ -570,7 +577,7 @@ contains = ["{contains}"]
         let old_config = std::env::var_os("XDG_CONFIG_HOME");
         let old_state = std::env::var_os("XDG_STATE_HOME");
         let dir = std::env::temp_dir().join(format!(
-            "herdr-manifest-update-{name}-{}",
+            "gowild-manifest-update-{name}-{}",
             std::process::id()
         ));
         let config_dir = dir.join("config");
@@ -632,34 +639,8 @@ contains = ["{contains}"]
     }
 
     #[test]
-    fn auto_update_reloads_manifest_cache_after_remote_commit() {
-        with_state_dir("auto-update-reloads-cache", || {
-            let old_catalog_url = std::env::var_os(CATALOG_URL_ENV);
-            let web_dir = std::env::temp_dir()
-                .join(format!("herdr-manifest-update-web-{}", std::process::id()));
-            let _ = fs::remove_dir_all(&web_dir);
-            fs::create_dir_all(&web_dir).unwrap();
-            fs::write(
-                web_dir.join("index.toml"),
-                r#"
-schema_version = 1
-
-[[agents]]
-id = "codex"
-path = "codex.toml"
-"#,
-            )
-            .unwrap();
-            fs::write(
-                web_dir.join("codex.toml"),
-                remote_manifest("9999.01.01.1", "auto-update-ready"),
-            )
-            .unwrap();
-            std::env::set_var(
-                CATALOG_URL_ENV,
-                format!("file://{}", web_dir.join("index.toml").display()),
-            );
-
+    fn auto_update_reports_that_inherited_update_infrastructure_is_disabled() {
+        with_state_dir("auto-update-disabled", || {
             let (tx, mut rx) = tokio::sync::mpsc::channel(1);
             auto_update(tx);
 
@@ -668,25 +649,11 @@ path = "codex.toml"
             else {
                 panic!("unexpected event");
             };
-            assert_eq!(updated.len(), 1);
-            assert_eq!(updated[0].agent, Agent::Codex);
-
-            let explain = crate::detect::manifest::explain(Agent::Codex, "auto-update-ready");
-            assert_eq!(explain.state, crate::detect::AgentState::Idle);
-            assert!(matches!(
-                explain.source,
-                Some(crate::detect::manifest::ManifestSource::Remote { .. })
-            ));
-            assert_eq!(
-                explain.matched_rule.as_ref().map(|rule| rule.id.as_str()),
-                Some("idle")
-            );
-
-            match old_catalog_url {
-                Some(value) => std::env::set_var(CATALOG_URL_ENV, value),
-                None => std::env::remove_var(CATALOG_URL_ENV),
-            }
-            let _ = fs::remove_dir_all(&web_dir);
+            assert!(updated.is_empty());
+            assert!(load_status()
+                .last_result
+                .as_deref()
+                .is_some_and(|result| result.contains("disabled")));
         });
     }
 

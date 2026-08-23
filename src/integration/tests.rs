@@ -51,7 +51,7 @@ fn agent_version_requirement_only_set_for_kimi() {
 fn enforce_agent_version_warns_when_binary_missing() {
     let requirement = AgentVersionRequirement {
         label: "kimi code",
-        binary: "herdr-test-binary-that-does-not-exist",
+        binary: "gowild-test-binary-that-does-not-exist",
         args: &["--version"],
         min_version: "0.14.0",
     };
@@ -144,7 +144,7 @@ fn assert_kimi_hook(
 fn unique_base() -> PathBuf {
     clear_integration_path_env();
     std::env::temp_dir().join(format!(
-        "herdr-integration-install-test-{}-{}",
+        "gowild-integration-install-test-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -445,7 +445,7 @@ fn integration_recommendation_installs_available_or_outdated_targets() {
         label: "claude",
         command: "claude",
         available: false,
-        path: PathBuf::from("/tmp/herdr-agent-state.sh"),
+        path: PathBuf::from("/tmp/gowild-agent-state.sh"),
         state: IntegrationStatusKind::NotInstalled,
     };
     assert!(!recommendation.needs_install());
@@ -586,7 +586,7 @@ fn install_omp_removes_legacy_pi_integration_from_omp_extensions_dir() {
 }
 
 #[test]
-fn install_omp_preserves_non_herdr_file_with_pi_install_name() {
+fn install_omp_preserves_non_gowild_file_with_pi_install_name() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
@@ -755,7 +755,7 @@ fn outdated_integrations_treat_missing_version_marker_as_legacy() {
     let ext_dir = home.join(".pi/agent/extensions");
     fs::create_dir_all(&ext_dir).unwrap();
     let extension_path = ext_dir.join(PI_EXTENSION_INSTALL_NAME);
-    fs::write(&extension_path, "// installed by herdr\n").unwrap();
+    fs::write(&extension_path, "// installed by gowild\n").unwrap();
     std::env::set_var("HOME", &home);
 
     let outdated = outdated_installed_integrations();
@@ -783,7 +783,7 @@ fn outdated_integrations_detect_previous_pi_version() {
     let extension_path = ext_dir.join(PI_EXTENSION_INSTALL_NAME);
     fs::write(
         &extension_path,
-        "// HERDR_INTEGRATION_ID=pi\n// HERDR_INTEGRATION_VERSION=4\n",
+        "// GOWILD_INTEGRATION_ID=pi\n// GOWILD_INTEGRATION_VERSION=4\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -813,7 +813,7 @@ fn outdated_integrations_detect_previous_omp_version() {
     let extension_path = ext_dir.join(OMP_EXTENSION_INSTALL_NAME);
     fs::write(
         &extension_path,
-        "// HERDR_INTEGRATION_ID=omp\n// HERDR_INTEGRATION_VERSION=4\n",
+        "// GOWILD_INTEGRATION_ID=omp\n// GOWILD_INTEGRATION_VERSION=4\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -1047,7 +1047,7 @@ fn claude_v1_integration_status_is_outdated() {
     let hook_path = claude_hooks_dir.join(CLAUDE_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=claude\n# HERDR_INTEGRATION_VERSION=1\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=claude\n# GOWILD_INTEGRATION_VERSION=1\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -1077,7 +1077,7 @@ fn claude_v2_integration_status_is_outdated() {
     let hook_path = claude_hooks_dir.join(CLAUDE_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=claude\n# HERDR_INTEGRATION_VERSION=2\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=claude\n# GOWILD_INTEGRATION_VERSION=2\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -1098,7 +1098,7 @@ fn claude_v2_integration_status_is_outdated() {
 }
 
 #[test]
-fn uninstall_claude_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_claude_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
@@ -1210,7 +1210,7 @@ fn codex_v2_integration_status_is_outdated() {
     let hook_path = codex_dir.join(CODEX_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=codex\n# HERDR_INTEGRATION_VERSION=2\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=codex\n# GOWILD_INTEGRATION_VERSION=2\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -1346,7 +1346,7 @@ fn install_codex_only_migrates_top_level_feature_flags() {
 }
 
 #[test]
-fn uninstall_codex_removes_herdr_hooks_and_leaves_config_alone() {
+fn uninstall_codex_removes_gowild_hooks_and_leaves_config_alone() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
@@ -1625,7 +1625,7 @@ fn install_copilot_writes_hook_and_updates_settings() {
         if let Some(entries) = settings["hooks"].get(event) {
             assert!(
                 !entries.to_string().contains(COPILOT_HOOK_INSTALL_NAME),
-                "expected herdr hooks.{event} entries to be removed"
+                "expected gowild hooks.{event} entries to be removed"
             );
         }
     }
@@ -1645,7 +1645,7 @@ fn copilot_v1_integration_status_is_outdated() {
     let hook_path = copilot_hooks_dir.join(COPILOT_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=copilot\n# HERDR_INTEGRATION_VERSION=1\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=copilot\n# GOWILD_INTEGRATION_VERSION=1\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -1701,7 +1701,7 @@ fn install_copilot_uses_copilot_home_env_and_is_idempotent() {
 }
 
 #[test]
-fn uninstall_copilot_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_copilot_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
@@ -1923,7 +1923,7 @@ fn install_devin_removes_legacy_lifecycle_hook_entries() {
 }
 
 #[test]
-fn uninstall_devin_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_devin_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let xdg_config = base.join("xdg");
@@ -2104,7 +2104,7 @@ fn droid_v1_integration_status_is_outdated() {
     let hook_path = droid_hooks_dir.join(DROID_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=droid\n# HERDR_INTEGRATION_VERSION=1\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=droid\n# GOWILD_INTEGRATION_VERSION=1\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2125,7 +2125,7 @@ fn droid_v1_integration_status_is_outdated() {
 }
 
 #[test]
-fn uninstall_droid_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_droid_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let home = base.join("home");
@@ -2448,7 +2448,7 @@ fn install_hermes_writes_plugin_and_enables_it() {
     );
     assert_eq!(manifest, HERMES_PLUGIN_MANIFEST_ASSET);
     assert_eq!(init, HERMES_PLUGIN_INIT_ASSET);
-    assert!(config.contains("plugins:\n  enabled:\n    - herdr-agent-state"));
+    assert!(config.contains("plugins:\n  enabled:\n    - gowild-agent-state"));
 
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
@@ -2463,7 +2463,7 @@ fn install_hermes_is_idempotent_for_enabled_entry() {
     fs::create_dir_all(&hermes_dir).unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins:\n  enabled:\n    - herdr-agent-state\n",
+        "plugins:\n  enabled:\n    - gowild-agent-state\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2472,7 +2472,7 @@ fn install_hermes_is_idempotent_for_enabled_entry() {
     install_hermes().unwrap();
 
     let config = fs::read_to_string(hermes_dir.join("config.yaml")).unwrap();
-    assert_eq!(config.matches("herdr-agent-state").count(), 1);
+    assert_eq!(config.matches("gowild-agent-state").count(), 1);
 
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
@@ -2497,7 +2497,7 @@ fn install_hermes_preserves_flat_plugin_list() {
     let config = fs::read_to_string(hermes_dir.join("config.yaml")).unwrap();
     assert_eq!(
         config,
-        "plugins:\n  - herdr-agent-state\n  - platforms/discord\n"
+        "plugins:\n  - gowild-agent-state\n  - platforms/discord\n"
     );
 
     std::env::remove_var("HOME");
@@ -2523,7 +2523,7 @@ fn install_hermes_converts_flow_plugin_list_to_block_list() {
     let config = fs::read_to_string(hermes_dir.join("config.yaml")).unwrap();
     assert_eq!(
         config,
-        "plugins:\n  - herdr-agent-state\n  - platforms/discord\n"
+        "plugins:\n  - gowild-agent-state\n  - platforms/discord\n"
     );
 
     std::env::remove_var("HOME");
@@ -2539,7 +2539,7 @@ fn install_hermes_is_idempotent_for_quoted_flat_plugin_entry() {
     fs::create_dir_all(&hermes_dir).unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins:\n  - \"herdr-agent-state\" # installed by herdr\n",
+        "plugins:\n  - \"gowild-agent-state\" # installed by gowild\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2549,7 +2549,7 @@ fn install_hermes_is_idempotent_for_quoted_flat_plugin_entry() {
     let config = fs::read_to_string(hermes_dir.join("config.yaml")).unwrap();
     assert_eq!(
         config,
-        "plugins:\n  - \"herdr-agent-state\" # installed by herdr\n"
+        "plugins:\n  - \"gowild-agent-state\" # installed by gowild\n"
     );
 
     std::env::remove_var("HOME");
@@ -2571,7 +2571,7 @@ fn uninstall_hermes_removes_plugin_and_enabled_entry() {
     .unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins:\n  enabled:\n    - other-plugin\n    - herdr-agent-state\n",
+        "plugins:\n  enabled:\n    - other-plugin\n    - gowild-agent-state\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2583,7 +2583,7 @@ fn uninstall_hermes_removes_plugin_and_enabled_entry() {
     assert!(result.updated_config);
     assert!(!plugin_dir.exists());
     assert!(config.contains("    - other-plugin"));
-    assert!(!config.contains("herdr-agent-state"));
+    assert!(!config.contains("gowild-agent-state"));
 
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
@@ -2604,7 +2604,7 @@ fn uninstall_hermes_preserves_flat_plugin_list() {
     .unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins:\n  - other-plugin\n  - herdr-agent-state\n",
+        "plugins:\n  - other-plugin\n  - gowild-agent-state\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2635,7 +2635,7 @@ fn uninstall_hermes_removes_flow_plugin_list_entry() {
     .unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins: [other-plugin, herdr-agent-state]\n",
+        "plugins: [other-plugin, gowild-agent-state]\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2666,7 +2666,7 @@ fn uninstall_hermes_removes_commented_flat_plugin_entry() {
     .unwrap();
     fs::write(
         hermes_dir.join("config.yaml"),
-        "plugins:\n  - other-plugin\n  - herdr-agent-state # installed by herdr\n",
+        "plugins:\n  - other-plugin\n  - gowild-agent-state # installed by gowild\n",
     )
     .unwrap();
     std::env::set_var("HOME", &home);
@@ -2783,7 +2783,7 @@ fn bundled_integration_assets_report_session_refs() {
     assert!(!CLAUDE_HOOK_ASSET.contains("\"state\": action"));
     assert!(!CLAUDE_HOOK_ASSET.contains("pane.release_agent"));
     assert!(
-        CODEX_HOOK_ASSET.contains("HERDR_HOOK_INPUT_FILE")
+        CODEX_HOOK_ASSET.contains("GOWILD_HOOK_INPUT_FILE")
             || CODEX_HOOK_ASSET.contains("In.ReadToEnd")
     );
     assert!(
@@ -2801,7 +2801,7 @@ fn bundled_integration_assets_report_session_refs() {
     );
     assert!(!CODEX_HOOK_ASSET.contains("\"state\": action"));
     assert!(!CODEX_HOOK_ASSET.contains("pane.release_agent"));
-    assert!(KIMI_HOOK_ASSET.contains("source\": \"herdr:kimi"));
+    assert!(KIMI_HOOK_ASSET.contains("source\": \"gowild:kimi"));
     assert!(KIMI_HOOK_ASSET.contains("agent_session_id"));
     assert!(KIMI_HOOK_ASSET.contains("method = \"pane.report_agent_session\""));
     assert!(KIMI_HOOK_ASSET.contains("params[\"session_start_source\"] = \"startup\""));
@@ -2812,7 +2812,7 @@ fn bundled_integration_assets_report_session_refs() {
     assert!(COPILOT_HOOK_ASSET.contains("pane.report_agent_session"));
     assert!(!COPILOT_HOOK_ASSET.contains("\"state\":"));
     assert!(!COPILOT_HOOK_ASSET.contains("pane.release_agent"));
-    assert!(DEVIN_HOOK_ASSET.contains("HERDR_DEVIN_LIST_JSON"));
+    assert!(DEVIN_HOOK_ASSET.contains("GOWILD_DEVIN_LIST_JSON"));
     assert!(DEVIN_HOOK_ASSET.contains("\"method\": \"pane.report_agent_session\""));
     assert!(!DEVIN_HOOK_ASSET.contains("\"method\": \"pane.report_agent\""));
     assert!(!DEVIN_HOOK_ASSET.contains("\"state\":"));
@@ -2827,19 +2827,19 @@ fn bundled_integration_assets_report_session_refs() {
     assert!(OPENCODE_PLUGIN_ASSET.contains("pane.report_agent_session"));
     assert!(OPENCODE_PLUGIN_ASSET.contains("reportState"));
     assert!(!OPENCODE_PLUGIN_ASSET.contains("pane.release_agent"));
-    assert!(KILO_PLUGIN_ASSET.contains("SOURCE = \"herdr:kilo\""));
+    assert!(KILO_PLUGIN_ASSET.contains("SOURCE = \"gowild:kilo\""));
     assert!(KILO_PLUGIN_ASSET.contains("AGENT = \"kilo\""));
     assert!(KILO_PLUGIN_ASSET.contains("pane.report_agent_session"));
     assert!(KILO_PLUGIN_ASSET.contains("session_start_source: \"startup\""));
     assert!(KILO_PLUGIN_ASSET.contains("reportState"));
     assert!(!KILO_PLUGIN_ASSET.contains("pane.release_agent"));
-    assert!(QODERCLI_HOOK_ASSET.contains("HERDR_PANE_ID"));
+    assert!(QODERCLI_HOOK_ASSET.contains("GOWILD_PANE_ID"));
     assert!(QODERCLI_HOOK_ASSET.contains("session_id"));
     assert!(QODERCLI_HOOK_ASSET.contains("report-agent-session"));
     assert!(QODERCLI_HOOK_ASSET.contains("--agent-session-id"));
     assert!(!QODERCLI_HOOK_ASSET.contains("report-agent\""));
     assert!(!QODERCLI_HOOK_ASSET.contains("release-agent"));
-    assert!(CURSOR_HOOK_ASSET.contains("HERDR_INTEGRATION_ID=cursor"));
+    assert!(CURSOR_HOOK_ASSET.contains("GOWILD_INTEGRATION_ID=cursor"));
     assert!(CURSOR_HOOK_ASSET.contains("conversation_id"));
     assert!(CURSOR_HOOK_ASSET.contains("conversationId"));
     assert!(CURSOR_HOOK_ASSET.contains("sessionId"));
@@ -2849,20 +2849,20 @@ fn bundled_integration_assets_report_session_refs() {
     assert!(CURSOR_HOOK_ASSET.contains("sessionStart"));
     assert!(!CURSOR_HOOK_ASSET.contains("\"state\":"));
     assert!(!CURSOR_HOOK_ASSET.contains("pane.release_agent"));
-    assert!(MASTRACODE_HOOK_ASSET.contains("HERDR_INTEGRATION_ID=mastracode"));
-    assert!(MASTRACODE_HOOK_ASSET.contains("HERDR_INTEGRATION_VERSION=2"));
+    assert!(MASTRACODE_HOOK_ASSET.contains("GOWILD_INTEGRATION_ID=mastracode"));
+    assert!(MASTRACODE_HOOK_ASSET.contains("GOWILD_INTEGRATION_VERSION=2"));
     assert!(MASTRACODE_HOOK_ASSET.contains("session_id"));
     assert!(!MASTRACODE_HOOK_ASSET.contains("run_id"));
     assert!(MASTRACODE_HOOK_ASSET.contains("agent_session_id"));
     assert!(MASTRACODE_HOOK_ASSET.contains("pane.report_agent_session"));
     assert!(MASTRACODE_HOOK_ASSET.contains("session_start_source"));
     assert!(MASTRACODE_HOOK_ASSET.contains("pane.report_agent"));
-    assert!(GROK_HOOK_ASSET.contains("HERDR_INTEGRATION_ID=grok"));
+    assert!(GROK_HOOK_ASSET.contains("GOWILD_INTEGRATION_ID=grok"));
     assert!(GROK_HOOK_ASSET.contains("GROK_SESSION_ID"));
     assert!(GROK_HOOK_ASSET.contains("sessionId"));
     assert!(GROK_HOOK_ASSET.contains("agent_session_id"));
     assert!(GROK_HOOK_ASSET.contains("pane.report_agent_session"));
-    assert!(GROK_HOOK_ASSET.contains("herdr:grok"));
+    assert!(GROK_HOOK_ASSET.contains("gowild:grok"));
     assert!(!GROK_HOOK_ASSET.contains("\"state\":"));
     assert!(!GROK_HOOK_ASSET.contains("pane.release_agent"));
 }
@@ -3129,7 +3129,7 @@ fn install_qodercli_is_idempotent_for_hook_entries() {
 }
 
 #[test]
-fn uninstall_qodercli_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_qodercli_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let qoder_dir = base.join(".qoder");
@@ -3221,9 +3221,9 @@ fn install_qwen_writes_session_hook_and_preserves_settings() {
     assert!(command.ends_with("session"));
     assert!(settings.get("permissions").is_some());
     let hook_asset = fs::read_to_string(&installed.hook_path).unwrap();
-    assert!(hook_asset.contains("HERDR_INTEGRATION_ID=qwen"));
-    assert!(hook_asset.contains("HERDR_INTEGRATION_VERSION=1"));
-    assert!(hook_asset.contains("herdr:qwen"));
+    assert!(hook_asset.contains("GOWILD_INTEGRATION_ID=qwen"));
+    assert!(hook_asset.contains("GOWILD_INTEGRATION_VERSION=1"));
+    assert!(hook_asset.contains("gowild:qwen"));
 
     install_qwen().unwrap();
     let settings: Value =
@@ -3238,7 +3238,7 @@ fn install_qwen_writes_session_hook_and_preserves_settings() {
 }
 
 #[test]
-fn uninstall_qwen_removes_only_herdr_hook() {
+fn uninstall_qwen_removes_only_gowild_hook() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let qwen_dir = base.join(".qwen");
@@ -3359,7 +3359,7 @@ fn install_cursor_is_idempotent_for_hook_entries() {
 }
 
 #[test]
-fn uninstall_cursor_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_cursor_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let cursor_dir = base.join(".cursor");
@@ -3420,7 +3420,7 @@ fn cursor_v1_integration_status_is_current() {
     let hook_path = cursor_dir.join(CURSOR_HOOK_INSTALL_NAME);
     fs::write(
         &hook_path,
-        "#!/bin/sh\n# HERDR_INTEGRATION_ID=cursor\n# HERDR_INTEGRATION_VERSION=1\n",
+        "#!/bin/sh\n# GOWILD_INTEGRATION_ID=cursor\n# GOWILD_INTEGRATION_VERSION=1\n",
     )
     .unwrap();
     std::env::set_var(CURSOR_CONFIG_DIR_ENV_VAR, &cursor_dir);
@@ -3488,7 +3488,7 @@ fn install_mastracode_writes_hook_and_updates_hooks_json() {
     let hooks = hooks_file.as_object().unwrap();
     for (event, action) in MASTRACODE_HOOK_EVENTS {
         let entries = hooks.get(event).and_then(Value::as_array).unwrap();
-        assert_eq!(entries.len(), 1, "{event} should have one Herdr hook");
+        assert_eq!(entries.len(), 1, "{event} should have one GoWild hook");
         let command = entries[0].get("command").and_then(Value::as_str).unwrap();
         assert_eq!(
             command,
@@ -3557,7 +3557,7 @@ fn install_grok_writes_hook_and_config() {
     #[cfg(not(windows))]
     {
         assert!(command.starts_with("sh "));
-        assert!(command.contains("herdr-agent-state.sh"));
+        assert!(command.contains("gowild-agent-state.sh"));
         assert!(command.ends_with(" session"));
     }
 
@@ -3664,7 +3664,7 @@ fn install_grok_is_idempotent() {
 }
 
 #[test]
-fn uninstall_mastracode_removes_herdr_hooks_and_preserves_others() {
+fn uninstall_mastracode_removes_gowild_hooks_and_preserves_others() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let original_home = std::env::var_os("HOME");
@@ -3864,7 +3864,7 @@ fn install_antigravity_cli_writes_hook_and_updates_hooks_json() {
         serde_json::from_str(&fs::read_to_string(agy_dir.join("hooks.json")).unwrap()).unwrap();
     let hooks = hooks_file.as_object().unwrap();
 
-    // Herdr entries live under a named hook block; Antigravity CLI rejects a
+    // GoWild entries live under a named hook block; Antigravity CLI rejects a
     // file whose top level maps event names straight to arrays.
     let block = hooks
         .get(ANTIGRAVITY_CLI_HOOK_BLOCK_NAME)
@@ -3873,7 +3873,7 @@ fn install_antigravity_cli_writes_hook_and_updates_hooks_json() {
 
     for (event, action) in ANTIGRAVITY_CLI_HOOK_EVENTS {
         let entries = block.get(event).and_then(Value::as_array).unwrap();
-        assert_eq!(entries.len(), 1, "{event} should hold one Herdr entry");
+        assert_eq!(entries.len(), 1, "{event} should hold one GoWild entry");
         let handler = &entries[0];
 
         // Handlers must be a flat list; the matcher/hooks wrapper is only
@@ -3889,13 +3889,13 @@ fn install_antigravity_cli_writes_hook_and_updates_hooks_json() {
             Some(ANTIGRAVITY_CLI_HOOK_TIMEOUT_SEC)
         );
         let command = handler.get("command").and_then(Value::as_str).unwrap();
-        assert!(command.contains("herdr-agent-state"));
+        assert!(command.contains("gowild-agent-state"));
         assert!(command.ends_with(action));
     }
 
     // The integration is session-only. Antigravity CLI cannot express blocked
     // state, skips PostInvocation on interruption, and fires Stop at end of
-    // turn rather than process exit, so Herdr never claims lifecycle authority
+    // turn rather than process exit, so GoWild never claims lifecycle authority
     // here and screen detection owns agent state.
     for event in ["PreToolUse", "PostToolUse", "PostInvocation", "Stop"] {
         assert!(
@@ -3921,16 +3921,16 @@ fn install_antigravity_cli_writes_hook_and_updates_hooks_json() {
 }
 
 #[test]
-fn install_antigravity_cli_rewrites_stale_herdr_block() {
+fn install_antigravity_cli_rewrites_stale_gowild_block() {
     let _lock = integration_env_lock();
     let base = unique_base();
     let agy_dir = base.join(".gemini").join("config");
     fs::create_dir_all(&agy_dir).unwrap();
-    // An older Herdr install claimed lifecycle authority, wrapped events in
+    // An older GoWild install claimed lifecycle authority, wrapped events in
     // matcher/hooks, and left entries Antigravity CLI now rejects.
     fs::write(
         agy_dir.join("hooks.json"),
-        r#"{"herdr":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"stale"}]}],"PostInvocation":[{"type":"command","command":"stale idle"}],"Legacy":[]}}"#,
+        r#"{"gowild":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"stale"}]}],"PostInvocation":[{"type":"command","command":"stale idle"}],"Legacy":[]}}"#,
     )
     .unwrap();
     std::env::set_var(ANTIGRAVITY_CLI_CONFIG_DIR_ENV_VAR, &agy_dir);
@@ -3944,7 +3944,7 @@ fn install_antigravity_cli_rewrites_stale_herdr_block() {
         .and_then(Value::as_object)
         .unwrap();
 
-    // The block is Herdr-owned and rewritten wholesale, so a stale lifecycle
+    // The block is GoWild-owned and rewritten wholesale, so a stale lifecycle
     // install is migrated to session-only rather than merged with.
     assert_eq!(
         block.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -3960,7 +3960,7 @@ fn install_antigravity_cli_rewrites_stale_herdr_block() {
     assert!(entries[0]
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| command.contains("herdr-agent-state")));
+        .is_some_and(|command| command.contains("gowild-agent-state")));
 
     std::env::remove_var(ANTIGRAVITY_CLI_CONFIG_DIR_ENV_VAR);
     let _ = fs::remove_dir_all(base);
@@ -3988,7 +3988,7 @@ fn grok_v1_integration_status_is_current() {
     let grok_dir = base.join(".grok");
     fs::create_dir_all(&grok_dir).unwrap();
     std::env::set_var(GROK_CONFIG_DIR_ENV_VAR, &grok_dir);
-    // A real install writes both the hook script and hooks/herdr.json.
+    // A real install writes both the hook script and hooks/gowild.json.
     install_grok().unwrap();
 
     let statuses = installed_integration_statuses();
@@ -4042,7 +4042,7 @@ fn grok_status_reports_outdated_when_hook_config_missing_or_broken() {
     // nonfunctional, so neither may report current.
     fs::write(
         &config_path,
-        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo herdr-agent-state.sh"}]}]}}"#,
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo gowild-agent-state.sh"}]}]}}"#,
     )
     .unwrap();
     assert_eq!(grok_state(), IntegrationStatusKind::Outdated);
@@ -4119,7 +4119,7 @@ fn uninstall_antigravity_cli_removes_hooks_json_entries_and_hook_file() {
         serde_json::from_str(&fs::read_to_string(agy_dir.join("hooks.json")).unwrap()).unwrap();
     let hooks = hooks_file.as_object().unwrap();
 
-    // The Herdr block is gone and unrelated named hooks survive.
+    // The GoWild block is gone and unrelated named hooks survive.
     assert!(hooks.get(ANTIGRAVITY_CLI_HOOK_BLOCK_NAME).is_none());
     assert!(hooks.contains_key("lint-checker"));
 
@@ -4144,7 +4144,7 @@ fn grok_dir_honors_grok_home_after_config_dir_seam() {
         home_dir.join("hooks").join(GROK_HOOK_INSTALL_NAME)
     );
 
-    // The herdr-level test seam still wins over GROK_HOME when set.
+    // The gowild-level test seam still wins over GROK_HOME when set.
     let seam_dir = base.join("seam");
     fs::create_dir_all(&seam_dir).unwrap();
     std::env::set_var(GROK_CONFIG_DIR_ENV_VAR, &seam_dir);

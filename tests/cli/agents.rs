@@ -19,9 +19,9 @@ fn write_delayed_shell_and_fake_pi(
     fs::write(
         &fake_pi,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nexport HERDR_AGENT=pi\n'{}' pane report-agent \"$HERDR_PANE_ID\" --source custom:delayed-shell-pi --agent pi --state idle >/dev/null\nwhile IFS= read -r _prompt; do :; done\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nexport GOWILD_AGENT=pi\n'{}' pane report-agent \"$GOWILD_PANE_ID\" --source custom:delayed-shell-pi --agent pi --state idle >/dev/null\nwhile IFS= read -r _prompt; do :; done\n",
             invocations.display(),
-            env!("CARGO_BIN_EXE_herdr"),
+            env!("CARGO_BIN_EXE_gowild"),
         ),
     )
     .unwrap();
@@ -35,13 +35,13 @@ fn agent_start_waits_for_a_new_pane_shell_to_finish_initializing() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let (bin, delayed_shell, invocations) = write_delayed_shell_and_fake_pi(&base, "0.4");
     let config = format!(
         "onboarding = false\n[terminal]\ndefault_shell = {:?}\nshell_mode = \"non_login\"\n",
         delayed_shell.to_str().unwrap()
     );
-    let herdr = spawn_herdr_with_config(
+    let gowild = spawn_gowild_with_config(
         &config_home,
         &runtime_dir,
         &socket_path,
@@ -108,7 +108,7 @@ fn agent_start_waits_for_a_new_pane_shell_to_finish_initializing() {
         true
     );
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -116,13 +116,13 @@ fn agent_start_stops_retrying_when_the_pane_shell_stays_busy() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let (bin, delayed_shell, invocations) = write_delayed_shell_and_fake_pi(&base, "2.3");
     let config = format!(
         "onboarding = false\n[terminal]\ndefault_shell = {:?}\nshell_mode = \"non_login\"\n",
         delayed_shell.to_str().unwrap()
     );
-    let herdr = spawn_herdr_with_config(
+    let gowild = spawn_gowild_with_config(
         &config_home,
         &runtime_dir,
         &socket_path,
@@ -175,7 +175,7 @@ fn agent_start_stops_retrying_when_the_pane_shell_stays_busy() {
     assert_eq!(retried["result"]["type"], "agent_started");
     assert_eq!(fs::read_to_string(&invocations).unwrap(), "\n");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn agent_start_command_works() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let bin = base.join("bin");
     let captured_args = base.join("pi-args");
     let captured_prompts = base.join("pi-prompts");
@@ -194,18 +194,18 @@ fn agent_start_command_works() {
     fs::write(
         &fake_pi,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexport HERDR_AGENT=pi\n'{}' pane report-agent \"$HERDR_PANE_ID\" --source custom:fake-pi --agent pi --state idle >/dev/null\nwhile IFS= read -r prompt; do\n  case \"$prompt\" in \"do not transition\"|\"stall\") continue ;; esac\n  '{}' pane report-agent \"$HERDR_PANE_ID\" --source custom:fake-pi --agent pi --state working >/dev/null\n  '{}' pane report-agent \"$HERDR_PANE_ID\" --source custom:fake-pi --agent pi --state idle >/dev/null\n  printf '%s\\n' \"$prompt\" >> '{}'\ndone\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexport GOWILD_AGENT=pi\n'{}' pane report-agent \"$GOWILD_PANE_ID\" --source custom:fake-pi --agent pi --state idle >/dev/null\nwhile IFS= read -r prompt; do\n  case \"$prompt\" in \"do not transition\"|\"stall\") continue ;; esac\n  '{}' pane report-agent \"$GOWILD_PANE_ID\" --source custom:fake-pi --agent pi --state working >/dev/null\n  '{}' pane report-agent \"$GOWILD_PANE_ID\" --source custom:fake-pi --agent pi --state idle >/dev/null\n  printf '%s\\n' \"$prompt\" >> '{}'\ndone\n",
             captured_args.display(),
-            env!("CARGO_BIN_EXE_herdr"),
-            env!("CARGO_BIN_EXE_herdr"),
-            env!("CARGO_BIN_EXE_herdr"),
+            env!("CARGO_BIN_EXE_gowild"),
+            env!("CARGO_BIN_EXE_gowild"),
+            env!("CARGO_BIN_EXE_gowild"),
             captured_prompts.display(),
         ),
     )
     .unwrap();
     fs::set_permissions(&fake_pi, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let herdr = spawn_herdr_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
+    let gowild = spawn_gowild_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -454,7 +454,7 @@ fn agent_start_command_works() {
     let busy_json: serde_json::Value = serde_json::from_slice(&busy.stderr).unwrap();
     assert_eq!(busy_json["error"]["code"], "agent_pane_busy");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -462,8 +462,8 @@ fn agent_start_rejects_a_shell_replaced_by_a_foreground_program() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -503,7 +503,7 @@ fn agent_start_rejects_a_shell_replaced_by_a_foreground_program() {
         topology
     );
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -513,18 +513,18 @@ fn agent_start_timeout_releases_the_name_for_reuse() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let bin = base.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let fake_pi = bin.join("pi");
     fs::write(
         &fake_pi,
-        "#!/bin/sh\nunset HERDR_AGENT\nexec /bin/sleep 20\n",
+        "#!/bin/sh\nunset GOWILD_AGENT\nexec /bin/sleep 20\n",
     )
     .unwrap();
     fs::set_permissions(&fake_pi, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let herdr = spawn_herdr_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
+    let gowild = spawn_gowild_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -585,7 +585,7 @@ fn agent_start_timeout_releases_the_name_for_reuse() {
         String::from_utf8_lossy(&reused.stderr)
     );
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -595,18 +595,18 @@ fn agent_start_reports_detected_kind_mismatch_before_released_name() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let bin = base.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let fake_pi = bin.join("pi");
     fs::write(
         &fake_pi,
-        "#!/bin/sh\nHERDR_AGENT=codex exec /bin/sleep 10\n",
+        "#!/bin/sh\nGOWILD_AGENT=codex exec /bin/sleep 10\n",
     )
     .unwrap();
     fs::set_permissions(&fake_pi, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let herdr = spawn_herdr_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
+    let gowild = spawn_gowild_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -662,7 +662,7 @@ fn agent_start_reports_detected_kind_mismatch_before_released_name() {
     let reused = run_cli(&socket_path, &["agent", "rename", &reuse_pane_id, "worker"]);
     assert!(reused.status.success());
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -672,14 +672,14 @@ fn agent_start_follows_its_named_terminal_when_the_pane_moves() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
     let bin = base.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let fake_pi = bin.join("pi");
-    fs::write(&fake_pi, "#!/bin/sh\nHERDR_AGENT=pi exec /bin/sleep 10\n").unwrap();
+    fs::write(&fake_pi, "#!/bin/sh\nGOWILD_AGENT=pi exec /bin/sleep 10\n").unwrap();
     fs::set_permissions(&fake_pi, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let herdr = spawn_herdr_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
+    let gowild = spawn_gowild_with_path(&config_home, &runtime_dir, &socket_path, Some(&bin));
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -742,7 +742,7 @@ fn agent_start_follows_its_named_terminal_when_the_pane_moves() {
     let started: serde_json::Value = serde_json::from_slice(&started.stdout).unwrap();
     assert_ne!(started["result"]["agent"]["pane_id"], first);
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -750,8 +750,8 @@ fn agent_start_and_rename_reject_invalid_names() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -802,7 +802,7 @@ fn agent_start_and_rename_reject_invalid_names() {
     assert_eq!(error["error"]["code"], "invalid_agent_name");
     assert_eq!(error["error"]["message"], expected_message);
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -810,9 +810,9 @@ fn agent_commands_work() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
+    let socket_path = runtime_dir.join("gowild.sock");
 
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
 
     let created = run_cli(
@@ -1047,7 +1047,7 @@ fn agent_commands_work() {
     let focused = run_cli_json(&socket_path, &["agent", "focus", "reviewer"]);
     assert_eq!(focused["result"]["agent"]["focused"], true);
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -1055,8 +1055,8 @@ fn agent_wait_returns_immediately_for_unseen_done_agent() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
 
     let created = run_cli_json(
@@ -1120,7 +1120,7 @@ fn agent_wait_returns_immediately_for_unseen_done_agent() {
     let waited = run_cli_json(&socket_path, &["agent", "wait", "worker", "--timeout", "1"]);
     assert_eq!(waited["result"]["agent"]["agent_status"], "done");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -1128,8 +1128,8 @@ fn agent_wait_tolerates_detection_uncertainty_and_pane_target_rename() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
     let created = run_cli_json(
         &socket_path,
@@ -1259,7 +1259,7 @@ fn agent_wait_tolerates_detection_uncertainty_and_pane_target_rename() {
     assert_eq!(waited["result"]["agent"]["agent_status"], "idle");
     assert_eq!(waited["result"]["agent"]["name"], "reviewer");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -1267,8 +1267,8 @@ fn agent_wait_pins_the_original_terminal_when_name_is_reused() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
 
     let created = run_cli_json(
@@ -1349,7 +1349,7 @@ fn agent_wait_pins_the_original_terminal_when_name_is_reused() {
     let error: serde_json::Value = serde_json::from_slice(&waited.stderr).unwrap();
     assert_eq!(error["error"]["code"], "agent_not_running");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }
 
 #[test]
@@ -1357,8 +1357,8 @@ fn agent_wait_ignores_other_panes_and_errors_when_its_pane_closes() {
     let base = unique_test_dir();
     let config_home = base.join("config");
     let runtime_dir = base.join("runtime");
-    let socket_path = runtime_dir.join("herdr.sock");
-    let herdr = spawn_herdr(&config_home, &runtime_dir, &socket_path);
+    let socket_path = runtime_dir.join("gowild.sock");
+    let gowild = spawn_gowild(&config_home, &runtime_dir, &socket_path);
     wait_for_socket(&socket_path, Duration::from_secs(5));
 
     let created = run_cli_json(
@@ -1438,5 +1438,5 @@ fn agent_wait_ignores_other_panes_and_errors_when_its_pane_closes() {
     let error: serde_json::Value = serde_json::from_slice(&waited.stderr).unwrap();
     assert_eq!(error["error"]["code"], "agent_not_running");
 
-    cleanup_spawned_herdr(herdr, base);
+    cleanup_spawned_gowild(gowild, base);
 }

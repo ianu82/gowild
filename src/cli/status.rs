@@ -35,10 +35,10 @@ fn parse_status_args(args: &[String]) -> Option<(StatusScope, bool)> {
         None => Some((StatusScope::Full, false)),
         Some("--json") if args.len() == 1 => Some((StatusScope::Full, true)),
         Some("server") => {
-            parse_status_scope_args(args, StatusScope::Server, "herdr status server [--json]")
+            parse_status_scope_args(args, StatusScope::Server, "gowild status server [--json]")
         }
         Some("client") => {
-            parse_status_scope_args(args, StatusScope::Client, "herdr status client [--json]")
+            parse_status_scope_args(args, StatusScope::Client, "gowild status client [--json]")
         }
         Some("help" | "--help" | "-h") => {
             if args.len() > 1 {
@@ -317,8 +317,8 @@ fn current_exe_label() -> String {
 }
 
 fn print_status_help() {
-    eprintln!("herdr status commands:");
-    eprintln!("  herdr status [--json]         show local client and running server status");
-    eprintln!("  herdr status server [--json]  show running server status");
-    eprintln!("  herdr status client [--json]  show local client binary status");
+    eprintln!("gowild status commands:");
+    eprintln!("  gowild status [--json]         show local client and running server status");
+    eprintln!("  gowild status server [--json]  show running server status");
+    eprintln!("  gowild status client [--json]  show local client binary status");
 }
