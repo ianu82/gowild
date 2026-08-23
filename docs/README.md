@@ -29,5 +29,5 @@ own reviewed site, artifacts, signing, manifests, and installation path. No
 automation may sync these records from or publish them to the source-provenance
 project.
 
-See [`PROVENANCE.md`](../PROVENANCE.md) for the exact imported commit and legal
-attribution.
+See [`ACKNOWLEDGEMENTS`](../ACKNOWLEDGEMENTS/README.md) for the exact imported
+commit and legal attribution.

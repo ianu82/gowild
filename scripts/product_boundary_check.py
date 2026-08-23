@@ -37,6 +37,8 @@ ACTIVE_CODE_FILES = (
     Path("scripts/source_install_check.py"),
 )
 
+ROOT_READMES = (Path("README.md"), Path("README.zh-CN.md"))
+
 FROZEN_WEBSITE_COMMANDS = ("dev", "test", "build", "build:draft", "preview")
 DISABLED_WEBSITE_SCRIPT = "node scripts/product-boundary-disabled.mjs"
 
@@ -62,6 +64,15 @@ def scan_text(path: Path, text: str) -> list[str]:
     ]
 
 
+def scan_root_readme_attribution(path: Path, text: str) -> list[str]:
+    source_name = "her" + "dr"
+    if path not in ROOT_READMES or source_name not in text.lower():
+        return []
+    return [
+        f"{path}: source-project attribution belongs under ACKNOWLEDGEMENTS, not in a product README"
+    ]
+
+
 def text_files_under(root: Path) -> list[Path]:
     if not root.exists():
         return []
@@ -82,9 +93,10 @@ def check_active_surfaces(repo_root: Path = REPO_ROOT) -> list[str]:
         if not path.is_file():
             errors.append(f"{path.relative_to(repo_root)}: required active surface is missing")
             continue
-        errors.extend(
-            scan_text(path.relative_to(repo_root), path.read_text(encoding="utf-8"))
-        )
+        relative_path = path.relative_to(repo_root)
+        text = path.read_text(encoding="utf-8")
+        errors.extend(scan_text(relative_path, text))
+        errors.extend(scan_root_readme_attribution(relative_path, text))
     return errors
 
 

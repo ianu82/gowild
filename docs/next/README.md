@@ -43,7 +43,8 @@ artifacts, signing, manifests, and clean installation have been reviewed.
 The nested `website/` tree and the sibling `docs/preview` and `docs/versions`
 trees are frozen source-import records. They describe the imported product, not
 GoWild, and must never be built or published as GoWild documentation. See
-[`docs/README.md`](../README.md) and [`PROVENANCE.md`](../../PROVENANCE.md).
+[`docs/README.md`](../README.md) and
+[`ACKNOWLEDGEMENTS`](../../ACKNOWLEDGEMENTS/README.md).
 
 All GoWild work belongs only in
 [`ianu82/gowild`](https://github.com/ianu82/gowild). Do not send code, issues,

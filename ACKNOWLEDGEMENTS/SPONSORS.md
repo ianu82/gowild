@@ -1,13 +1,13 @@
 # Historical source sponsors
 
 This imported attribution records the people and organisations listed as Herdr
-sponsors in the source snapshot identified by `PROVENANCE.md`. It is not a
-GoWild sponsorship or contact page. Please do not contact the Herdr project
-about GoWild.
+sponsors in the source snapshot identified by [`README.md`](README.md). It is
+not a GoWild sponsorship or contact page. Please do not contact the Herdr
+project about GoWild.
 
 ## Gold
 
-<a href="https://terminaltrove.com/"><img src="assets/sponsors/terminal-trove.png" alt="Terminal Trove" width="200" /></a>
+<a href="https://terminaltrove.com/"><img src="../assets/sponsors/terminal-trove.png" alt="Terminal Trove" width="200" /></a>
 
 - [Terminal Trove](https://terminaltrove.com/)
 - [Joel (Moshi)](https://getmoshi.app/)

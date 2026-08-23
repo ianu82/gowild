@@ -1,4 +1,4 @@
-# Source provenance
+# Acknowledgements and source provenance
 
 GoWild is an independent derivative work based on an Apache License 2.0 source
 snapshot of Herdr.
@@ -15,9 +15,12 @@ snapshot of Herdr.
 
 The GoWild baseline is a standalone root commit whose file tree exactly matches
 the recorded source tree. Later GoWild commits contain the derivative product
-changes. The Apache 2.0 licence is retained in `LICENSE` along with copyright
-and attribution material present in the imported source.
+changes. The Apache 2.0 licence is retained in [`LICENSE`](../LICENSE), together
+with copyright and attribution material present in the imported source.
 
 GoWild is not affiliated with, endorsed by, or maintained by the Herdr project.
 GoWild development, issues, pull requests, releases, and support belong only to
 [`ianu82/gowild`](https://github.com/ianu82/gowild).
+
+Historical source-sponsor attribution is retained separately in
+[`SPONSORS.md`](SPONSORS.md).
