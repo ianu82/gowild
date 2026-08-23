@@ -342,11 +342,11 @@ impl App {
         }
     }
 
-    pub(crate) fn cycle_gateway_model(
+    pub(crate) fn save_gateway_model(
         &mut self,
         gateway_id: &str,
         target: GatewayModelTarget,
-        direction: i8,
+        model_id: &str,
     ) {
         let Some(gateway) = self.state.gateway_catalog.gateways.get(gateway_id) else {
             self.set_gateway_notice(GatewayNoticeKind::Error, "That gateway no longer exists.");
@@ -359,28 +359,25 @@ impl App {
             );
             return;
         }
-        let available = gateway
+        if !gateway
             .model_discovery
             .cached_models
             .iter()
-            .filter(|model| model.enabled && !model.embedding)
-            .map(|model| model.id.clone())
-            .collect::<Vec<_>>();
-        if available.is_empty() {
+            .any(|model| model.enabled && !model.embedding && model.id == model_id)
+        {
             self.set_gateway_notice(
                 GatewayNoticeKind::Warning,
-                "Test the connection to discover selectable models first.",
+                "That model is no longer selectable. Test the gateway to refresh the catalog.",
             );
             return;
         }
-        let current = gateway.default_models.get(target.config_key());
-        let selected = next_model(&available, current.map(String::as_str), direction);
         let mut candidate = self.state.gateway_catalog.clone();
-        if let Some(gateway) = candidate.gateways.get_mut(gateway_id) {
-            gateway
-                .default_models
-                .insert(target.config_key().to_string(), selected.to_string());
-        }
+        candidate
+            .gateways
+            .get_mut(gateway_id)
+            .expect("validated gateway exists in cloned catalog")
+            .default_models
+            .insert(target.config_key().to_string(), model_id.to_string());
         let cli = match target {
             GatewayModelTarget::Codex => "Codex",
             GatewayModelTarget::Claude => "Claude",
@@ -388,7 +385,7 @@ impl App {
         self.persist_gateway_catalog(
             candidate,
             GatewayNoticeKind::Success,
-            format!("{cli} default model set to {selected}."),
+            format!("{cli} default model set to {model_id}."),
         );
     }
 
@@ -597,17 +594,6 @@ fn clear_gateway_runtime_state(gateway: &mut Gateway) {
     gateway.connection_test = Default::default();
 }
 
-fn next_model<'a>(available: &'a [String], current: Option<&str>, direction: i8) -> &'a str {
-    let current_index = current.and_then(|current| available.iter().position(|id| id == current));
-    let index = match (current_index, direction.is_negative()) {
-        (Some(0), true) | (None, true) => available.len() - 1,
-        (Some(index), true) => index - 1,
-        (Some(index), false) => (index + 1) % available.len(),
-        (None, false) => 0,
-    };
-    &available[index]
-}
-
 fn next_generation(current: u64) -> u64 {
     match current.wrapping_add(1) {
         0 => 1,
@@ -622,7 +608,7 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
 
-    use super::{next_generation, next_model, App};
+    use super::{next_generation, App};
     use crate::{
         config::Config,
         gateway::{
@@ -728,12 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn model_cycle_wraps_and_recovers_from_an_unlisted_default() {
-        let models = vec!["alpha".to_string(), "beta".to_string()];
-        assert_eq!(next_model(&models, Some("alpha"), 1), "beta");
-        assert_eq!(next_model(&models, Some("beta"), 1), "alpha");
-        assert_eq!(next_model(&models, Some("missing"), 1), "alpha");
-        assert_eq!(next_model(&models, Some("missing"), -1), "beta");
+    fn gateway_test_generations_never_use_the_idle_zero_value() {
         assert_eq!(next_generation(u64::MAX), 1);
     }
 
@@ -757,8 +738,16 @@ mod tests {
         }];
 
         app.save_default_gateway("mindshub");
-        app.cycle_gateway_model("mindshub", crate::app::state::GatewayModelTarget::Codex, 1);
-        app.cycle_gateway_model("mindshub", crate::app::state::GatewayModelTarget::Claude, 1);
+        app.save_gateway_model(
+            "mindshub",
+            crate::app::state::GatewayModelTarget::Codex,
+            "provider/model-alpha",
+        );
+        app.save_gateway_model(
+            "mindshub",
+            crate::app::state::GatewayModelTarget::Claude,
+            "provider/model-alpha",
+        );
 
         let saved = GatewayRepository::new(path.clone())
             .load()

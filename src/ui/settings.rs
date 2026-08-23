@@ -37,12 +37,29 @@ pub(crate) fn settings_popup_height(app: &AppState) -> u16 {
     (14 + list_rows + footer_rows).max(SETTINGS_POPUP_BASE_HEIGHT)
 }
 
+pub(crate) fn settings_is_compact(area: Rect) -> bool {
+    area.width < 80 || area.height < 22
+}
+
+pub(crate) fn settings_popup_rect(area: Rect, app: &AppState) -> Option<Rect> {
+    if settings_is_compact(area) {
+        return (area.width >= 4 && area.height >= 4).then_some(area);
+    }
+    if area.width >= 140 && area.height >= 35 {
+        return centered_popup_rect(
+            area,
+            (area.width * 3 / 4).clamp(104, 156),
+            (area.height * 3 / 4).clamp(settings_popup_height(app), 48),
+        );
+    }
+    centered_popup_rect(area, SETTINGS_POPUP_WIDTH, settings_popup_height(app))
+}
+
 pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: Rect) {
     use crate::app::state::SettingsSection;
 
     let p = &app.palette;
-    let Some(popup) = centered_popup_rect(area, SETTINGS_POPUP_WIDTH, settings_popup_height(app))
-    else {
+    let Some(popup) = settings_popup_rect(area, app) else {
         return;
     };
 
@@ -106,6 +123,26 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
         .padding(" ", " ");
     if app.settings.guided_setup {
         render_guided_setup_progress(app, frame, header_rows[1]);
+    } else if settings_is_compact(area) {
+        let index = SettingsSection::ALL
+            .iter()
+            .position(|section| *section == app.settings.section)
+            .unwrap_or_default();
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ‹ ", Style::default().fg(p.accent)),
+                Span::styled(
+                    format!("{:^14}", app.settings.section.label()),
+                    Style::default().fg(p.text).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" › ", Style::default().fg(p.accent)),
+                Span::styled(
+                    format!(" section {} of {}", index + 1, SettingsSection::ALL.len()),
+                    Style::default().fg(p.overlay1),
+                ),
+            ])),
+            header_rows[1],
+        );
     } else {
         frame.render_widget(tabs, header_rows[1]);
     }
@@ -248,11 +285,11 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                     if custom && credential {
                         " ↑↓ field  ↵ edit key  t test  e edit  d duplicate  x delete"
                     } else if custom {
-                        " ↑↓ field  ←→ choose model  t test  e edit  d duplicate  x delete"
+                        " ↑↓ field  ↵ choose model  t test  e edit  d duplicate  x delete"
                     } else if credential {
                         " ↑↓ field  ↵ edit key  t test  d duplicate  space default"
                     } else {
-                        " ↑↓ field  ←→ choose model  t test  d duplicate  space default"
+                        " ↑↓ field  ↵ choose model  t test  d duplicate  space default"
                     }
                 }
                 GatewaySettingsView::Form => {
@@ -695,11 +732,11 @@ fn render_guided_setup(app: &AppState, frame: &mut Frame, area: Rect) {
         ),
         GuidedSetupStep::ChooseCodexModel => (
             "Choose the Codex default",
-            "Select the model Codex CLI should use through MindsHub. Use ←/→ or Enter.",
+            "Search models by label, provider, or full ID, then confirm the exact route.",
         ),
         GuidedSetupStep::ChooseClaudeModel => (
             "Choose the Claude default",
-            "Select the model Claude Code should use through MindsHub. Use ←/→ or Enter.",
+            "Search models by label, provider, or full ID, then confirm the exact route.",
         ),
         GuidedSetupStep::Launch => (
             "Launch your first managed agent",
@@ -1157,7 +1194,7 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
         .default_models
         .get("claude")
         .map_or("test to discover models", String::as_str);
-    let model_chars = (area.width as usize).saturating_sub(21).clamp(8, 43);
+    let model_chars = (area.width as usize).saturating_sub(21).max(8);
     let fields = [
         (
             GatewayDetailField::Credential,
@@ -1824,9 +1861,42 @@ mod tests {
             assert!(rendered.contains("inference gateways"), "{width}×{height}");
             assert!(rendered.contains("MindsHub Inference"), "{width}×{height}");
             if width == 64 {
-                assert!(rendered.contains("hooks"), "{width}×{height}");
+                assert!(rendered.contains("section 1 of 7"), "{width}×{height}");
             }
         }
+    }
+
+    #[test]
+    fn settings_recompose_at_compact_standard_and_wide_sizes() {
+        let app = gateway_settings_state();
+        let compact = settings_popup_rect(Rect::new(0, 0, 64, 20), &app).unwrap();
+        let standard = settings_popup_rect(Rect::new(0, 0, 100, 30), &app).unwrap();
+        let wide_160 = settings_popup_rect(Rect::new(0, 0, 160, 45), &app).unwrap();
+        let wide = settings_popup_rect(Rect::new(0, 0, 207, 62), &app).unwrap();
+
+        assert_eq!(compact, Rect::new(0, 0, 64, 20));
+        assert_eq!(standard.width, SETTINGS_POPUP_WIDTH);
+        assert_eq!(wide_160.width, 120);
+        assert_eq!(wide_160.height, 33);
+        assert!(wide.width >= 150, "{wide:?}");
+        assert!(wide.height >= 45, "{wide:?}");
+    }
+
+    #[test]
+    fn wide_gateway_detail_uses_extra_width_for_the_complete_model_id() {
+        let mut app = gateway_settings_state();
+        let full_id = "provider/long-family/version-2026-08-22/reasoning-coding-context-extended";
+        let gateway = app.gateway_catalog.gateways.get_mut("mindshub").unwrap();
+        gateway
+            .default_models
+            .insert("codex".into(), full_id.into());
+        gateway.model_discovery.cached_models[0].id = full_id.into();
+        app.settings.gateways.view = GatewaySettingsView::Detail;
+        app.settings.gateways.detail_gateway_id = Some("mindshub".into());
+
+        let rendered = rendered_gateway_settings(&app, 207, 62);
+
+        assert!(rendered.contains(full_id));
     }
 
     #[test]

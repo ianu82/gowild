@@ -86,20 +86,14 @@ fn render_onboarding_welcome(app: &AppState, frame: &mut Frame, area: Rect) {
                 .fg(app.palette.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            " enters prefix mode · ",
-            Style::default().fg(app.palette.overlay1),
-        ),
+        Span::styled(" prefix mode · ", Style::default().fg(app.palette.overlay1)),
         Span::styled(
             "?",
             Style::default()
                 .fg(app.palette.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            " shows keybinds and settings",
-            Style::default().fg(app.palette.overlay1),
-        ),
+        Span::styled(" keybinds", Style::default().fg(app.palette.overlay1)),
     ]);
     frame.render_widget(Paragraph::new(key_line), content_rows[2]);
 
@@ -120,4 +114,37 @@ fn render_onboarding_welcome(app: &AppState, frame: &mut Frame, area: Rect) {
             .bg(app.palette.accent)
             .add_modifier(Modifier::BOLD),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rendered(width: u16, height: u16) -> String {
+        let app = AppState::test_new();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("test terminal");
+        terminal
+            .draw(|frame| render_onboarding_overlay(&app, frame, frame.area()))
+            .expect("render onboarding");
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn compact_onboarding_keeps_every_required_action_and_next_step_visible() {
+        let rendered = rendered(64, 20);
+
+        assert!(rendered.contains("ctrl+b prefix mode"));
+        assert!(rendered.contains("? keybinds"));
+        assert!(rendered.contains("next: connect MindsHub Inference"));
+        assert!(rendered.contains("choose CLI models"));
+        assert!(rendered.contains("continue"));
+    }
 }

@@ -12,6 +12,13 @@ use super::{
 };
 use crate::app::{state::CodingAgentLaunchField, AppState};
 
+#[derive(Clone, Copy)]
+enum FieldAffordance {
+    Cycle,
+    Choose,
+    ReadOnly,
+}
+
 pub(crate) fn coding_agent_launch_inner_rect(area: Rect) -> Option<Rect> {
     let popup = centered_popup_rect(area, 74, 19)?;
     Some(Rect::new(
@@ -83,17 +90,22 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
             CodingAgentLaunchField::Cli,
             "CLI",
             selection.cli_label(),
-            true,
+            FieldAffordance::Cycle,
         ),
         (
             CodingAgentLaunchField::Gateway,
             "Gateway",
             gateway_name,
-            true,
+            FieldAffordance::Cycle,
         ),
-        (CodingAgentLaunchField::Model, "Model", model, true),
+        (
+            CodingAgentLaunchField::Model,
+            "Model",
+            model,
+            FieldAffordance::Choose,
+        ),
     ];
-    for (index, (field, label, value, editable)) in fields.into_iter().enumerate() {
+    for (index, (field, label, value, affordance)) in fields.into_iter().enumerate() {
         let row = coding_agent_launch_field_rect(inner, index);
         render_route_field(
             app,
@@ -102,7 +114,7 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
             label,
             value,
             selection.selected_field == field,
-            editable,
+            affordance,
         );
     }
 
@@ -114,7 +126,7 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
         "Protocol",
         selection.protocol().display_name(),
         false,
-        false,
+        FieldAffordance::ReadOnly,
     );
 
     let can_launch = selection.can_launch(&app.gateway_catalog);
@@ -187,7 +199,7 @@ pub(super) fn render_coding_agent_launch_overlay(app: &AppState, frame: &mut Fra
             },
             Span::styled(
                 if can_launch {
-                    "  s gateway settings"
+                    "  m choose model  s gateway settings"
                 } else {
                     " s fix route "
                 },
@@ -213,15 +225,15 @@ fn render_route_field(
     label: &str,
     value: &str,
     selected: bool,
-    editable: bool,
+    affordance: FieldAffordance,
 ) {
     let marker = if selected { "›" } else { " " };
     let value_width = area.width.saturating_sub(15) as usize;
     let value = truncate_end(value, value_width);
-    let value = if editable {
-        format!("‹ {value} ›")
-    } else {
-        format!("  {value}")
+    let value = match affordance {
+        FieldAffordance::Cycle => format!("‹ {value} ›"),
+        FieldAffordance::Choose => format!("m choose · {value}"),
+        FieldAffordance::ReadOnly => format!("  {value}"),
     };
     let style = if selected {
         Style::default()

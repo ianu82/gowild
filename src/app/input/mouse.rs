@@ -27,6 +27,7 @@ use super::{
 
 pub(super) enum MouseAction {
     LaunchCodingAgent,
+    OpenLaunchModelChooser,
     NewWorkspace,
     Settings(SettingsAction),
     FocusWorkspace {
@@ -1158,11 +1159,21 @@ impl AppState {
     fn handle_coding_agent_launch_mouse(&mut self, mouse: MouseEvent) -> Option<MouseAction> {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
+                if self.coding_agent_launch.selected_field
+                    == crate::app::state::CodingAgentLaunchField::Model
+                {
+                    return Some(MouseAction::OpenLaunchModelChooser);
+                }
                 self.coding_agent_launch
                     .cycle_selected(&self.gateway_catalog, -1);
                 return None;
             }
             MouseEventKind::ScrollDown => {
+                if self.coding_agent_launch.selected_field
+                    == crate::app::state::CodingAgentLaunchField::Model
+                {
+                    return Some(MouseAction::OpenLaunchModelChooser);
+                }
                 self.coding_agent_launch
                     .cycle_selected(&self.gateway_catalog, 1);
                 return None;
@@ -1182,6 +1193,9 @@ impl AppState {
                 let already_selected = self.coding_agent_launch.selected_field == field;
                 self.coding_agent_launch.selected_field = field;
                 self.coding_agent_launch.error = None;
+                if field == crate::app::state::CodingAgentLaunchField::Model {
+                    return Some(MouseAction::OpenLaunchModelChooser);
+                }
                 if already_selected {
                     let direction = if mouse.column < rect.x + rect.width / 2 {
                         -1
@@ -1299,7 +1313,7 @@ impl AppState {
         );
     }
 
-    pub(super) fn screen_rect(&self) -> Rect {
+    pub(crate) fn screen_rect(&self) -> Rect {
         let sidebar = self.view.sidebar_rect;
         let terminal = self.view.terminal_area;
         let x = sidebar.x.min(terminal.x);
@@ -2112,6 +2126,40 @@ mod tests {
             app.state.settings.section,
             crate::app::state::SettingsSection::Gateways
         );
+    }
+
+    #[test]
+    fn clicking_the_launch_model_opens_the_searchable_chooser() {
+        let mut app = app_for_mouse_test();
+        app.state
+            .gateway_catalog
+            .gateways
+            .get_mut("mindshub")
+            .unwrap()
+            .model_discovery
+            .cached_models = vec![crate::gateway::CachedModel {
+            id: "provider/clickable-model".into(),
+            label: Some("Clickable model".into()),
+            provider: Some("provider".into()),
+            enabled: true,
+            embedding: false,
+            reasoning_efforts: Vec::new(),
+        }];
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.coding_agent_launch.gateway_id = Some("mindshub".into());
+        app.state.mode = Mode::CodingAgentLaunch;
+        let area = Rect::new(0, 0, 80, 24);
+        crate::ui::compute_view(&mut app.state, area);
+        let inner = crate::ui::coding_agent_launch_inner_rect(area).unwrap();
+        let model = crate::ui::coding_agent_launch_field_rect(inner, 2);
+
+        app.handle_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            model.x + 2,
+            model.y,
+        ));
+
+        assert!(app.state.model_chooser.is_some());
     }
 
     #[test]

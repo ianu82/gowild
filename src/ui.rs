@@ -10,6 +10,7 @@ mod dialogs;
 mod keybind_help;
 mod menus;
 mod mobile;
+mod model_chooser;
 mod navigator;
 mod onboarding;
 mod panes;
@@ -38,6 +39,7 @@ use self::mobile::{
     mobile_toast_banner_rect, render_mobile_header, render_mobile_panel,
     render_mobile_toast_banner,
 };
+use self::model_chooser::render_model_chooser_overlay;
 use self::navigator::render_navigator_overlay;
 pub(crate) use self::onboarding::onboarding_welcome_continue_rect;
 use self::onboarding::render_onboarding_overlay;
@@ -80,7 +82,7 @@ pub(crate) use self::{
     settings::{
         gateway_add_button_rect, gateway_detail_button_rects, gateway_detail_delete_button_rect,
         guided_setup_aux_button_rects, guided_setup_launch_button_rects, settings_button_rects,
-        settings_popup_height, settings_show_primary_action, SETTINGS_POPUP_WIDTH,
+        settings_is_compact, settings_popup_rect, settings_show_primary_action,
     },
     sidebar::{
         agent_entry_gap, agent_entry_height_in_body, agent_panel_body_rect, agent_panel_entries,
@@ -101,6 +103,7 @@ pub(crate) use self::{
         mobile_switcher_areas, mobile_switcher_max_scroll, mobile_switcher_target_at,
         mobile_switcher_workspace_doc_range, MobileSwitcherTarget,
     },
+    model_chooser::model_chooser_geometry,
     panes::{apply_pane_chrome, pane_inner_rect, pane_is_scrolled_back},
     tab_surface::{tab_surface_cursor, tab_surface_hyperlinks, TabSurfaceView},
     tabs::{compute_tab_bar_view, tab_bar_content_area},
@@ -466,6 +469,9 @@ pub fn render_with_runtime_registry(
         Mode::KeybindHelp => render_keybind_help_overlay(app, frame),
         Mode::Navigator => render_navigator_overlay(app, terminal_runtimes, frame),
         Mode::Terminal => {}
+    }
+    if app.model_chooser.is_some() {
+        render_model_chooser_overlay(app, frame, frame.area());
     }
 }
 

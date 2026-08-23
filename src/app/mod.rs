@@ -20,6 +20,7 @@ mod gateways;
 mod git_refresh;
 mod ids;
 mod input;
+pub(crate) mod model_chooser;
 pub(crate) mod pane_graphics;
 mod popup;
 mod runtime;
@@ -758,6 +759,7 @@ impl App {
                 guided_setup_error: None,
             },
             coding_agent_launch: state::CodingAgentLaunchState::new(&gateway_catalog),
+            model_chooser: None,
             gateway_catalog,
             integration_recommendations: crate::integration::integration_recommendations(),
             agent_manifest_summaries,
@@ -1970,6 +1972,10 @@ impl App {
             if let Some(text) = crate::platform::read_clipboard_text() {
                 self.paste_into_active_text_input(&text);
             }
+            return;
+        }
+        if self.state.model_chooser.is_some() {
+            self.handle_model_chooser_key(key_event);
             return;
         }
 

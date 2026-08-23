@@ -1555,6 +1555,32 @@ impl GatewayModelTarget {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ModelChooserContext {
+    GatewayDefault {
+        gateway_id: String,
+        target: GatewayModelTarget,
+    },
+    CodingAgentLaunch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ModelChooserState {
+    pub(crate) context: ModelChooserContext,
+    pub(crate) query: String,
+    pub(crate) selected: usize,
+}
+
+impl ModelChooserState {
+    pub(crate) fn new(context: ModelChooserContext) -> Self {
+        Self {
+            context,
+            query: String::new(),
+            selected: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayNoticeKind {
     Info,
@@ -2254,6 +2280,8 @@ pub struct AppState {
     pub(crate) gateway_catalog: crate::gateway::GatewayCatalog,
     /// Pre-launch route selection for GoWild-managed coding-agent tabs.
     pub(crate) coding_agent_launch: CodingAgentLaunchState,
+    /// Searchable model chooser layered over settings or managed launch.
+    pub(crate) model_chooser: Option<ModelChooserState>,
     /// Cached integration recommendations for onboarding/settings UI.
     pub integration_recommendations: Vec<crate::integration::IntegrationRecommendation>,
     /// Cached detection manifest source/version summaries for runtime/API status.
@@ -2651,6 +2679,7 @@ impl AppState {
             coding_agent_launch: CodingAgentLaunchState::new(
                 &crate::gateway::GatewayCatalog::with_builtin_presets(),
             ),
+            model_chooser: None,
             integration_recommendations: Vec::new(),
             agent_manifest_summaries: Vec::new(),
             agent_manifest_update_status:
