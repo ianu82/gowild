@@ -1,5 +1,10 @@
 # Changelog
 
+GoWild development begins in **Unreleased**. Versioned entries below that
+heading are preserved as history from the source snapshot recorded in
+[`PROVENANCE.md`](../../PROVENANCE.md); they are not GoWild releases, product
+claims, support commitments, or current install instructions.
+
 ## Unreleased
 
 ### Added

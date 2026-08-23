@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "herdr-website",
+      "name": "gowild-frozen-imported-website",
       "dependencies": {
         "@astrojs/sitemap": "^3.7.2",
         "@astrojs/starlight": "^0.36.0",

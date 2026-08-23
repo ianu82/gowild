@@ -3,7 +3,7 @@
 # Run tests
 test:
     cargo nextest run --locked --status-level fail --final-status-level fail --failure-output final --success-output never
-    python3 -m unittest scripts.test_agent_detection_manifest_check scripts.test_changelog scripts.test_config_reference_check scripts.test_docs_translation_parity scripts.test_hermes_integration_asset scripts.test_package_windows_conpty scripts.test_preview scripts.test_unix_installer scripts.test_vendor_libghostty_vt scripts.test_vendor_portable_pty
+    python3 -m unittest scripts.test_agent_detection_manifest_check scripts.test_changelog scripts.test_config_reference_check scripts.test_docs_translation_parity scripts.test_hermes_integration_asset scripts.test_package_windows_conpty scripts.test_preview scripts.test_product_boundary_check scripts.test_unix_installer scripts.test_vendor_libghostty_vt scripts.test_vendor_portable_pty
     just ui-hot-path-architecture-test
     just integration-assets-test
     just plugin-marketplace-test
@@ -30,6 +30,7 @@ lint:
 # Run PR CI checks
 [unix]
 ci filter='all()': lint
+    just product-boundary-test
     cargo nextest run --locked -E "{{filter}}" --status-level fail --final-status-level slow --failure-output final --success-output never
     just ui-hot-path-architecture-test
     just integration-assets-test
@@ -44,7 +45,7 @@ windows-lint:
 # Check formatting + run unit tests + Windows target lint + maintenance script tests
 [unix]
 check: ci windows-lint
-    python3 -m unittest scripts.test_agent_detection_manifest_check scripts.test_changelog scripts.test_config_reference_check scripts.test_docs_translation_parity scripts.test_hermes_integration_asset scripts.test_package_windows_conpty scripts.test_preview scripts.test_unix_installer scripts.test_vendor_libghostty_vt scripts.test_vendor_portable_pty
+    python3 -m unittest scripts.test_agent_detection_manifest_check scripts.test_changelog scripts.test_config_reference_check scripts.test_docs_translation_parity scripts.test_hermes_integration_asset scripts.test_package_windows_conpty scripts.test_preview scripts.test_product_boundary_check scripts.test_unix_installer scripts.test_vendor_libghostty_vt scripts.test_vendor_portable_pty
     @echo "docs reminder: if this changes user-facing behavior, make sure the relevant release docs are updated or called out before release."
 
 [script("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")]
@@ -78,15 +79,20 @@ bench-release-smoke:
     cargo build --release --locked
     scripts/release_perf_smoke.sh "${CARGO_TARGET_DIR:-target}/release/gowild"
 
-# Build the website and documentation
+# The imported website snapshot is not GoWild content and must never be built.
 website-build:
-    cd website && bun install --frozen-lockfile && bun run build
+    @echo "error: GoWild has no owned website yet; the inherited snapshot is frozen and unpublishable" >&2
+    @exit 1
 
 # Test bundled agent integration assets
 integration-assets-test:
     bun test src/integration/assets/gowild-agent-state.test.ts
     bun test src/integration/assets/opencode/gowild-agent-state.test.ts
     bun test src/integration/assets/opencode/gowild-tui-session.test.ts
+
+# Keep active docs, automation, and release entry points inside GoWild's boundary
+product-boundary-test:
+    python3 -m unittest scripts.test_product_boundary_check
 
 # Run plugin marketplace Worker tests
 plugin-marketplace-test:
@@ -101,53 +107,15 @@ real-cli-gateway-routing-test:
 build-libghostty-vt:
     scripts/build_vendored_libghostty_vt.sh
 
-# Check that release docs and changelog have been finalized from docs/next before release
+# GoWild deliberately has no inherited documentation or release pipeline.
 release-docs-check:
-    python3 scripts/agent_detection_manifest_check.py --require-website
-    python3 scripts/config_reference_check.py
-    node website/scripts/docs-versions.mjs check
-    node website/scripts/docs-preview.mjs check
-    @test -f docs/next/README.md
-    @test -f docs/next/README.zh-CN.md
-    @if ! diff -u CHANGELOG.md docs/next/CHANGELOG.md; then \
-        echo "error: CHANGELOG.md differs from docs/next/CHANGELOG.md; finalize release notes before releasing"; \
-        exit 1; \
-    fi
-    @for file in CONFIGURATION.md INTEGRATIONS.md SOCKET_API.md; do \
-        if [ -e "$file" ]; then \
-            echo "error: $file was replaced by website docs; remove the root copy"; \
-            exit 1; \
-        fi; \
-    done
-    @test -d docs/next/website/src/content/docs
-    @for file in docs/next/website/src/content/docs/*.mdx; do \
-        for locale in ja zh-cn; do \
-            translated="docs/next/website/src/content/docs/$locale/$(basename "$file")"; \
-            if [ ! -f "$translated" ]; then \
-                echo "error: $translated is missing; translate next docs before releasing"; \
-                exit 1; \
-            fi; \
-        done; \
-    done
-    @for file in docs/next/website/src/content/docs/ja/*.mdx docs/next/website/src/content/docs/zh-cn/*.mdx; do \
-        staged="docs/next/website/src/content/docs/$(basename "$file")"; \
-        if [ ! -f "$staged" ]; then \
-            echo "error: $file has no matching english doc; remove the stale translation"; \
-            exit 1; \
-        fi; \
-    done
-    python3 scripts/docs_translation_parity.py --docs-root docs/next/website/src/content/docs
-    just website-build
-    cd website && bun run build:draft
+    @echo "error: GoWild release documentation is disabled until an owned publishing pipeline exists" >&2
+    @exit 1
 
-# Validate release docs, render scaling, and end-to-end CPU before release preparation
+# Release validation stays fail-closed with the release commands below.
 pre-release-check:
-    just release-docs-check
-    just bench-render-scale
-    just bench-release-smoke
-    @echo "release review required: investigate material render-scaling regressions before publishing."
-    @echo "release review required: update skills/gowild/SKILL.md for this stable release so it matches the current CLI, IDs, agent lifecycle semantics, and safety guidance."
-    @echo "release policy: do not update skills/gowild/SKILL.md between stable releases; preview builds keep the latest stable skill."
+    @echo "error: GoWild pre-release validation is disabled until an owned release pipeline exists" >&2
+    @exit 1
 
 # GoWild deliberately has no inherited release channel. These recipes remain as
 # explicit safety rails until GoWild-owned signing and publishing are implemented.
