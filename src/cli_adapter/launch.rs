@@ -191,9 +191,9 @@ impl ChildEnvironment {
             .any(|value| matches!(value, ChildEnvironmentValue::Plain(value) if value.contains(expected)))
     }
 
-    fn contains_secret_value(&self, expected: &str) -> bool {
+    fn contains_secret_component(&self, expected: &str) -> bool {
         self.set.values().any(
-            |value| matches!(value, ChildEnvironmentValue::Secret(value) if value.expose() == expected),
+            |value| matches!(value, ChildEnvironmentValue::Secret(value) if value.expose().contains(expected)),
         )
     }
 }
@@ -276,7 +276,11 @@ impl LaunchSpec {
                 {
                     return Err(LaunchSpecError::ExposedCredential);
                 }
-                if !self.environment.contains_secret_value(exposed) {
+                // Some protocols require a fixed prefix to be applied to a
+                // credential inside a secret-bearing header. The original
+                // credential must still be wholly contained in a value that
+                // remains classified as secret.
+                if !self.environment.contains_secret_component(exposed) {
                     return Err(LaunchSpecError::MissingSecretCredential);
                 }
             }

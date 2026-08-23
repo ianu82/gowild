@@ -84,3 +84,26 @@ The adapter contract follows the current [Claude Code gateway
 documentation](https://code.claude.com/docs/en/llm-gateway), [Claude Code
 environment reference](https://code.claude.com/docs/en/env-vars), and [MindsHub
 Inference service contract](https://mindshub.ai/inference).
+
+## Codex CLI adapter
+
+The Codex CLI adapter requires an OpenAI Responses-compatible endpoint. Every
+launch reserves and replaces the `gowild` model-provider definition through
+Codex's repeated `-c` overrides, selecting the gateway display name, Responses
+base URL, `responses` wire API, and the requested model. GoWild explicitly sets
+`requires_openai_auth = false`, removes inherited OpenAI/Codex credentials, and
+supplies gateway authentication only through a GoWild-owned child environment
+variable. Existing Codex login state and user-defined provider configuration
+therefore cannot redirect the selected gateway.
+
+Bearer credentials use `model_providers.gowild.env_key`. `x-api-key` and
+custom secret-bearing headers use `env_http_headers`; optional header prefixes
+are applied inside the secret environment value rather than argv. Non-secret
+custom headers use the provider's `http_headers` table. Unauthenticated custom
+providers omit all auth fields. Fresh sessions and `codex resume <session-id>`
+receive the same provider configuration and secret environment.
+
+The adapter contract follows the current [Codex configuration
+reference](https://developers.openai.com/codex/config-reference), [Codex CLI
+reference](https://developers.openai.com/codex/cli/reference), and [MindsHub
+Inference service contract](https://mindshub.ai/inference).
