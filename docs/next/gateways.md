@@ -27,11 +27,6 @@ available, it can use a separate `credentials.json` fallback with a `0700`
 directory and `0600` file. Windows fails closed because ordinary Unix mode bits
 cannot establish an owner-only ACL there.
 
-Unsigned Unix development builds deliberately use that owner-only file backend
-directly. This avoids repeated Keychain authorization prompts when rebuilding a
-debug binary changes its application identity. Release builds continue to use
-the operating system credential store by default.
-
 The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
 credentials and common key formats before persistence.

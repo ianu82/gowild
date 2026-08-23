@@ -115,7 +115,6 @@ impl std::error::Error for CredentialStoreError {}
 /// ACL GoWild cannot prove is private.
 pub(crate) struct SystemCredentialStore {
     fallback: Option<FileCredentialStore>,
-    prefer_file: bool,
 }
 
 impl SystemCredentialStore {
@@ -129,15 +128,7 @@ impl SystemCredentialStore {
             let _ = config_dir;
             None
         };
-        // Rebuilding an unsigned macOS development binary changes its Keychain
-        // identity and prompts again for every test/server process. Unix debug
-        // builds use the existing owner-only file backend instead. Release
-        // builds keep the operating-system credential store as their default.
-        let prefer_file = cfg!(all(unix, debug_assertions));
-        Self {
-            fallback,
-            prefer_file,
-        }
+        Self { fallback }
     }
 
     fn entry(credential_ref: &str) -> Result<Entry, CredentialStoreError> {
@@ -150,13 +141,6 @@ impl SystemCredentialStore {
 impl CredentialStore for SystemCredentialStore {
     fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError> {
         validate_reference(credential_ref)?;
-        if self.prefer_file {
-            return self
-                .fallback
-                .as_ref()
-                .ok_or(CredentialStoreError::FileFallbackUnsupported)?
-                .get(credential_ref);
-        }
         let entry = match Self::entry(credential_ref) {
             Ok(entry) => entry,
             Err(_) => return self.fallback_get_for(credential_ref),
@@ -177,13 +161,6 @@ impl CredentialStore for SystemCredentialStore {
         credential: &Credential,
     ) -> Result<CredentialBackend, CredentialStoreError> {
         validate_reference(credential_ref)?;
-        if self.prefer_file {
-            return self
-                .fallback
-                .as_ref()
-                .ok_or(CredentialStoreError::FileFallbackUnsupported)?
-                .set(credential_ref, credential);
-        }
         let keyring_result = Self::entry(credential_ref).and_then(|entry| {
             entry
                 .set_password(credential.expose())
@@ -205,13 +182,6 @@ impl CredentialStore for SystemCredentialStore {
 
     fn delete(&self, credential_ref: &str) -> Result<(), CredentialStoreError> {
         validate_reference(credential_ref)?;
-        if self.prefer_file {
-            return self
-                .fallback
-                .as_ref()
-                .ok_or(CredentialStoreError::FileFallbackUnsupported)?
-                .delete(credential_ref);
-        }
         let keyring_result = match Self::entry(credential_ref) {
             Ok(entry) => match entry.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -508,33 +478,6 @@ mod tests {
             Err(CredentialStoreError::CorruptFile)
         ));
         assert_eq!(fs::read_to_string(&target).unwrap(), "do not overwrite");
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn debug_system_store_uses_the_owner_only_file_backend() {
-        let root = std::env::temp_dir().join(format!(
-            "gowild-debug-credential-test-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let store = SystemCredentialStore::new(&root);
-        let credential = Credential::new("mdb_debug-test-secret").unwrap();
-
-        assert!(store.prefer_file);
-        assert_eq!(
-            store.set("gateway:test", &credential).unwrap(),
-            CredentialBackend::RestrictedFile
-        );
-        assert_eq!(
-            store.get("gateway:test").unwrap().unwrap().expose(),
-            credential.expose()
-        );
-
         fs::remove_dir_all(root).unwrap();
     }
 }
