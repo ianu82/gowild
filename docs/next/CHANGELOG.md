@@ -27,6 +27,9 @@ claims, support commitments, or current install instructions.
 - Codex CLI launches through the built-in MindsHub Inference route now bridge
   MindsHub's non-streaming Responses payloads into the streaming event contract
   Codex requires, including function-call arguments and usage metadata.
+- Managed Codex launches now disable shell-environment snapshots, remove the
+  generic GoWild API-key override before child launch, and exclude secret-named
+  variables from shell tools so gateway credentials cannot enter Codex state.
 - Managed coding-agent launches now honor the documented `GOWILD_*`
   environment overrides while keeping gateway and model overrides visible on
   the launch screen.

@@ -10,11 +10,16 @@ use super::{
 
 const PROVIDER_ID: &str = "gowild";
 const GOWILD_CODEX_API_KEY: &str = "GOWILD_CODEX_API_KEY";
+const GOWILD_API_KEY: &str = "GOWILD_API_KEY";
 
 // These credentials select OpenAI-owned authentication paths in current
 // Codex releases. GoWild's custom provider must never inherit them.
-const INHERITED_CODEX_CREDENTIALS: &[&str] =
-    &["CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_API_KEY"];
+const INHERITED_CODEX_CREDENTIALS: &[&str] = &[
+    "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN",
+    "OPENAI_API_KEY",
+    GOWILD_API_KEY,
+];
 
 pub(crate) struct CodexAdapter;
 
@@ -58,6 +63,15 @@ impl CliAdapter for CodexAdapter {
         // fields (including headers) from surviving across gateway changes.
         push_config(&mut args, "model_providers.gowild", "{}");
         provider_overrides.append_to(&mut args);
+        // Codex snapshots its shell environment by default. The gateway key
+        // must remain available to Codex's HTTP client but must never reach a
+        // shell tool or a persisted shell snapshot.
+        push_config(&mut args, "features.shell_snapshot", "false");
+        push_config(
+            &mut args,
+            "shell_environment_policy.ignore_default_excludes",
+            "false",
+        );
         push_string_config(&mut args, "model_provider", PROVIDER_ID);
         if let Some(model) = &resolved.model {
             push_string_config(&mut args, "model", model);
@@ -353,6 +367,8 @@ mod tests {
             "model_providers.gowild.wire_api=\"responses\"",
             "model_providers.gowild.requires_openai_auth=false",
             "model_providers.gowild.env_key=\"GOWILD_CODEX_API_KEY\"",
+            "features.shell_snapshot=false",
+            "shell_environment_policy.ignore_default_excludes=false",
             "model_provider=\"gowild\"",
             "model=\"gpt-coding\"",
         ] {

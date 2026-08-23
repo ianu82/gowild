@@ -185,6 +185,13 @@ supplies gateway authentication only through a GoWild-owned child environment
 variable. Existing Codex login state and user-defined provider configuration
 therefore cannot redirect the selected gateway.
 
+Codex normally snapshots its shell environment for faster repeated commands.
+GoWild disables that feature for managed Codex routes and forces Codex's shell
+environment policy to exclude variables whose names contain `KEY`, `SECRET`, or
+`TOKEN`. The generic `GOWILD_API_KEY` override is also removed before child
+launch. The provider's `GOWILD_CODEX_API_KEY` remains available to Codex's HTTP
+client but cannot enter shell-tool environments or persisted shell snapshots.
+
 Bearer credentials use `model_providers.gowild.env_key`. `x-api-key` and
 custom secret-bearing headers use `env_http_headers`; optional header prefixes
 are applied inside the secret environment value rather than argv. Non-secret
