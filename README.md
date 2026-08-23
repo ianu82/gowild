@@ -183,6 +183,6 @@ cargo run -- --help
 
 ## Licence
 
-GoWild is licensed under the [Apache License 2.0](LICENSE). Historical source
-attribution and retained acknowledgements are recorded under
-[ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS/README.md).
+GoWild's project licence has not yet been decided and is currently
+[TBD](LICENSE). Historical source licensing and required attribution are
+retained under [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS/README.md).

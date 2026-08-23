@@ -45,6 +45,9 @@ class ProductBoundaryCheckTests(unittest.TestCase):
     def test_retained_installers_and_crate_publish_fail_closed(self) -> None:
         self.assertEqual(boundary.check_install_boundaries(), [])
 
+    def test_project_license_is_tbd_and_imported_license_is_retained(self) -> None:
+        self.assertEqual(boundary.check_license_boundaries(), [])
+
     def test_go_wild_brand_assets_replace_imported_user_visible_art(self) -> None:
         self.assertEqual(boundary.check_brand_assets(), [])
 
