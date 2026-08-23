@@ -1080,8 +1080,35 @@ impl AppState {
                             return gateway_delete_action(self);
                         }
                         let gateway_id = match self.settings.gateways.view {
-                            GatewaySettingsView::List => selected_gateway_id(self),
+                            GatewaySettingsView::List => {
+                                if let Some(gateway_id) = selected_gateway_id(self) {
+                                    self.settings.gateways.detail_gateway_id = Some(gateway_id);
+                                    self.settings.gateways.detail_field =
+                                        GatewayDetailField::Credential;
+                                    self.settings.gateways.view = GatewaySettingsView::Detail;
+                                    self.settings.gateways.notice = None;
+                                }
+                                return None;
+                            }
                             GatewaySettingsView::Detail => {
+                                if self.settings.gateways.detail_field
+                                    == GatewayDetailField::Credential
+                                    && self
+                                        .settings
+                                        .gateways
+                                        .detail_gateway_id
+                                        .as_ref()
+                                        .and_then(|id| self.gateway_catalog.gateways.get(id))
+                                        .is_some_and(|gateway| {
+                                            gateway.auth.mode
+                                                != crate::gateway::AuthenticationMode::None
+                                        })
+                                {
+                                    self.settings.gateways.secret_input.clear();
+                                    self.settings.gateways.editing_credential = true;
+                                    self.settings.gateways.notice = None;
+                                    return None;
+                                }
                                 self.settings.gateways.detail_gateway_id.clone()
                             }
                             GatewaySettingsView::Form => None,
@@ -1359,6 +1386,40 @@ mod tests {
                 direction: 1,
             })
         );
+    }
+
+    #[test]
+    fn gateway_primary_buttons_match_their_displayed_actions() {
+        let mut app = app_for_mouse_test();
+        open_settings(&mut app.state);
+        let inner = app.state.settings_inner_rect();
+        let (configure, _) = crate::ui::settings_button_rects(inner, &app.state, true);
+        let configure = configure.expect("configure button");
+
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            configure.x + 1,
+            configure.y,
+        ));
+        assert_eq!(action, None);
+        assert_eq!(
+            app.state.settings.gateways.view,
+            GatewaySettingsView::Detail
+        );
+        assert_eq!(
+            app.state.settings.gateways.detail_gateway_id.as_deref(),
+            Some("mindshub")
+        );
+
+        app.state.settings.gateways.detail_field = GatewayDetailField::CodexModel;
+        let (test, _) = crate::ui::settings_button_rects(inner, &app.state, true);
+        let test = test.expect("test button");
+        let action = app.state.handle_settings_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            test.x + 1,
+            test.y,
+        ));
+        assert_eq!(action, Some(SettingsAction::TestGateway("mindshub".into())));
     }
 
     #[test]

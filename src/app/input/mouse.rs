@@ -1197,7 +1197,10 @@ impl AppState {
 
         let (launch, settings, cancel) = crate::ui::coding_agent_launch_action_rects(inner);
         if rect_contains(launch, mouse.column, mouse.row) {
-            return Some(MouseAction::LaunchCodingAgent);
+            if self.coding_agent_launch.can_launch(&self.gateway_catalog) {
+                return Some(MouseAction::LaunchCodingAgent);
+            }
+            return None;
         }
         if rect_contains(settings, mouse.column, mouse.row) {
             super::settings::open_settings(self);
@@ -2109,6 +2112,32 @@ mod tests {
             app.state.settings.section,
             crate::app::state::SettingsSection::Gateways
         );
+    }
+
+    #[test]
+    fn incomplete_coding_agent_route_has_no_mouse_launch_action() {
+        let mut app = app_for_mouse_test();
+        app.state.coding_agent_launch = CodingAgentLaunchState::new(&app.state.gateway_catalog);
+        app.state.mode = Mode::CodingAgentLaunch;
+        let area = Rect::new(0, 0, 80, 24);
+        crate::ui::compute_view(&mut app.state, area);
+        let inner = crate::ui::coding_agent_launch_inner_rect(area).unwrap();
+        let (launch, settings, _) = crate::ui::coding_agent_launch_action_rects(inner);
+
+        let action = app.state.handle_coding_agent_launch_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            launch.x + 1,
+            launch.y,
+        ));
+        assert!(action.is_none());
+        assert_eq!(app.state.mode, Mode::CodingAgentLaunch);
+
+        app.state.handle_coding_agent_launch_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            settings.x + 1,
+            settings.y,
+        ));
+        assert_eq!(app.state.mode, Mode::Settings);
     }
 
     #[test]

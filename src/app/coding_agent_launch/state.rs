@@ -91,6 +91,42 @@ impl CodingAgentLaunchState {
         }
     }
 
+    pub(crate) fn validation_error(
+        &self,
+        catalog: &crate::gateway::GatewayCatalog,
+    ) -> Option<String> {
+        let Some(gateway_id) = self.gateway_id.as_deref() else {
+            return Some(format!(
+                "No gateway supports {}. Press s to open gateway settings and configure one.",
+                self.protocol().display_name()
+            ));
+        };
+        let Some(gateway) = catalog.gateways.get(gateway_id) else {
+            return Some(
+                "The selected gateway is unavailable. Press s to open gateway settings and choose another."
+                    .to_string(),
+            );
+        };
+        if !gateway.supports(self.protocol()) {
+            return Some(format!(
+                "{} does not support {}. Press s to open gateway settings and choose a compatible gateway.",
+                gateway.display_name,
+                self.protocol().display_name()
+            ));
+        }
+        if self.model.as_deref().is_none_or(str::is_empty) {
+            return Some(format!(
+                "No {} model. t test the gateway in settings (s), then choose a model.",
+                self.cli_label()
+            ));
+        }
+        None
+    }
+
+    pub(crate) fn can_launch(&self, catalog: &crate::gateway::GatewayCatalog) -> bool {
+        self.validation_error(catalog).is_none()
+    }
+
     fn field_index(field: CodingAgentLaunchField) -> usize {
         CodingAgentLaunchField::ALL
             .iter()

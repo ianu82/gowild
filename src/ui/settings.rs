@@ -181,6 +181,7 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
         let footer_rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
             .areas::<2>(footer_area);
         let primary_label = settings_primary_button_label(app);
+        let primary_hint = settings_primary_button_hint(app);
         let close_label = settings_close_button_label(app);
         let show_primary = settings_show_primary_action(app);
         let (apply_rect, close_rect) = settings_button_rects(inner, app, show_primary);
@@ -190,7 +191,7 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
             render_action_button(
                 frame,
                 apply_rect,
-                Some("↵"),
+                Some(primary_hint),
                 primary_label,
                 Style::default()
                     .fg(panel_contrast_fg(p))
@@ -211,9 +212,11 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
 
         let hint = if app.settings.section == SettingsSection::Gateways {
             match app.settings.gateways.view {
-                GatewaySettingsView::List => " ↑↓ select  ↵ configure  space default  tab section",
+                GatewaySettingsView::List => {
+                    " ↑↓ select  ↵ configure  t test  space default  tab section"
+                }
                 GatewaySettingsView::Detail if app.settings.gateways.editing_credential => {
-                    " paste or type key  ↵ store securely  esc cancel"
+                    " input hidden locally  ^u clear  esc cancel"
                 }
                 GatewaySettingsView::Detail => {
                     let custom = app
@@ -223,10 +226,16 @@ pub(super) fn render_settings_overlay(app: &AppState, frame: &mut Frame, area: R
                         .as_ref()
                         .and_then(|id| app.gateway_catalog.gateways.get(id))
                         .is_some_and(|gateway| gateway.preset.is_none());
-                    if custom {
-                        " ↑↓ field  ←→ model  e edit  d duplicate  x delete"
+                    let credential =
+                        app.settings.gateways.detail_field == GatewayDetailField::Credential;
+                    if custom && credential {
+                        " ↑↓ field  ↵ edit key  t test  e edit  d duplicate  x delete"
+                    } else if custom {
+                        " ↑↓ field  ←→ choose model  t test  e edit  d duplicate  x delete"
+                    } else if credential {
+                        " ↑↓ field  ↵ edit key  t test  d duplicate  space default"
                     } else {
-                        " ↑↓ field  ←→ model  d duplicate  space default"
+                        " ↑↓ field  ←→ choose model  t test  d duplicate  space default"
                     }
                 }
                 GatewaySettingsView::Form => {
@@ -273,9 +282,46 @@ pub(crate) fn settings_primary_button_label(app: &AppState) -> &'static str {
         {
             "delete gateway"
         }
+        crate::app::state::SettingsSection::Gateways
+            if app.settings.gateways.view == GatewaySettingsView::List =>
+        {
+            "configure"
+        }
+        crate::app::state::SettingsSection::Gateways
+            if app.settings.gateways.view == GatewaySettingsView::Detail
+                && app.settings.gateways.detail_field == GatewayDetailField::Credential
+                && app
+                    .settings
+                    .gateways
+                    .detail_gateway_id
+                    .as_ref()
+                    .and_then(|id| app.gateway_catalog.gateways.get(id))
+                    .is_some_and(|gateway| gateway.auth.mode != AuthenticationMode::None) =>
+        {
+            "edit API key"
+        }
         crate::app::state::SettingsSection::Gateways => "test",
         crate::app::state::SettingsSection::Integrations => "install",
         _ => "apply",
+    }
+}
+
+pub(crate) fn settings_primary_button_hint(app: &AppState) -> &'static str {
+    if app.settings.section == crate::app::state::SettingsSection::Gateways
+        && app.settings.gateways.view == GatewaySettingsView::Detail
+        && !app.settings.gateways.editing_credential
+        && (app.settings.gateways.detail_field != GatewayDetailField::Credential
+            || app
+                .settings
+                .gateways
+                .detail_gateway_id
+                .as_ref()
+                .and_then(|id| app.gateway_catalog.gateways.get(id))
+                .is_none_or(|gateway| gateway.auth.mode == AuthenticationMode::None))
+    {
+        "t"
+    } else {
+        "↵"
     }
 }
 
@@ -351,7 +397,7 @@ pub(crate) fn settings_button_rects(
         inner,
         &[
             ActionButtonSpec {
-                hint: Some("↵"),
+                hint: Some(settings_primary_button_hint(app)),
                 label: settings_primary_button_label(app),
             },
             ActionButtonSpec {
@@ -713,9 +759,9 @@ fn render_gateway_detail(app: &AppState, frame: &mut Frame, area: Rect) {
         "not required"
     } else if app.settings.gateways.editing_credential {
         if app.settings.gateways.secret_input.is_empty() {
-            "paste or type key  ↵ store"
+            "empty"
         } else {
-            "••••••••••••  ↵ store"
+            "••••••••••••"
         }
     } else {
         match app
@@ -1338,7 +1384,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_credential_editor_invites_input_without_showing_a_false_mask() {
+    fn empty_credential_editor_has_one_concise_instruction_and_no_false_mask() {
         let mut app = gateway_settings_state();
         app.settings.gateways.view = GatewaySettingsView::Detail;
         app.settings.gateways.detail_gateway_id = Some("mindshub".into());
@@ -1346,10 +1392,38 @@ mod tests {
 
         let rendered = rendered_gateway_settings(&app, 80, 24);
 
-        assert!(rendered.contains("paste or type key"));
+        assert!(rendered.contains("empty"));
+        assert_eq!(rendered.matches("input hidden locally").count(), 1);
         assert!(!rendered.contains("••••••••••••"));
         assert!(rendered.contains("store"));
         assert!(rendered.contains("cancel"));
+    }
+
+    #[test]
+    fn gateway_shortcut_labels_match_each_view() {
+        let mut app = gateway_settings_state();
+
+        for (width, height) in [(100, 30), (80, 24), (64, 20)] {
+            let list = rendered_gateway_settings(&app, width, height);
+            assert!(list.contains("↵ configure"), "{width}×{height}");
+            assert!(list.contains("t test"), "{width}×{height}");
+
+            app.settings.gateways.view = GatewaySettingsView::Detail;
+            app.settings.gateways.detail_gateway_id = Some("mindshub".into());
+            app.settings.gateways.detail_field = GatewayDetailField::Credential;
+            let detail = rendered_gateway_settings(&app, width, height);
+            assert!(detail.contains("↵ edit API key"), "{width}×{height}");
+            assert!(detail.contains("t test"), "{width}×{height}");
+
+            app.settings.gateways.editing_credential = true;
+            let credential = rendered_gateway_settings(&app, width, height);
+            assert!(credential.contains("↵ store"), "{width}×{height}");
+            assert_eq!(settings_primary_button_hint(&app), "↵");
+            assert_eq!(settings_primary_button_label(&app), "store");
+
+            app.settings.gateways.editing_credential = false;
+            app.settings.gateways.view = GatewaySettingsView::List;
+        }
     }
 
     #[test]
