@@ -1026,7 +1026,10 @@ mod tests {
     }
 
     fn recv_server_event(receiver: &mut mpsc::Receiver<ServerEvent>, context: &str) -> ServerEvent {
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        // The read loop runs on a real OS thread. Under the full parallel test
+        // suite that thread can be descheduled for longer than one second even
+        // though the event path itself completes in milliseconds when isolated.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             match receiver.try_recv() {
                 Ok(event) => return event,

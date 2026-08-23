@@ -7,10 +7,12 @@
 // stacked changes. This infrastructure is compiled and tested independently.
 #![allow(dead_code, unused_imports)]
 
+mod claude;
 mod launch;
 mod registry;
 mod resolver;
 
+pub(crate) use claude::ClaudeAdapter;
 pub(crate) use launch::{
     AdapterError, ChildEnvironment, ChildEnvironmentValue, CliAdapter, CodingCli,
     ExecutableLocator, LaunchError, LaunchMode, LaunchPlanner, LaunchRequest, LaunchSpec,
