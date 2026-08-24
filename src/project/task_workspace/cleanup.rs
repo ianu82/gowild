@@ -6,6 +6,9 @@ use super::cleanup_safety::{
     preflight_cleanup, reverse_repository_order, validate_releasable_root, worktree_resource,
 };
 use super::provision::{task_root_marker, task_worktree_entry, TaskWorkspaceProvisioner};
+use super::runtime_layout::{
+    ensure_runtime_directory_released, runtime_directories, verify_runtime_directory_released,
+};
 use super::{
     OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWorkspace, TaskWorkspacePhase,
 };
@@ -66,6 +69,20 @@ impl TaskWorkspaceProvisioner<'_> {
             }
         }
 
+        for path in runtime_directories(&task).into_iter().rev() {
+            let resource = OwnedResource::RuntimeDirectory { path: path.clone() };
+            if task.resource_is_owned(&resource) {
+                let verify_path = path.clone();
+                let snapshot = task.clone();
+                self.ensure_released(
+                    &mut task,
+                    resource,
+                    || verify_runtime_directory_released(&verify_path),
+                    || ensure_runtime_directory_released(&snapshot, &path),
+                )?;
+            }
+        }
+
         let root_resource = OwnedResource::WorkspaceDirectory {
             path: task.root.clone(),
         };
@@ -83,7 +100,7 @@ impl TaskWorkspaceProvisioner<'_> {
         Ok(task)
     }
 
-    fn ensure_released(
+    pub(super) fn ensure_released(
         &self,
         task: &mut TaskWorkspace,
         resource: OwnedResource,
