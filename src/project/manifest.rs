@@ -60,6 +60,7 @@ pub fn render_manifest(manifest: &ProjectManifest) -> Result<String, ProjectErro
     })
 }
 
+#[cfg(test)]
 pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
     load_project_with_overrides(path, &ProjectOverrides::default())
 }
@@ -123,6 +124,7 @@ pub fn load_project_definition(path: &Path) -> Result<ProjectDefinition, Project
     })
 }
 
+#[cfg(test)]
 fn load_project_with_overrides(
     path: &Path,
     overrides: &ProjectOverrides,
