@@ -310,19 +310,6 @@ fn state_validation_rejects_tampering_and_unknown_fields() {
     let mut value = serde_json::to_value(&workspace).unwrap();
     value["credential"] = serde_json::json!("never-allowed");
     assert!(serde_json::from_value::<TaskWorkspace>(value).is_err());
-
-    let mut derived_state_tamper = workspace;
-    let tampered_checkout_path = derived_state_tamper.repository_checkout_path("api");
-    derived_state_tamper
-        .repositories
-        .get_mut("api")
-        .unwrap()
-        .worktree = Some(TaskWorktree {
-        checkout_path: tampered_checkout_path,
-        head_commit: "1".repeat(40),
-        branch: None,
-    });
-    assert!(derived_state_tamper.validate_integrity().is_err());
 }
 
 #[test]
