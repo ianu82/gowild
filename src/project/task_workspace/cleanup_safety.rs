@@ -9,15 +9,10 @@ use super::{OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWor
 use crate::project::ProjectError;
 
 pub(super) fn preflight_cleanup(task: &TaskWorkspace) -> Result<(), ProjectError> {
-    if task.journal.iter().any(|transition| {
-        matches!(
-            &transition.resource,
-            OwnedResource::ServiceProcess { .. } | OwnedResource::ComposeProject { .. }
-        ) && task.resource_is_owned(&transition.resource)
-    }) {
+    if task.owns_active_runtime_resources() || task.has_unresolved_runtime_transition() {
         return Err(ProjectError::new(
             "task_runtime_still_owned",
-            "stop task services before cleaning the workspace",
+            "stop or reconcile task services before cleaning the workspace",
         ));
     }
 
