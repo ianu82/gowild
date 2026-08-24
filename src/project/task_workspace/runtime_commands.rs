@@ -194,7 +194,9 @@ fn canonical_directory_within(path: &Path, boundary: &Path) -> Result<PathBuf, P
     }
 }
 
-fn run_invocation(invocation: TaskCommandInvocation) -> Result<TaskCommandResult, ProjectError> {
+pub(super) fn run_invocation(
+    invocation: TaskCommandInvocation,
+) -> Result<TaskCommandResult, ProjectError> {
     let Some((program, arguments)) = invocation.argv.split_first() else {
         return Err(ProjectError::new(
             "task_command_invalid",
