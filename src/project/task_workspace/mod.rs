@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::manifest::LoadedProject;
 use super::model::ProjectError;
 
+pub(crate) mod provision;
 pub(crate) mod repository;
 mod rules;
 mod runtime_validation;
@@ -21,6 +22,8 @@ use rules::{
     validate_identifier,
 };
 
+#[cfg(test)]
+mod provision_tests;
 #[cfg(test)]
 mod repository_tests;
 #[cfg(test)]

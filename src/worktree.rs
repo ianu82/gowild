@@ -246,6 +246,25 @@ pub(crate) fn build_worktree_add_new_branch_command(
     }
 }
 
+pub(crate) fn build_worktree_add_detached_command(
+    repo_root: &Path,
+    path: &Path,
+    base: &str,
+) -> WorktreeCommand {
+    WorktreeCommand {
+        program: "git".to_string(),
+        args: vec![
+            "-C".to_string(),
+            repo_root.display().to_string(),
+            "worktree".to_string(),
+            "add".to_string(),
+            "--detach".to_string(),
+            path.display().to_string(),
+            base.to_string(),
+        ],
+    }
+}
+
 pub(crate) fn build_worktree_add_existing_branch_command(
     repo_root: &Path,
     path: &Path,
@@ -810,6 +829,28 @@ prunable stale
                 "worktree/brave-river",
                 "/w/gowild/worktree-brave-river",
                 "HEAD"
+            ]
+        );
+    }
+
+    #[test]
+    fn worktree_add_detached_command_keeps_branches_lazy() {
+        let command = build_worktree_add_detached_command(
+            Path::new("/repo/gowild"),
+            Path::new("/w/gowild/task-42"),
+            "0123456789abcdef0123456789abcdef01234567",
+        );
+        assert_eq!(command.program, "git");
+        assert_eq!(
+            command.args,
+            vec![
+                "-C",
+                "/repo/gowild",
+                "worktree",
+                "add",
+                "--detach",
+                "/w/gowild/task-42",
+                "0123456789abcdef0123456789abcdef01234567"
             ]
         );
     }
