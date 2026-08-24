@@ -286,7 +286,13 @@ fn project_command() -> Command {
         )
         .subcommand(
             Command::new("check")
-                .about("Validate and resolve a project manifest")
+                .about("Validate a project manifest, private overrides, and trust")
+                .arg(path_arg("path", "PATH").required(false))
+                .arg(json_flag()),
+        )
+        .subcommand(
+            Command::new("state")
+                .about("Inspect private overrides and manifest trust")
                 .arg(path_arg("path", "PATH").required(false))
                 .arg(json_flag()),
         )
