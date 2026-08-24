@@ -60,8 +60,8 @@ use windows_sys::{
                 GetCurrentProcess, GetExitCodeProcess, GetProcessTimes, OpenProcess, OpenThread,
                 QueryFullProcessImageNameW, ResumeThread, TerminateProcess, CREATE_NO_WINDOW,
                 CREATE_SUSPENDED, DETACHED_PROCESS, PROCESS_BASIC_INFORMATION,
-                PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
-                THREAD_SUSPEND_RESUME,
+                PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+                PROCESS_VM_READ, THREAD_SUSPEND_RESUME,
             },
         },
         UI::{
@@ -595,6 +595,46 @@ pub(crate) fn run_supervised_service_platform(
         }
     };
     child.wait().map(|status| status.code().unwrap_or(1))
+}
+
+pub(crate) fn configure_service_supervisor_command_platform(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+pub(crate) fn terminate_service_process_platform(
+    pid: u32,
+    started_at_unix_millis: u64,
+) -> std::io::Result<()> {
+    let Some(process) =
+        ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE)
+    else {
+        return Ok(());
+    };
+    if !process_exists(pid) {
+        return Ok(());
+    }
+    if process_started_at_unix_millis(pid) != Some(started_at_unix_millis) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "service process identity changed",
+        ));
+    }
+    if unsafe { TerminateProcess(process.0, 1) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while process_started_at_unix_millis(pid) == Some(started_at_unix_millis)
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if process_started_at_unix_millis(pid) == Some(started_at_unix_millis) {
+        Err(std::io::Error::other("service process did not stop"))
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
@@ -2579,6 +2619,54 @@ mod tests {
     use windows_sys::Win32::System::Console::{
         AllocConsole, FreeConsole, GetConsoleProcessList, GetConsoleWindow,
     };
+
+    #[test]
+    fn service_termination_requires_exact_windows_process_identity() {
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 60",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        super::configure_service_supervisor_command_platform(&mut command);
+        let mut child = command.spawn().expect("spawn supervised process");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let started_at_unix_millis = loop {
+            if let Some(started_at) = super::process_started_at_unix_millis(child.id()) {
+                break started_at;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("service process identity was unavailable");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+
+        let wrong_identity = super::terminate_service_process_platform(
+            child.id(),
+            started_at_unix_millis.saturating_add(1),
+        )
+        .unwrap_err()
+        .kind();
+        let still_running = child.try_wait().unwrap().is_none();
+        let termination =
+            super::terminate_service_process_platform(child.id(), started_at_unix_millis);
+        if termination.is_err() {
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+
+        assert_eq!(wrong_identity, std::io::ErrorKind::PermissionDenied);
+        assert!(still_running);
+        termination.unwrap();
+    }
 
     #[test]
     fn private_remote_directory_supports_long_paths() {

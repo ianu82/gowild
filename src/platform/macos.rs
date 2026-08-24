@@ -52,8 +52,68 @@ pub(crate) fn run_supervised_service_platform(
     Err(error)
 }
 
+pub(crate) fn configure_service_supervisor_command_platform(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+
+    command.process_group(0);
+}
+
+pub(crate) fn terminate_service_process_platform(
+    pid: u32,
+    started_at_unix_millis: u64,
+) -> std::io::Result<()> {
+    if process_started_at_unix_millis(pid).is_none() {
+        return Ok(());
+    }
+    if process_started_at_unix_millis(pid) != Some(started_at_unix_millis) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "service process identity changed",
+        ));
+    }
+    let pid = i32::try_from(pid)
+        .ok()
+        .filter(|pid| *pid > 0)
+        .ok_or_else(|| std::io::Error::other("service process id is invalid"))?;
+    if unsafe { libc::getpgid(pid) } != pid {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "service process group identity changed",
+        ));
+    }
+    signal_service_group(pid, libc::SIGTERM, started_at_unix_millis)?;
+    if process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis) {
+        signal_service_group(pid, libc::SIGKILL, started_at_unix_millis)?;
+    }
+    if process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis) {
+        Err(std::io::Error::other("service process did not stop"))
+    } else {
+        Ok(())
+    }
+}
+
+fn signal_service_group(pid: i32, signal: i32, started_at_unix_millis: u64) -> std::io::Result<()> {
+    if unsafe { libc::kill(-pid, signal) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error);
+        }
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis)
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
     let info = process_bsdinfo(pid)?;
+    const ZOMBIE_STATUS: u32 = 5;
+    if info.pbi_status == ZOMBIE_STATUS {
+        return None;
+    }
     let seconds = info.pbi_start_tvsec;
     let microseconds = info.pbi_start_tvusec;
     seconds.checked_mul(1000)?.checked_add(microseconds / 1000)

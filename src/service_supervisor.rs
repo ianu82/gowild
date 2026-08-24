@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ const LEASE_VERSION: u32 = 1;
 const START_WAIT: Duration = Duration::from_secs(30);
 const START_POLL: Duration = Duration::from_millis(10);
 const MAX_START_BYTES: u64 = 1024;
+static NEXT_CONTROL_TEMP: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +31,81 @@ struct SupervisorArgs {
 
 pub(crate) fn maybe_run(args: &[String]) -> Option<io::Result<i32>> {
     (args.get(1).map(String::as_str) == Some(COMMAND)).then(|| parse_args(&args[2..]).and_then(run))
+}
+
+pub(crate) fn command(
+    executable: &Path,
+    instance_id: &str,
+    lease_path: &Path,
+    start_path: &Path,
+    argv: &[String],
+) -> io::Result<std::process::Command> {
+    let lease_path = lease_path
+        .to_str()
+        .ok_or_else(|| invalid_input("service supervisor lease path is not UTF-8"))?;
+    let start_path = start_path
+        .to_str()
+        .ok_or_else(|| invalid_input("service supervisor start path is not UTF-8"))?;
+    let mut encoded = vec![
+        instance_id.to_string(),
+        lease_path.to_string(),
+        start_path.to_string(),
+        "--".into(),
+    ];
+    encoded.extend_from_slice(argv);
+    parse_args(&encoded)?;
+    let mut command = std::process::Command::new(executable);
+    command
+        .arg(COMMAND)
+        .arg(instance_id)
+        .arg(lease_path)
+        .arg(start_path)
+        .arg("--")
+        .args(argv);
+    crate::platform::configure_service_supervisor_command(&mut command);
+    Ok(command)
+}
+
+pub(crate) fn write_start_signal(path: &Path, instance_id: &str) -> io::Result<()> {
+    if !valid_instance_id(instance_id) {
+        return Err(invalid_input("service supervisor instance id is invalid"));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            let existing = read_bounded_regular_file(
+                path,
+                MAX_START_BYTES,
+                "service supervisor start signal",
+            )?;
+            if String::from_utf8_lossy(&existing).trim() == instance_id {
+                return Ok(());
+            }
+            return Err(invalid_data(
+                "service supervisor start signal belongs to another instance",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let bytes = format!("{instance_id}\n");
+    match write_private_noclobber(path, "start", bytes.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let existing = read_bounded_regular_file(
+                path,
+                MAX_START_BYTES,
+                "service supervisor start signal",
+            )?;
+            if String::from_utf8_lossy(&existing).trim() == instance_id {
+                Ok(())
+            } else {
+                Err(invalid_data(
+                    "service supervisor start signal belongs to another instance",
+                ))
+            }
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn parse_args(args: &[String]) -> io::Result<SupervisorArgs> {
@@ -104,22 +181,18 @@ pub(crate) fn read_lease(path: &Path) -> io::Result<ServiceSupervisorLease> {
 }
 
 fn write_lease(path: &Path, lease: &ServiceSupervisorLease) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| invalid_input("service supervisor lease has no parent"))?;
-    let temporary = parent.join(format!(".lease-{}.tmp", std::process::id()));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary)?;
     let bytes = serde_json::to_vec(lease)
         .map_err(|_| invalid_data("service supervisor lease could not be serialized"))?;
+    write_private_noclobber(path, "lease", &bytes)
+}
+
+fn write_private_noclobber(path: &Path, prefix: &str, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| invalid_input("service supervisor control file has no parent"))?;
+    let (mut file, temporary) = create_private_control_temp(parent, prefix)?;
     let result = (|| {
-        file.write_all(&bytes)?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         fs::hard_link(&temporary, path)?;
@@ -130,6 +203,31 @@ fn write_lease(path: &Path, lease: &ServiceSupervisorLease) -> io::Result<()> {
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+fn create_private_control_temp(parent: &Path, prefix: &str) -> io::Result<(fs::File, PathBuf)> {
+    for _ in 0..100 {
+        let nonce = NEXT_CONTROL_TEMP.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(".{prefix}-{}-{nonce}.tmp", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        }
+        match options.open(&path) {
+            Ok(file) => return Ok((file, path)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "service supervisor could not allocate a private control temporary file",
+    ))
 }
 
 fn wait_for_start(path: &Path, instance_id: &str, timeout: Duration) -> io::Result<()> {
@@ -266,6 +364,63 @@ fn invalid_data_owned(message: String) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_preserves_direct_argv_and_validated_control_paths() {
+        let root = std::env::temp_dir().join("gowild-supervisor-command-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let lease_path = root.join("lease.json");
+        let start_path = root.join("start");
+        let command = command(
+            &executable,
+            "1234567890abcdef-service",
+            &lease_path,
+            &start_path,
+            &["program".into(), "argument with spaces".into()],
+        )
+        .unwrap();
+
+        assert_eq!(command.get_program(), executable.as_os_str());
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                std::ffi::OsStr::new(COMMAND),
+                std::ffi::OsStr::new("1234567890abcdef-service"),
+                lease_path.as_os_str(),
+                start_path.as_os_str(),
+                std::ffi::OsStr::new("--"),
+                std::ffi::OsStr::new("program"),
+                std::ffi::OsStr::new("argument with spaces"),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn start_signal_is_atomic_idempotent_and_never_reassigned() {
+        let root = std::env::temp_dir().join("gowild-supervisor-start-signal-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("start");
+        let owner = "1234567890abcdef-owner";
+
+        write_start_signal(&path, owner).unwrap();
+        write_start_signal(&path, owner).unwrap();
+        assert_eq!(
+            write_start_signal(&path, "1234567890abcdef-contender")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("{owner}\n")
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn supervisor_args_require_safe_sibling_control_paths_and_direct_argv() {

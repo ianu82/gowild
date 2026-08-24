@@ -110,6 +110,81 @@ pub(crate) fn run_supervised_service_platform(
     Err(error)
 }
 
+pub(crate) fn configure_service_supervisor_command_platform(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+
+    command.process_group(0);
+}
+
+pub(crate) fn terminate_service_process_platform(
+    pid: u32,
+    started_at_unix_millis: u64,
+) -> std::io::Result<()> {
+    terminate_unix_service_process(pid, started_at_unix_millis)
+}
+
+fn terminate_unix_service_process(pid: u32, started_at_unix_millis: u64) -> std::io::Result<()> {
+    if process_started_at_unix_millis(pid).is_none() {
+        return Ok(());
+    }
+    if process_started_at_unix_millis(pid) != Some(started_at_unix_millis) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "service process identity changed",
+        ));
+    }
+    let pid = i32::try_from(pid)
+        .ok()
+        .filter(|pid| *pid > 0)
+        .ok_or_else(|| std::io::Error::other("service process id is invalid"))?;
+    if unsafe { libc::getpgid(pid) } != pid {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "service process group identity changed",
+        ));
+    }
+    signal_and_wait(
+        pid,
+        libc::SIGTERM,
+        started_at_unix_millis,
+        std::time::Duration::from_secs(2),
+    )?;
+    if process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis) {
+        signal_and_wait(
+            pid,
+            libc::SIGKILL,
+            started_at_unix_millis,
+            std::time::Duration::from_secs(2),
+        )?;
+    }
+    if process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis) {
+        Err(std::io::Error::other("service process did not stop"))
+    } else {
+        Ok(())
+    }
+}
+
+fn signal_and_wait(
+    pid: i32,
+    signal: i32,
+    started_at_unix_millis: u64,
+    timeout: std::time::Duration,
+) -> std::io::Result<()> {
+    if unsafe { libc::kill(-pid, signal) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error);
+        }
+    }
+    let deadline = std::time::Instant::now() + timeout;
+    while process_started_at_unix_millis(pid as u32) == Some(started_at_unix_millis)
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let start_ticks = process_start_ticks_from_stat(&stat)?;
@@ -131,7 +206,11 @@ pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
 fn process_start_ticks_from_stat(stat: &str) -> Option<u64> {
     let rest = stat.get(stat.rfind(')')? + 2..)?;
     // The suffix starts at field 3 (`state`); process start time is field 22.
-    rest.split_whitespace().nth(19)?.parse().ok()
+    let mut fields = rest.split_whitespace();
+    if fields.next()? == "Z" {
+        return None;
+    }
+    fields.nth(18)?.parse().ok()
 }
 
 pub(crate) fn pane_custom_command_pty_builder_platform(
