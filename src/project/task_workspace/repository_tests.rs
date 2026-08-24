@@ -193,6 +193,74 @@ fn repository_serializes_concurrent_revision_updates() {
 }
 
 #[test]
+fn repository_operation_lock_is_per_task_and_crash_released() {
+    let parent = test_root("task-operation-lock");
+    let repository = repository(&parent);
+    repository.create(&task(&repository, "task-one")).unwrap();
+    repository.create(&task(&repository, "task-two")).unwrap();
+
+    let task_one_lock = repository.lock_task_operations("task-one").unwrap();
+    assert_eq!(
+        repository
+            .try_lock_task_operations("task-one")
+            .unwrap_err()
+            .code,
+        "task_workspace_busy"
+    );
+    let task_two_lock = repository.try_lock_task_operations("task-two").unwrap();
+    assert_eq!(repository.list_ids().unwrap(), vec!["task-one", "task-two"]);
+
+    drop(task_one_lock);
+    repository.try_lock_task_operations("task-one").unwrap();
+    drop(task_two_lock);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(parent.join("state/.task-operation-task-one.lock"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(parent);
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_rejects_a_symlinked_operation_lock() {
+    use std::os::unix::fs::symlink;
+
+    let parent = test_root("task-operation-lock-symlink");
+    let repository = repository(&parent);
+    repository
+        .create(&task(&repository, "linked-task"))
+        .unwrap();
+    let target = parent.join("outside.lock");
+    std::fs::write(&target, b"do not lock").unwrap();
+    symlink(
+        &target,
+        parent.join("state/.task-operation-linked-task.lock"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        repository
+            .try_lock_task_operations("linked-task")
+            .unwrap_err()
+            .code,
+        "invalid_task_workspace_operation_lock"
+    );
+    assert_eq!(std::fs::read(target).unwrap(), b"do not lock");
+
+    let _ = std::fs::remove_dir_all(parent);
+}
+
+#[test]
 fn repository_requires_exactly_one_revision_per_durable_save() {
     let parent = test_root("task-state-revisions");
     let repository = repository(&parent);

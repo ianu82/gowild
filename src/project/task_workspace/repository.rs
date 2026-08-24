@@ -1,4 +1,5 @@
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
@@ -13,6 +14,18 @@ const MAX_TASKS_PER_PROJECT: usize = 10_000;
 const MAX_STATE_DIRECTORY_ENTRIES: usize = 20_000;
 const STORE_MARKER_FILE: &str = ".gowild-task-store-v1";
 const STORE_MARKER_CONTENT: &[u8] = b"gowild task workspace state v1\n";
+const OPERATION_LOCK_PREFIX: &str = ".task-operation-";
+const OPERATION_LOCK_SUFFIX: &str = ".lock";
+
+/// An OS-backed exclusive lease for one task's external mutations.
+///
+/// The operating system releases the lease if GoWild exits or crashes. The
+/// empty owner-only file remains as a stable rendezvous point and contains no
+/// task data or credentials.
+#[derive(Debug)]
+pub struct TaskWorkspaceOperationLock {
+    _file: fs::File,
+}
 
 /// Durable, owner-only task state for one canonical project manifest.
 ///
@@ -48,6 +61,20 @@ impl TaskWorkspaceRepository {
     pub fn state_path(&self, task_id: &str) -> Result<PathBuf, ProjectError> {
         validate_identifier("task id", task_id)?;
         Ok(self.state_root.join(format!("{task_id}.json")))
+    }
+
+    pub fn lock_task_operations(
+        &self,
+        task_id: &str,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        self.open_task_operation_lock(task_id, false)
+    }
+
+    pub fn try_lock_task_operations(
+        &self,
+        task_id: &str,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        self.open_task_operation_lock(task_id, true)
     }
 
     pub fn create(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
@@ -178,12 +205,6 @@ impl TaskWorkspaceRepository {
             if entry.file_name() == STORE_MARKER_FILE {
                 continue;
             }
-            if task_ids.len() >= MAX_TASKS_PER_PROJECT {
-                return Err(ProjectError::new(
-                    "too_many_task_workspaces",
-                    "project task state exceeds the 10000-task safety limit",
-                ));
-            }
             let metadata = fs::symlink_metadata(entry.path())
                 .map_err(|error| task_io_error("task metadata", &error))?;
             if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -202,6 +223,9 @@ impl TaskWorkspaceRepository {
             if is_private_writer_temp_name(name) {
                 continue;
             }
+            if operation_lock_task_id(name).is_some() {
+                continue;
+            }
             let task_id = name.strip_suffix(".json").ok_or_else(|| {
                 ProjectError::new(
                     "invalid_task_workspace_state",
@@ -209,10 +233,61 @@ impl TaskWorkspaceRepository {
                 )
             })?;
             validate_identifier("task id", task_id)?;
+            if task_ids.len() >= MAX_TASKS_PER_PROJECT {
+                return Err(ProjectError::new(
+                    "too_many_task_workspaces",
+                    "project task state exceeds the 10000-task safety limit",
+                ));
+            }
             task_ids.push(task_id.to_string());
         }
         task_ids.sort();
         Ok(task_ids)
+    }
+
+    fn open_task_operation_lock(
+        &self,
+        task_id: &str,
+        nonblocking: bool,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        validate_identifier("task id", task_id)?;
+        self.ensure_state_root()?;
+        self.load(task_id)?;
+        let path = self.state_root.join(format!(
+            "{OPERATION_LOCK_PREFIX}{task_id}{OPERATION_LOCK_SUFFIX}"
+        ));
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(ProjectError::new(
+                    "invalid_task_workspace_operation_lock",
+                    "task operation lock is not a regular owner-only file",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(task_io_error("operation lock metadata", &error)),
+        }
+        let file = open_owner_only_lock_file(&path)
+            .map_err(|error| task_io_error("operation lock open", &error))?;
+        if nonblocking {
+            match file.try_lock() {
+                Ok(()) => {}
+                Err(fs::TryLockError::WouldBlock) => {
+                    return Err(ProjectError::new(
+                        "task_workspace_busy",
+                        format!("task workspace '{task_id}' is already being changed"),
+                    ));
+                }
+                Err(fs::TryLockError::Error(error)) => {
+                    return Err(task_io_error("operation lock acquisition", &error));
+                }
+            }
+        } else {
+            file.lock()
+                .map_err(|error| task_io_error("operation lock acquisition", &error))?;
+        }
+        restrict_file_permissions(&path)?;
+        Ok(TaskWorkspaceOperationLock { _file: file })
     }
 
     fn accept_matching_create_retry(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
@@ -403,6 +478,26 @@ fn is_private_writer_temp_name(name: &str) -> bool {
         && valid_part(parts.next().unwrap_or_default())
         && valid_part(parts.next().unwrap_or_default())
         && parts.next().is_none()
+}
+
+fn operation_lock_task_id(name: &str) -> Option<&str> {
+    let task_id = name
+        .strip_prefix(OPERATION_LOCK_PREFIX)?
+        .strip_suffix(OPERATION_LOCK_SUFFIX)?;
+    validate_identifier("task id", task_id)
+        .is_ok()
+        .then_some(task_id)
+}
+
+fn open_owner_only_lock_file(path: &Path) -> io::Result<fs::File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    options.open(path)
 }
 
 fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Option<Vec<u8>>, ProjectError> {
