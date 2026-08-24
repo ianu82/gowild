@@ -624,14 +624,26 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
     use tokio::sync::mpsc;
 
     static NEXT_LOCAL_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
-    fn local_stream_pair(_name: &str) -> (LocalStream, LocalStream, PathBuf) {
+    struct LocalStreamPath(PathBuf);
+
+    impl Drop for LocalStreamPath {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    fn local_stream_pair(_name: &str) -> (LocalStream, LocalStream, LocalStreamPath) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u32;
         let unique = format!(
-            "hpg-{}-{}.sock",
+            "hpg-{:x}-{nonce:08x}-{:x}.sock",
             std::process::id(),
             NEXT_LOCAL_STREAM_ID.fetch_add(1, Ordering::Relaxed)
         );
@@ -639,7 +651,7 @@ mod tests {
         let listener = crate::ipc::bind_local_listener(&path).unwrap();
         let client = crate::ipc::connect_local_stream(&path).unwrap();
         let server = listener.accept().unwrap();
-        (client, server, path)
+        (client, server, LocalStreamPath(path))
     }
 
     fn read_response_line(stream: &mut LocalStream) -> String {
