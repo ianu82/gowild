@@ -355,7 +355,16 @@ fn service_fixture(compose: bool) -> ProjectFixture {
         id: "api-service".into(),
         repository: Some("api".into()),
         cwd: None,
-        argv: vec!["run-api".into()],
+        argv: if compose {
+            vec![
+                "docker".into(),
+                "compose".into(),
+                "up".into(),
+                "--detach".into(),
+            ]
+        } else {
+            vec!["run-api".into()]
+        },
         environment: BTreeMap::from([("FEATURE_MODE".into(), "isolated".into())]),
         isolation: RuntimeIsolationSpec {
             compose,

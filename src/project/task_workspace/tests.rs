@@ -35,7 +35,12 @@ pub(super) fn loaded_project() -> LoadedProject {
                     id: "api-service".into(),
                     repository: Some("api".into()),
                     cwd: None,
-                    argv: vec!["run-api".into()],
+                    argv: vec![
+                        "docker".into(),
+                        "compose".into(),
+                        "up".into(),
+                        "--detach".into(),
+                    ],
                     environment: BTreeMap::new(),
                     isolation: crate::project::model::RuntimeIsolationSpec {
                         ports: vec!["http".into()],
