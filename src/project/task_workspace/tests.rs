@@ -134,6 +134,21 @@ fn new_workspace_models_every_repo_and_unique_runtime_namespace() {
 }
 
 #[test]
+fn task_workspace_store_cannot_overlap_a_source_repository() {
+    let error = TaskWorkspace::new(
+        &loaded_project(),
+        "overlapping-task",
+        "Unsafe overlap",
+        TaskAgent::Codex,
+        route(),
+        PathBuf::from("/projects/example/api/task-workspaces"),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, "task_workspace_repository_path_collision");
+}
+
+#[test]
 fn lifecycle_rejects_skips_and_allows_recovery_and_cleanup() {
     let mut workspace = workspace();
     assert!(workspace
