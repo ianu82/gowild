@@ -12,6 +12,8 @@ use super::manifest::LoadedProject;
 use super::model::ProjectError;
 
 pub(crate) mod branch;
+pub(crate) mod cleanup;
+mod cleanup_safety;
 pub(crate) mod provision;
 pub(crate) mod repository;
 mod rules;
@@ -25,6 +27,8 @@ use rules::{
 
 #[cfg(test)]
 mod branch_tests;
+#[cfg(test)]
+mod cleanup_tests;
 #[cfg(test)]
 mod provision_tests;
 #[cfg(test)]

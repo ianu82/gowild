@@ -196,7 +196,6 @@ pub(crate) fn worktree_dirty_remove_message(path: &Path) -> String {
     )
 }
 
-#[cfg(any(windows, test))]
 pub(crate) fn checkout_has_dirty_files(path: &Path) -> Result<bool, String> {
     let path_arg = path.display().to_string();
     let output = crate::noninteractive_process::command("git")
