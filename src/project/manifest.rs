@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use super::model::{ProjectError, ProjectManifest, PROJECT_MANIFEST_FILE};
+use super::overrides::ProjectOverrides;
 
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
@@ -14,6 +15,14 @@ pub struct LoadedProject {
     pub digest: String,
     pub manifest: ProjectManifest,
     pub repositories: Vec<ResolvedRepo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDefinition {
+    pub manifest_path: PathBuf,
+    pub root: PathBuf,
+    pub digest: String,
+    pub manifest: ProjectManifest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +61,10 @@ pub fn render_manifest(manifest: &ProjectManifest) -> Result<String, ProjectErro
 }
 
 pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
+    load_project_with_overrides(path, &ProjectOverrides::default())
+}
+
+pub fn load_project_definition(path: &Path) -> Result<ProjectDefinition, ProjectError> {
     let manifest_path = if path.is_dir() {
         path.join(PROJECT_MANIFEST_FILE)
     } else {
@@ -101,6 +114,32 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
             )
         })?
         .to_path_buf();
+
+    Ok(ProjectDefinition {
+        manifest_path,
+        root,
+        digest: sha256_hex(contents.as_bytes()),
+        manifest,
+    })
+}
+
+fn load_project_with_overrides(
+    path: &Path,
+    overrides: &ProjectOverrides,
+) -> Result<LoadedProject, ProjectError> {
+    let definition = load_project_definition(path)?;
+    resolve_project_definition(definition, overrides)
+}
+
+pub fn resolve_project_definition(
+    definition: ProjectDefinition,
+    overrides: &ProjectOverrides,
+) -> Result<LoadedProject, ProjectError> {
+    overrides.validate_for(&definition.manifest)?;
+    let mut manifest = definition.manifest.clone();
+    overrides.apply_to(&mut manifest);
+    manifest.validate()?;
+    let root = &definition.root;
     let repositories = manifest
         .repositories
         .iter()
@@ -115,7 +154,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
                     ),
                 )
             })?;
-            if !path.starts_with(&root) {
+            if !path.starts_with(root) {
                 return Err(ProjectError::new(
                     "project_repository_escape",
                     format!("repository '{}' resolves outside the project root", repo.id),
@@ -160,9 +199,9 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
     }
 
     Ok(LoadedProject {
-        manifest_path,
-        root,
-        digest: sha256_hex(contents.as_bytes()),
+        manifest_path: definition.manifest_path,
+        root: definition.root,
+        digest: definition.digest,
         manifest,
         repositories,
     })
@@ -236,6 +275,7 @@ mod tests {
 
     use super::*;
     use crate::project::model::{ProjectCommand, ProjectRepo, PROJECT_MANIFEST_VERSION};
+    use crate::project::overrides::ProjectOverrides;
 
     struct Fixture {
         root: PathBuf,
@@ -348,6 +388,32 @@ mod tests {
             render_manifest(&parse_manifest(&rendered).unwrap()).unwrap(),
             rendered
         );
+    }
+
+    #[test]
+    fn private_base_override_is_validated_and_resolved() {
+        let fixture = Fixture::new();
+        for repo in ["api", "shared", "web"] {
+            fixture.repo(repo);
+        }
+        run_git(&fixture.root.join("api"), &["branch", "release"]);
+        fs::write(
+            fixture.root.join(PROJECT_MANIFEST_FILE),
+            render_manifest(&three_repo_manifest()).unwrap(),
+        )
+        .unwrap();
+        let overrides = ProjectOverrides {
+            repository_bases: BTreeMap::from([("api".into(), "release".into())]),
+        };
+
+        let loaded = load_project_with_overrides(&fixture.root, &overrides).unwrap();
+        let api = loaded
+            .repositories
+            .iter()
+            .find(|repository| repository.id == "api")
+            .unwrap();
+        assert_eq!(api.configured_base.as_deref(), Some("release"));
+        assert_eq!(api.base_commit, api.head_commit);
     }
 
     #[test]

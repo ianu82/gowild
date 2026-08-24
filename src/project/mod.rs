@@ -1,6 +1,7 @@
 mod discovery;
 mod manifest;
 mod model;
+mod overrides;
 
 pub(crate) use discovery::{discover_project, DiscoveryOptions};
 pub(crate) use manifest::{load_project, render_manifest};
