@@ -9,6 +9,18 @@ use super::{OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWor
 use crate::project::ProjectError;
 
 pub(super) fn preflight_cleanup(task: &TaskWorkspace) -> Result<(), ProjectError> {
+    if task.journal.iter().any(|transition| {
+        matches!(
+            &transition.resource,
+            OwnedResource::ServiceProcess { .. } | OwnedResource::ComposeProject { .. }
+        ) && task.resource_is_owned(&transition.resource)
+    }) {
+        return Err(ProjectError::new(
+            "task_runtime_still_owned",
+            "stop task services before cleaning the workspace",
+        ));
+    }
+
     let root_resource = OwnedResource::WorkspaceDirectory {
         path: task.root.clone(),
     };

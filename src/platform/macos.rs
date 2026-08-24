@@ -52,20 +52,12 @@ pub(crate) fn run_supervised_service_platform(
     Err(error)
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn configure_service_supervisor_command_platform(command: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
 
     command.process_group(0);
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn terminate_service_process_platform(
     pid: u32,
     started_at_unix_millis: u64,
@@ -100,10 +92,6 @@ pub(crate) fn terminate_service_process_platform(
     }
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 fn signal_service_group(pid: i32, signal: i32, started_at_unix_millis: u64) -> std::io::Result<()> {
     if unsafe { libc::kill(-pid, signal) } != 0 {
         let error = std::io::Error::last_os_error();

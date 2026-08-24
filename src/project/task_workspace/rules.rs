@@ -17,10 +17,10 @@ pub(super) fn phase_transition_allowed(
         (current, next),
         (Planned, Provisioning | Cleaning)
             | (Provisioning, Ready | Cleaning | NeedsAttention)
-            | (Ready, Running | Cleaning | NeedsAttention)
+            | (Ready, Running | Stopped | Cleaning | NeedsAttention)
             | (Running, Stopped | NeedsAttention)
             | (Stopped, Running | Cleaning | NeedsAttention)
-            | (NeedsAttention, Provisioning | Stopped | Cleaning)
+            | (NeedsAttention, Provisioning | Running | Stopped | Cleaning)
             | (Cleaning, Cleaned | NeedsAttention)
     )
 }

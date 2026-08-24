@@ -33,10 +33,6 @@ pub(crate) fn maybe_run(args: &[String]) -> Option<io::Result<i32>> {
     (args.get(1).map(String::as_str) == Some(COMMAND)).then(|| parse_args(&args[2..]).and_then(run))
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn command(
     executable: &Path,
     instance_id: &str,
@@ -70,10 +66,6 @@ pub(crate) fn command(
     Ok(command)
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn write_start_signal(path: &Path, instance_id: &str) -> io::Result<()> {
     if !valid_instance_id(instance_id) {
         return Err(invalid_input("service supervisor instance id is invalid"));
