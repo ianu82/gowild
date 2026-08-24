@@ -17,6 +17,7 @@ mod cleanup_safety;
 pub(crate) mod provision;
 pub(crate) mod repository;
 mod rules;
+pub(crate) mod runtime_commands;
 mod runtime_layout;
 mod runtime_ports;
 mod runtime_validation;
@@ -36,6 +37,8 @@ mod cleanup_tests;
 mod provision_tests;
 #[cfg(test)]
 mod repository_tests;
+#[cfg(test)]
+mod runtime_commands_tests;
 #[cfg(test)]
 mod runtime_layout_tests;
 #[cfg(test)]
