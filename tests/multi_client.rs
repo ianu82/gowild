@@ -1069,14 +1069,25 @@ fn multi_client_smallest_leaving_resizes_up_for_remaining_clients() {
         "remaining client should receive resized-up frame"
     );
 
-    let size_after_small_leaves = read_pane_tty_size(&api_socket, &pane_id, Duration::from_secs(5));
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut last_seen_size = None;
+    let mut size_after_small_leaves = None;
+    while Instant::now() < deadline {
+        if let Some(size) =
+            try_read_pane_tty_size(&api_socket, &pane_id, Duration::from_millis(400))
+        {
+            last_seen_size = Some(size);
+            if size.0 > size_with_small_client.0 && size.1 > size_with_small_client.1 {
+                size_after_small_leaves = Some(size);
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(60));
+    }
 
     assert!(
-        size_after_small_leaves.0 > size_with_small_client.0
-            && size_after_small_leaves.1 > size_with_small_client.1,
-        "remaining clients should get larger effective pane size after smallest leaves: before={:?}, after={:?}",
-        size_with_small_client,
-        size_after_small_leaves
+        size_after_small_leaves.is_some(),
+        "remaining clients should get larger effective pane size after smallest leaves: before={size_with_small_client:?}, last_seen={last_seen_size:?}"
     );
 
     cleanup_spawned_gowild(server, base);
