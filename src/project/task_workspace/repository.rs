@@ -16,6 +16,7 @@ const STORE_MARKER_FILE: &str = ".gowild-task-store-v1";
 const STORE_MARKER_CONTENT: &[u8] = b"gowild task workspace state v1\n";
 const OPERATION_LOCK_PREFIX: &str = ".task-operation-";
 const OPERATION_LOCK_SUFFIX: &str = ".lock";
+const REPOSITORY_LOCK_PREFIX: &str = ".repository-operation-";
 
 /// An OS-backed exclusive lease for one task's external mutations.
 ///
@@ -75,6 +76,36 @@ impl TaskWorkspaceRepository {
         task_id: &str,
     ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
         self.open_task_operation_lock(task_id, true)
+    }
+
+    pub fn lock_repository_operations(
+        &self,
+        repository_id: &str,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        self.open_repository_operation_lock(repository_id, false)
+    }
+
+    pub fn try_lock_repository_operations(
+        &self,
+        repository_id: &str,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        self.open_repository_operation_lock(repository_id, true)
+    }
+
+    fn open_repository_operation_lock(
+        &self,
+        repository_id: &str,
+        nonblocking: bool,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
+        validate_identifier("repository id", repository_id)?;
+        self.ensure_state_root()?;
+        self.open_operation_lock(
+            self.state_root.join(format!(
+                "{REPOSITORY_LOCK_PREFIX}{repository_id}{OPERATION_LOCK_SUFFIX}"
+            )),
+            format!("repository '{repository_id}' is already being changed"),
+            nonblocking,
+        )
     }
 
     pub fn create(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
@@ -226,6 +257,9 @@ impl TaskWorkspaceRepository {
             if operation_lock_task_id(name).is_some() {
                 continue;
             }
+            if operation_lock_repository_id(name).is_some() {
+                continue;
+            }
             let task_id = name.strip_suffix(".json").ok_or_else(|| {
                 ProjectError::new(
                     "invalid_task_workspace_state",
@@ -253,9 +287,21 @@ impl TaskWorkspaceRepository {
         validate_identifier("task id", task_id)?;
         self.ensure_state_root()?;
         self.load(task_id)?;
-        let path = self.state_root.join(format!(
-            "{OPERATION_LOCK_PREFIX}{task_id}{OPERATION_LOCK_SUFFIX}"
-        ));
+        self.open_operation_lock(
+            self.state_root.join(format!(
+                "{OPERATION_LOCK_PREFIX}{task_id}{OPERATION_LOCK_SUFFIX}"
+            )),
+            format!("task workspace '{task_id}' is already being changed"),
+            nonblocking,
+        )
+    }
+
+    fn open_operation_lock(
+        &self,
+        path: PathBuf,
+        busy_message: String,
+        nonblocking: bool,
+    ) -> Result<TaskWorkspaceOperationLock, ProjectError> {
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
                 return Err(ProjectError::new(
@@ -273,10 +319,7 @@ impl TaskWorkspaceRepository {
             match file.try_lock() {
                 Ok(()) => {}
                 Err(fs::TryLockError::WouldBlock) => {
-                    return Err(ProjectError::new(
-                        "task_workspace_busy",
-                        format!("task workspace '{task_id}' is already being changed"),
-                    ));
+                    return Err(ProjectError::new("task_workspace_busy", busy_message));
                 }
                 Err(fs::TryLockError::Error(error)) => {
                     return Err(task_io_error("operation lock acquisition", &error));
@@ -312,6 +355,14 @@ impl TaskWorkspaceRepository {
 
     fn validate_task_binding(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
         validate_absolute_clean_path("task workspace store root", &self.workspace_root)?;
+        if self.state_root.starts_with(&self.workspace_root)
+            || self.workspace_root.starts_with(&self.state_root)
+        {
+            return Err(ProjectError::new(
+                "task_workspace_store_overlap",
+                "task state and task workspace roots must not contain one another",
+            ));
+        }
         validate_existing_ancestors(&self.workspace_root)?;
         if task.root != self.workspace_root.join(&task.runtime.namespace) {
             return Err(ProjectError::new(
@@ -489,6 +540,15 @@ fn operation_lock_task_id(name: &str) -> Option<&str> {
         .then_some(task_id)
 }
 
+fn operation_lock_repository_id(name: &str) -> Option<&str> {
+    let repository_id = name
+        .strip_prefix(REPOSITORY_LOCK_PREFIX)?
+        .strip_suffix(OPERATION_LOCK_SUFFIX)?;
+    validate_identifier("repository id", repository_id)
+        .is_ok()
+        .then_some(repository_id)
+}
+
 fn open_owner_only_lock_file(path: &Path) -> io::Result<fs::File> {
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true);
@@ -526,7 +586,7 @@ fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Option<Vec<u
     Ok(Some(bytes))
 }
 
-fn ensure_private_directory_chain(path: &Path) -> Result<bool, ProjectError> {
+pub(super) fn ensure_private_directory_chain(path: &Path) -> Result<bool, ProjectError> {
     if path.parent().is_none() {
         return Err(ProjectError::new(
             "invalid_task_workspace_state_directory",
@@ -591,7 +651,7 @@ fn validate_existing_directory_chain(path: &Path) -> Result<(), ProjectError> {
     Ok(())
 }
 
-fn validate_existing_ancestors(path: &Path) -> Result<(), ProjectError> {
+pub(super) fn validate_existing_ancestors(path: &Path) -> Result<(), ProjectError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
@@ -613,7 +673,7 @@ fn validate_existing_ancestors(path: &Path) -> Result<(), ProjectError> {
     Ok(())
 }
 
-fn directory_is_empty(path: &Path) -> Result<bool, ProjectError> {
+pub(super) fn directory_is_empty(path: &Path) -> Result<bool, ProjectError> {
     Ok(fs::read_dir(path)
         .map_err(|error| task_io_error("directory read", &error))?
         .next()
@@ -633,14 +693,14 @@ fn sync_directory(_path: &Path) -> Result<(), ProjectError> {
 }
 
 #[cfg(unix)]
-fn restrict_directory_permissions(path: &Path) -> Result<(), ProjectError> {
+pub(super) fn restrict_directory_permissions(path: &Path) -> Result<(), ProjectError> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
         .map_err(|error| task_io_error("directory permission update", &error))
 }
 
 #[cfg(not(unix))]
-fn restrict_directory_permissions(_path: &Path) -> Result<(), ProjectError> {
+pub(super) fn restrict_directory_permissions(_path: &Path) -> Result<(), ProjectError> {
     Ok(())
 }
 
