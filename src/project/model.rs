@@ -191,6 +191,7 @@ impl ProjectManifest {
         }
 
         let mut service_ids = BTreeSet::new();
+        let mut compose_services = 0usize;
         for service in &self.services {
             validate_id("service id", &service.id, &mut diagnostics);
             if !service_ids.insert(service.id.as_str()) {
@@ -235,6 +236,18 @@ impl ProjectManifest {
                 "cache",
                 &service.isolation.caches,
                 &mut diagnostics,
+            );
+            if service.isolation.compose {
+                compose_services = compose_services.saturating_add(1);
+                if let Err(message) = validate_compose_command(&service.argv) {
+                    diagnostics.push(format!("Compose service '{}': {message}", service.id));
+                }
+            }
+        }
+        if compose_services > 1 {
+            diagnostics.push(
+                "a project may declare at most one Compose service; one stack can contain multiple containers"
+                    .to_string(),
             );
         }
 
@@ -392,6 +405,54 @@ fn reserved_runtime_environment_key(key: &str) -> bool {
         )
 }
 
+pub(crate) fn validate_compose_command(argv: &[String]) -> Result<usize, &'static str> {
+    let compose_arguments_start = match argv.first().map(|value| executable_name(value)) {
+        Some("docker" | "docker.exe") if argv.get(1).map(String::as_str) == Some("compose") => 2,
+        Some("docker-compose" | "docker-compose.exe") => 1,
+        _ => return Err(
+            "argv must invoke docker compose or docker-compose directly without a shell wrapper",
+        ),
+    };
+    let arguments = &argv[compose_arguments_start..];
+    if arguments.iter().any(|argument| {
+        argument == "--project-name"
+            || argument.starts_with("--project-name=")
+            || argument == "-p"
+            || argument
+                .strip_prefix("-p")
+                .is_some_and(|suffix| !suffix.is_empty())
+    }) {
+        return Err("argv may not override GoWild's task-scoped Compose project name");
+    }
+    if arguments.iter().any(|argument| {
+        argument == "--project-directory" || argument.starts_with("--project-directory=")
+    }) {
+        return Err("argv may not override the isolated task working directory");
+    }
+    let mut up_positions = arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| (argument == "up").then_some(index));
+    let Some(relative_up_index) = up_positions.next() else {
+        return Err("argv must use the up subcommand");
+    };
+    if up_positions.next().is_some() {
+        return Err("argv contains an ambiguous repeated up subcommand");
+    }
+    let up_index = compose_arguments_start + relative_up_index;
+    if !argv[up_index + 1..]
+        .iter()
+        .any(|argument| matches!(argument.as_str(), "-d" | "--detach"))
+    {
+        return Err("argv must run Compose in detached mode with -d or --detach");
+    }
+    Ok(up_index)
+}
+
+fn executable_name(value: &str) -> &str {
+    value.rsplit(['/', '\\']).next().unwrap_or(value)
+}
+
 fn validate_resource_names(
     service_id: &str,
     kind: &str,
@@ -525,6 +586,20 @@ mod tests {
         }
     }
 
+    fn compose_service(id: &str, argv: &[&str]) -> ProjectService {
+        ProjectService {
+            id: id.into(),
+            repository: Some("api".into()),
+            cwd: None,
+            argv: argv.iter().map(|value| (*value).into()).collect(),
+            environment: BTreeMap::new(),
+            isolation: RuntimeIsolationSpec {
+                compose: true,
+                ..RuntimeIsolationSpec::default()
+            },
+        }
+    }
+
     #[test]
     fn dependency_order_places_dependencies_first() {
         let manifest = manifest(vec![
@@ -602,5 +677,50 @@ mod tests {
             environment: BTreeMap::new(),
         });
         assert!(manifest.requires_trust());
+    }
+
+    #[test]
+    fn compose_requires_one_direct_detached_task_scoped_stack() {
+        let valid_commands = [
+            vec!["docker", "compose", "-f", "compose.yml", "up", "--detach"],
+            vec!["/usr/local/bin/docker-compose", "up", "-d"],
+            vec!["C:\\Docker\\docker.exe", "compose", "up", "-d"],
+        ];
+        for argv in valid_commands {
+            let mut candidate = manifest(vec![repo("api", &[])]);
+            candidate.services = vec![compose_service("stack", &argv)];
+            candidate.validate().unwrap();
+        }
+
+        let invalid_commands = [
+            vec!["sh", "-c", "docker compose up -d"],
+            vec!["docker", "compose", "up"],
+            vec!["docker", "compose", "--project-name", "shared", "up", "-d"],
+            vec!["docker", "compose", "-pother", "up", "-d"],
+            vec![
+                "docker",
+                "compose",
+                "--project-directory=../shared",
+                "up",
+                "-d",
+            ],
+        ];
+        for argv in invalid_commands {
+            let mut candidate = manifest(vec![repo("api", &[])]);
+            candidate.services = vec![compose_service("stack", &argv)];
+            let error = candidate.validate().unwrap_err();
+            assert!(error.message.contains("Compose service 'stack'"));
+        }
+
+        let mut duplicated = manifest(vec![repo("api", &[])]);
+        duplicated.services = vec![
+            compose_service("api-stack", &["docker", "compose", "up", "-d"]),
+            compose_service("web-stack", &["docker-compose", "up", "-d"]),
+        ];
+        assert!(duplicated
+            .validate()
+            .unwrap_err()
+            .message
+            .contains("at most one Compose service"));
     }
 }
