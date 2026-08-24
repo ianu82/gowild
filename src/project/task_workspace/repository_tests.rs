@@ -79,6 +79,20 @@ fn repository_creates_loads_and_lists_strict_task_state() {
 }
 
 #[test]
+fn repository_requires_separate_control_and_data_roots() {
+    let parent = test_root("task-state-data-overlap");
+    let repository =
+        TaskWorkspaceRepository::new(parent.join("task-store/state"), parent.join("task-store"));
+    let task = task(&repository, "unsafe-store");
+
+    assert_eq!(
+        repository.create(&task).unwrap_err().code,
+        "task_workspace_store_overlap"
+    );
+    assert!(!parent.exists());
+}
+
+#[test]
 fn repository_recovers_an_interrupted_ownership_marker_commit() {
     let parent = test_root("task-state-marker-recovery");
     let repository = repository(&parent);
@@ -226,6 +240,29 @@ fn repository_operation_lock_is_per_task_and_crash_released() {
             0o600
         );
     }
+
+    let _ = std::fs::remove_dir_all(parent);
+}
+
+#[test]
+fn repository_operation_lock_serializes_one_source_without_blocking_another() {
+    let parent = test_root("repository-operation-lock");
+    let repository = repository(&parent);
+
+    let api_lock = repository.lock_repository_operations("api").unwrap();
+    assert_eq!(
+        repository
+            .try_lock_repository_operations("api")
+            .unwrap_err()
+            .code,
+        "task_workspace_busy"
+    );
+    let web_lock = repository.try_lock_repository_operations("web").unwrap();
+    assert!(repository.list_ids().unwrap().is_empty());
+
+    drop(api_lock);
+    repository.try_lock_repository_operations("api").unwrap();
+    drop(web_lock);
 
     let _ = std::fs::remove_dir_all(parent);
 }
