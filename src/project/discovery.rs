@@ -237,7 +237,7 @@ fn unique_id(base: &str, used: &mut BTreeSet<String>) -> String {
 #[cfg(test)]
 mod tests {
     use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
 
@@ -245,15 +245,14 @@ mod tests {
         root: PathBuf,
     }
 
+    static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(1);
+
     impl Fixture {
         fn new() -> Self {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
+            let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
             let root = std::env::temp_dir().join(format!(
-                "gowild-project-discovery-{}-{nonce}",
-                std::process::id()
+                "gowild-project-discovery-{}-{fixture_id}",
+                std::process::id(),
             ));
             fs::create_dir_all(&root).unwrap();
             Self { root }
