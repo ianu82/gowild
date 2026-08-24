@@ -296,6 +296,34 @@ fn project_command() -> Command {
                 .arg(path_arg("path", "PATH").required(false))
                 .arg(json_flag()),
         )
+        .subcommand(
+            Command::new("override")
+                .about("Manage machine-private project overrides")
+                .subcommand(
+                    Command::new("set-base")
+                        .about("Override a repository base ref and revoke trust if changed")
+                        .arg(path_arg("path", "PATH").required(false))
+                        .arg(option("repo", "ID").required(true))
+                        .arg(option("base", "REF").required(true)),
+                )
+                .subcommand(
+                    Command::new("clear-base")
+                        .about("Clear a repository base override and revoke trust")
+                        .arg(path_arg("path", "PATH").required(false))
+                        .arg(option("repo", "ID").required(true)),
+                ),
+        )
+        .subcommand(
+            Command::new("trust")
+                .about("Trust reviewed executable content at an exact manifest digest")
+                .arg(path_arg("path", "PATH").required(false))
+                .arg(option("digest", "SHA256").required(true)),
+        )
+        .subcommand(
+            Command::new("untrust")
+                .about("Revoke manifest trust")
+                .arg(path_arg("path", "PATH").required(false)),
+        )
 }
 
 fn tab_command() -> Command {
@@ -1179,6 +1207,12 @@ mod tests {
             ),
             (&["pane", "release-agent"][..], &["source", "agent"][..]),
             (&["pane", "report-metadata"][..], &["source"][..]),
+            (
+                &["project", "override", "set-base"][..],
+                &["repo", "base"][..],
+            ),
+            (&["project", "override", "clear-base"][..], &["repo"][..]),
+            (&["project", "trust"][..], &["digest"][..]),
         ] {
             let cmd = command_path(&super::command(), path).clone();
             for option in options {

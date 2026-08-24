@@ -8,6 +8,8 @@ use crate::project::{
     ProjectPrivateStateRepository, PROJECT_MANIFEST_FILE,
 };
 
+mod private_state;
+
 pub(super) fn run_project_command(args: &[String]) -> std::io::Result<i32> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         print_project_help();
@@ -17,6 +19,9 @@ pub(super) fn run_project_command(args: &[String]) -> std::io::Result<i32> {
         "discover" => discover(&args[1..]),
         "check" => check(&args[1..]),
         "state" => state(&args[1..]),
+        "override" => private_state::run_override_command(&args[1..]),
+        "trust" => private_state::run_trust(&args[1..]),
+        "untrust" => private_state::run_untrust(&args[1..]),
         "help" | "--help" | "-h" => {
             print_project_help();
             Ok(0)
@@ -276,6 +281,9 @@ fn print_project_help() {
     eprintln!("  gowild project discover [PATH] [--id ID] [--name TEXT] [--write]");
     eprintln!("  gowild project check [PATH] [--json]");
     eprintln!("  gowild project state [PATH] [--json]");
+    eprintln!("  gowild project override <set-base|clear-base> ...");
+    eprintln!("  gowild project trust [PATH] --digest SHA256");
+    eprintln!("  gowild project untrust [PATH]");
 }
 
 #[cfg(test)]
