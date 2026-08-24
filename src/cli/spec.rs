@@ -35,6 +35,7 @@ pub(super) fn command() -> Command {
         .subcommand(api_command())
         .subcommand(workspace_command())
         .subcommand(worktree_command())
+        .subcommand(project_command())
         .subcommand(tab_command())
         .subcommand(notification_command())
         .subcommand(agent_command())
@@ -269,6 +270,25 @@ fn worktree_command() -> Command {
                 .about("Remove a worktree checkout")
                 .arg(option("workspace", "ID"))
                 .arg(flag("force")),
+        )
+}
+
+fn project_command() -> Command {
+    Command::new("project")
+        .about("Discover and validate multi-repository projects")
+        .subcommand(
+            Command::new("discover")
+                .about("Discover Git repositories and render a project manifest")
+                .arg(path_arg("path", "PATH").required(false))
+                .arg(option("id", "ID"))
+                .arg(option("name", "TEXT"))
+                .arg(flag("write").help("Create gowild-project.toml without overwriting")),
+        )
+        .subcommand(
+            Command::new("check")
+                .about("Validate and resolve a project manifest")
+                .arg(path_arg("path", "PATH").required(false))
+                .arg(json_flag()),
         )
 }
 
