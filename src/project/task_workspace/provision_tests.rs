@@ -17,16 +17,16 @@ use crate::project::{ProjectDefinition, ProjectPrivateState, ProjectPrivateState
 
 static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
 
-struct ProjectFixture {
-    root: PathBuf,
-    definition: ProjectDefinition,
-    private_state: ProjectPrivateState,
-    project: LoadedProject,
-    states: TaskWorkspaceRepository,
+pub(super) struct ProjectFixture {
+    pub(super) root: PathBuf,
+    pub(super) definition: ProjectDefinition,
+    pub(super) private_state: ProjectPrivateState,
+    pub(super) project: LoadedProject,
+    pub(super) states: TaskWorkspaceRepository,
 }
 
 impl ProjectFixture {
-    fn new(executable: bool) -> Self {
+    pub(super) fn new(executable: bool) -> Self {
         let root = test_root("task-provisioning");
         std::fs::create_dir_all(&root).unwrap();
         let repositories = [
@@ -100,7 +100,7 @@ impl ProjectFixture {
         }
     }
 
-    fn create_task(&self, task_id: &str) -> TaskWorkspace {
+    pub(super) fn create_task(&self, task_id: &str) -> TaskWorkspace {
         let task = TaskWorkspace::new(
             &self.project,
             task_id,
@@ -366,7 +366,7 @@ fn persist_phase(
     states.save(task, expected_revision).unwrap();
 }
 
-fn persist_plan(
+pub(super) fn persist_plan(
     states: &TaskWorkspaceRepository,
     task: &mut TaskWorkspace,
     resource: OwnedResource,
@@ -398,7 +398,7 @@ fn create_repository(path: &Path, name: &str) -> String {
     git_stdout(path, &["rev-parse", "HEAD"])
 }
 
-fn run_git(path: &Path, args: &[&str]) {
+pub(super) fn run_git(path: &Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .arg("-C")
         .arg(path)
@@ -408,7 +408,7 @@ fn run_git(path: &Path, args: &[&str]) {
     assert!(status.success(), "git {} failed", args.join(" "));
 }
 
-fn git_stdout(path: &Path, args: &[&str]) -> String {
+pub(super) fn git_stdout(path: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(path)

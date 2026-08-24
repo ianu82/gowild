@@ -25,6 +25,10 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         Self { states }
     }
 
+    pub(super) fn states(&self) -> &TaskWorkspaceRepository {
+        self.states
+    }
+
     pub fn provision(
         &self,
         definition: &ProjectDefinition,
@@ -106,7 +110,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         Ok(task)
     }
 
-    fn transition_phase(
+    pub(super) fn transition_phase(
         &self,
         task: &mut TaskWorkspace,
         phase: TaskWorkspacePhase,
@@ -116,7 +120,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         self.states.save(task, expected_revision)
     }
 
-    fn ensure_acquired(
+    pub(super) fn ensure_acquired(
         &self,
         task: &mut TaskWorkspace,
         resource: OwnedResource,
@@ -191,7 +195,16 @@ fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {
 }
 
 fn verify_task_repository(task: &TaskWorkspace, repository_id: &str) -> Result<(), ProjectError> {
-    verify_detached_task_worktree(task, repository_id)
+    if task.repositories[repository_id]
+        .worktree
+        .as_ref()
+        .and_then(|worktree| worktree.branch.as_ref())
+        .is_some()
+    {
+        super::branch::verify_task_branch(task, repository_id)
+    } else {
+        verify_detached_task_worktree(task, repository_id)
+    }
 }
 
 fn task_root_marker(task: &TaskWorkspace) -> PathBuf {
@@ -303,7 +316,7 @@ pub(super) fn ensure_detached_task_worktree(
     }
 }
 
-fn verify_detached_task_worktree(
+pub(super) fn verify_detached_task_worktree(
     task: &TaskWorkspace,
     repository_id: &str,
 ) -> Result<(), ProjectError> {
@@ -330,7 +343,7 @@ fn verify_detached_task_worktree(
     Ok(())
 }
 
-fn task_worktree_entry(
+pub(super) fn task_worktree_entry(
     source_path: &Path,
     checkout_path: &Path,
 ) -> Result<Option<crate::worktree::ExistingWorktree>, ProjectError> {
@@ -362,7 +375,11 @@ fn task_worktree_entry(
     Ok(result)
 }
 
-fn git_stdout(repository_id: &str, cwd: &Path, args: &[&str]) -> Result<String, ProjectError> {
+pub(super) fn git_stdout(
+    repository_id: &str,
+    cwd: &Path,
+    args: &[&str],
+) -> Result<String, ProjectError> {
     let output = crate::noninteractive_process::command("git")
         .arg("-C")
         .arg(cwd)
@@ -393,7 +410,7 @@ fn git_stdout(repository_id: &str, cwd: &Path, args: &[&str]) -> Result<String, 
     }
 }
 
-fn require_matching_definition(
+pub(super) fn require_matching_definition(
     definition: &ProjectDefinition,
     project: &LoadedProject,
 ) -> Result<(), ProjectError> {
