@@ -131,8 +131,16 @@ pub(crate) fn process_started_at_unix_millis(_pid: u32) -> Option<u64> {
     None
 }
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
 pub(crate) fn configure_service_supervisor_command_platform(_command: &mut std::process::Command) {}
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
 pub(crate) fn terminate_service_process_platform(
     _pid: u32,
     _started_at_unix_millis: u64,

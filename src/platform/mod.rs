@@ -55,14 +55,26 @@ pub(crate) fn run_supervised_service(program: &str, args: &[String]) -> std::io:
     run_supervised_service_platform(program, args)
 }
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
 pub(crate) fn configure_service_supervisor_command(command: &mut std::process::Command) {
     configure_service_supervisor_command_platform(command);
 }
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
 pub(crate) fn service_process_matches(pid: u32, started_at_unix_millis: u64) -> bool {
     process_exists(pid) && process_started_at_unix_millis(pid) == Some(started_at_unix_millis)
 }
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
 pub(crate) fn terminate_service_process(
     pid: u32,
     started_at_unix_millis: u64,
