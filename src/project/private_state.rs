@@ -10,6 +10,8 @@ use super::manifest::ProjectDefinition;
 use super::model::ProjectError;
 use super::overrides::ProjectOverrides;
 
+mod write;
+
 const PRIVATE_STATE_VERSION: u32 = 1;
 const MAX_PRIVATE_STATE_BYTES: u64 = 1024 * 1024;
 
@@ -390,6 +392,86 @@ mod tests {
     }
 
     #[test]
+    fn trust_requires_exact_digest_and_revocation_is_idempotent() {
+        let root = test_root("trust-mutation");
+        let definition = definition(&root, &"a".repeat(64), true);
+        let mut state = ProjectPrivateState::new(&definition);
+
+        assert_eq!(
+            state
+                .grant_trust(&definition, &"b".repeat(64))
+                .unwrap_err()
+                .code,
+            "project_trust_digest_mismatch"
+        );
+        state.grant_trust(&definition, &definition.digest).unwrap();
+        assert_eq!(state.trust_status(&definition), ProjectTrustStatus::Trusted);
+        assert!(state.revoke_trust());
+        assert!(!state.revoke_trust());
+        assert_eq!(
+            state.trust_status(&definition),
+            ProjectTrustStatus::Untrusted
+        );
+    }
+
+    #[test]
+    fn repository_atomically_replaces_owner_only_state() {
+        let root = test_root("write");
+        let definition = definition(&root, &"a".repeat(64), true);
+        let repository = ProjectPrivateStateRepository::new(root.join("state"));
+        let mut state = ProjectPrivateState::new(&definition);
+        state
+            .overrides
+            .repository_bases
+            .insert("api".into(), "release".into());
+        repository.save(&definition, &state).unwrap();
+
+        state
+            .overrides
+            .repository_bases
+            .insert("api".into(), "main".into());
+        repository.save(&definition, &state).unwrap();
+        assert_eq!(repository.load(&definition).unwrap(), state);
+        assert!(fs::read_dir(&repository.root).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&repository.root).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(repository.path_for(&definition))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_identity_is_rejected_before_writing() {
+        let root = test_root("write-identity");
+        let definition = definition(&root, &"a".repeat(64), false);
+        let repository = ProjectPrivateStateRepository::new(root.join("state"));
+        let mut state = ProjectPrivateState::new(&definition);
+        state.project_id = "another-project".into();
+
+        assert_eq!(
+            repository.save(&definition, &state).unwrap_err().code,
+            "project_private_state_identity_mismatch"
+        );
+        assert!(!repository.root.exists());
+    }
+
+    #[test]
     fn repository_loads_valid_state_and_restricts_file_permissions() {
         let root = test_root("valid");
         let definition = definition(&root, &"a".repeat(64), true);
@@ -472,6 +554,13 @@ mod tests {
             repository.load(&definition).unwrap_err().code,
             "invalid_project_private_state"
         );
+        assert_eq!(
+            repository
+                .save(&definition, &ProjectPrivateState::new(&definition))
+                .unwrap_err()
+                .code,
+            "invalid_project_private_state"
+        );
         assert_eq!(fs::read_to_string(target).unwrap(), "leave unchanged");
         fs::remove_dir_all(root).unwrap();
     }
@@ -490,6 +579,13 @@ mod tests {
 
         assert_eq!(
             repository.load(&definition).unwrap_err().code,
+            "invalid_project_private_state_directory"
+        );
+        assert_eq!(
+            repository
+                .save(&definition, &ProjectPrivateState::new(&definition))
+                .unwrap_err()
+                .code,
             "invalid_project_private_state_directory"
         );
         assert_eq!(fs::read_dir(&target).unwrap().count(), 0);

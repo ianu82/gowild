@@ -51,6 +51,11 @@ pub(crate) fn configure_background_command(command: &mut std::process::Command) 
     configure_background_command_platform(command);
 }
 
+/// Creates a directory whose platform ACL/mode grants access only to its owner.
+pub(crate) fn create_private_directory(path: &std::path::Path) -> std::io::Result<()> {
+    create_remote_private_dir(path)
+}
+
 #[cfg(not(windows))]
 fn configure_background_command_platform(_command: &mut std::process::Command) {}
 
