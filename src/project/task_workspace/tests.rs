@@ -101,6 +101,7 @@ fn workspace() -> TaskWorkspace {
 fn new_workspace_models_every_repo_and_unique_runtime_namespace() {
     let workspace = workspace();
 
+    assert_eq!(workspace.phase, TaskWorkspacePhase::Planned);
     assert_eq!(workspace.repositories.len(), 2);
     assert!(workspace
         .repositories
@@ -130,6 +131,185 @@ fn new_workspace_models_every_repo_and_unique_runtime_namespace() {
     )
     .unwrap();
     assert_ne!(workspace.runtime.namespace, second.runtime.namespace);
+}
+
+#[test]
+fn lifecycle_rejects_skips_and_allows_recovery_and_cleanup() {
+    let mut workspace = workspace();
+    assert!(workspace
+        .transition_phase(TaskWorkspacePhase::Running)
+        .is_err());
+    workspace
+        .transition_phase(TaskWorkspacePhase::Provisioning)
+        .unwrap();
+    workspace
+        .transition_phase(TaskWorkspacePhase::NeedsAttention)
+        .unwrap();
+    workspace
+        .transition_phase(TaskWorkspacePhase::Provisioning)
+        .unwrap();
+    workspace
+        .transition_phase(TaskWorkspacePhase::Ready)
+        .unwrap();
+    workspace
+        .transition_phase(TaskWorkspacePhase::Cleaning)
+        .unwrap();
+    workspace
+        .transition_phase(TaskWorkspacePhase::Cleaned)
+        .unwrap();
+    assert!(workspace
+        .transition_phase(TaskWorkspacePhase::Running)
+        .is_err());
+}
+
+#[test]
+fn planned_worktree_is_applied_then_only_owned_resource_can_be_released() {
+    let mut workspace = workspace();
+    let checkout_path = workspace.repository_checkout_path("api");
+    let resource = OwnedResource::RepositoryWorktree {
+        repository_id: "api".into(),
+        source_path: PathBuf::from("/projects/example/api"),
+        checkout_path: checkout_path.clone(),
+        base_commit: "1".repeat(40),
+    };
+    assert!(workspace
+        .plan_transition(TaskTransitionOperation::Release, resource.clone())
+        .is_err());
+
+    let acquire = workspace
+        .plan_transition(TaskTransitionOperation::Acquire, resource.clone())
+        .unwrap();
+    assert!(workspace.repositories["api"].worktree.is_none());
+    workspace
+        .finish_transition(acquire, TaskTransitionState::Applied, None)
+        .unwrap();
+    assert_eq!(
+        workspace.repositories["api"]
+            .worktree
+            .as_ref()
+            .unwrap()
+            .checkout_path,
+        checkout_path
+    );
+    assert!(workspace.resource_is_owned(&resource));
+
+    let release = workspace
+        .plan_transition(TaskTransitionOperation::Release, resource.clone())
+        .unwrap();
+    workspace
+        .finish_transition(release, TaskTransitionState::Applied, None)
+        .unwrap();
+    assert!(workspace.repositories["api"].worktree.is_none());
+    assert!(!workspace.resource_is_owned(&resource));
+}
+
+#[test]
+fn branch_activation_requires_owned_checkout_and_task_branch() {
+    let mut workspace = workspace();
+    let branch = OwnedResource::RepositoryBranch {
+        repository_id: "api".into(),
+        checkout_path: workspace.repository_checkout_path("api"),
+        branch: workspace.branch_name("api"),
+        base_commit: "1".repeat(40),
+    };
+    assert!(workspace
+        .plan_transition(TaskTransitionOperation::Acquire, branch.clone())
+        .is_err());
+
+    let mut escaped = branch.clone();
+    if let OwnedResource::RepositoryBranch { checkout_path, .. } = &mut escaped {
+        *checkout_path = PathBuf::from("/tmp/escaped");
+    }
+    assert!(workspace
+        .plan_transition(TaskTransitionOperation::Acquire, escaped)
+        .is_err());
+
+    let worktree = OwnedResource::RepositoryWorktree {
+        repository_id: "api".into(),
+        source_path: PathBuf::from("/projects/example/api"),
+        checkout_path: workspace.repository_checkout_path("api"),
+        base_commit: "1".repeat(40),
+    };
+    let worktree_acquire = workspace
+        .plan_transition(TaskTransitionOperation::Acquire, worktree.clone())
+        .unwrap();
+    workspace
+        .finish_transition(worktree_acquire, TaskTransitionState::Applied, None)
+        .unwrap();
+    let branch_acquire = workspace
+        .plan_transition(TaskTransitionOperation::Acquire, branch.clone())
+        .unwrap();
+    workspace
+        .finish_transition(branch_acquire, TaskTransitionState::Applied, None)
+        .unwrap();
+    assert_eq!(
+        workspace.repositories["api"]
+            .worktree
+            .as_ref()
+            .and_then(|worktree| worktree.branch.as_deref()),
+        Some("gowild/task-42/api")
+    );
+    assert!(workspace
+        .plan_transition(TaskTransitionOperation::Release, worktree.clone())
+        .is_err());
+
+    let branch_release = workspace
+        .plan_transition(TaskTransitionOperation::Release, branch)
+        .unwrap();
+    workspace
+        .finish_transition(branch_release, TaskTransitionState::Applied, None)
+        .unwrap();
+    let worktree_release = workspace
+        .plan_transition(TaskTransitionOperation::Release, worktree)
+        .unwrap();
+    workspace
+        .finish_transition(worktree_release, TaskTransitionState::Applied, None)
+        .unwrap();
+    workspace.validate_integrity().unwrap();
+}
+
+#[test]
+fn journal_requires_stable_codes_and_terminal_entries_cannot_change() {
+    let mut workspace = workspace();
+    let sequence = workspace
+        .plan_transition(
+            TaskTransitionOperation::Acquire,
+            OwnedResource::RuntimeDirectory {
+                path: workspace.runtime.root.clone(),
+            },
+        )
+        .unwrap();
+    assert!(workspace
+        .finish_transition(sequence, TaskTransitionState::Failed, None)
+        .is_err());
+    workspace
+        .finish_transition(
+            sequence,
+            TaskTransitionState::Failed,
+            Some("directory_create_failed"),
+        )
+        .unwrap();
+    assert!(workspace
+        .finish_transition(sequence, TaskTransitionState::Applied, None)
+        .is_err());
+    assert_eq!(
+        workspace.journal[0].failure_code.as_deref(),
+        Some("directory_create_failed")
+    );
+}
+
+#[test]
+fn journal_replay_rejects_derived_state_tampering() {
+    let mut workspace = workspace();
+    let checkout_path = workspace.repository_checkout_path("api");
+    workspace.repositories.get_mut("api").unwrap().worktree = Some(TaskWorktree {
+        checkout_path,
+        head_commit: "1".repeat(40),
+        branch: None,
+    });
+
+    let error = workspace.validate_integrity().unwrap_err();
+    assert_eq!(error.code, "task_workspace_journal_state_mismatch");
 }
 
 #[test]
@@ -172,7 +352,7 @@ fn route_protocol_must_match_the_selected_cli() {
 }
 
 #[test]
-fn duplicate_runtime_ports_are_rejected() {
+fn duplicate_ports_and_unowned_resources_are_rejected() {
     let project = loaded_project();
     let mut invalid_ports = workspace();
     invalid_ports.runtime.ports = BTreeMap::from([
@@ -180,4 +360,14 @@ fn duplicate_runtime_ports_are_rejected() {
         ("web-service.http".into(), 43123),
     ]);
     assert!(invalid_ports.validate(&project).is_err());
+
+    let mut outside_boundary = workspace();
+    assert!(outside_boundary
+        .plan_transition(
+            TaskTransitionOperation::Acquire,
+            OwnedResource::WorkspaceDirectory {
+                path: PathBuf::from("/tmp/not-owned"),
+            },
+        )
+        .is_err());
 }
