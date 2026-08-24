@@ -100,6 +100,40 @@ pub(crate) fn detached_custom_command_process_platform(command: &str) -> std::pr
     command
 }
 
+pub(crate) fn run_supervised_service_platform(
+    program: &str,
+    args: &[String],
+) -> std::io::Result<i32> {
+    use std::os::unix::process::CommandExt;
+
+    let error = std::process::Command::new(program).args(args).exec();
+    Err(error)
+}
+
+pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let start_ticks = process_start_ticks_from_stat(&stat)?;
+    let boot_seconds = std::fs::read_to_string("/proc/stat")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .parse::<u64>()
+        .ok()?;
+    let ticks_per_second = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let ticks_per_second = u64::try_from(ticks_per_second)
+        .ok()
+        .filter(|value| *value > 0)?;
+    boot_seconds
+        .checked_mul(1000)?
+        .checked_add(start_ticks.checked_mul(1000)? / ticks_per_second)
+}
+
+fn process_start_ticks_from_stat(stat: &str) -> Option<u64> {
+    let rest = stat.get(stat.rfind(')')? + 2..)?;
+    // The suffix starts at field 3 (`state`); process start time is field 22.
+    rest.split_whitespace().nth(19)?.parse().ok()
+}
+
 pub(crate) fn pane_custom_command_pty_builder_platform(
     command: &str,
 ) -> portable_pty::CommandBuilder {

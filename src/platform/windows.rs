@@ -576,6 +576,36 @@ pub(crate) fn detached_custom_command_process_platform(command: &str) -> std::pr
     detached_custom_command_process_with_comspec(command, std::env::var_os("ComSpec"))
 }
 
+pub(crate) fn run_supervised_service_platform(
+    program: &str,
+    args: &[String],
+) -> std::io::Result<i32> {
+    use std::os::windows::process::CommandExt;
+
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED)
+        .spawn()?;
+    let _guard = match ServiceProcessGuard::new(&child) {
+        Ok(guard) => guard,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+    child.wait().map(|status| status.code().unwrap_or(1))
+}
+
+pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
+    const WINDOWS_TO_UNIX_EPOCH_100NS: u64 = 116_444_736_000_000_000;
+
+    let process = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
+    process_creation_time(process.0)?
+        .checked_sub(WINDOWS_TO_UNIX_EPOCH_100NS)
+        .map(|ticks| ticks / 10_000)
+}
+
 pub(crate) fn status_commands_supported() -> bool {
     true
 }
@@ -593,67 +623,79 @@ pub(crate) struct StatusCommandGuard {
 
 impl StatusCommandGuard {
     pub(crate) fn new(child: &tokio::process::Child) -> std::io::Result<Self> {
-        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if job.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        let limits_size = match u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()) {
-            Ok(size) => size,
-            Err(_) => {
-                unsafe {
-                    CloseHandle(job);
-                }
-                return Err(std::io::Error::other("job limits size exceeds u32"));
-            }
-        };
-        if unsafe {
-            SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&limits).cast(),
-                limits_size,
-            )
-        } == 0
-        {
-            let error = std::io::Error::last_os_error();
-            unsafe {
-                CloseHandle(job);
-            }
-            return Err(error);
-        }
-
         let Some(process) = child.raw_handle() else {
-            unsafe {
-                CloseHandle(job);
-            }
             return Err(std::io::Error::other(
                 "status command has no process handle",
             ));
         };
-        if unsafe { AssignProcessToJobObject(job, process.cast()) } == 0 {
-            let error = std::io::Error::last_os_error();
-            unsafe {
-                CloseHandle(job);
-            }
-            return Err(error);
-        }
-        if let Err(error) = resume_suspended_process(child.id()) {
-            unsafe {
-                CloseHandle(job);
-            }
-            return Err(error);
-        }
-
-        Ok(Self { job: job as usize })
+        let process_id = child
+            .id()
+            .ok_or_else(|| std::io::Error::other("status command has no process id"))?;
+        create_kill_on_close_job(process.cast(), process_id).map(|job| Self { job })
     }
 }
 
-fn resume_suspended_process(process_id: Option<u32>) -> std::io::Result<()> {
-    let process_id =
-        process_id.ok_or_else(|| std::io::Error::other("status command has no process id"))?;
+struct ServiceProcessGuard {
+    job: usize,
+}
+
+impl ServiceProcessGuard {
+    fn new(child: &std::process::Child) -> std::io::Result<Self> {
+        create_kill_on_close_job(child.as_raw_handle().cast(), child.id()).map(|job| Self { job })
+    }
+}
+
+fn create_kill_on_close_job(process: HANDLE, process_id: u32) -> std::io::Result<usize> {
+    let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if job.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    let limits_size = match u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()) {
+        Ok(size) => size,
+        Err(_) => {
+            unsafe {
+                CloseHandle(job);
+            }
+            return Err(std::io::Error::other("job limits size exceeds u32"));
+        }
+    };
+    if unsafe {
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            std::ptr::from_ref(&limits).cast(),
+            limits_size,
+        )
+    } == 0
+    {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(error);
+    }
+
+    if unsafe { AssignProcessToJobObject(job, process) } == 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(error);
+    }
+    if let Err(error) = resume_suspended_process(process_id) {
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(error);
+    }
+
+    Ok(job as usize)
+}
+
+fn resume_suspended_process(process_id: u32) -> std::io::Result<()> {
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
         return Err(std::io::Error::last_os_error());
@@ -713,6 +755,17 @@ impl StatusCommandGuard {
 impl Drop for StatusCommandGuard {
     fn drop(&mut self) {
         self.terminate();
+    }
+}
+
+impl Drop for ServiceProcessGuard {
+    fn drop(&mut self) {
+        if self.job != 0 {
+            unsafe {
+                CloseHandle(self.job as HANDLE);
+            }
+            self.job = 0;
+        }
     }
 }
 

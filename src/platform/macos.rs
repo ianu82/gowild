@@ -42,6 +42,23 @@ pub(crate) fn detached_custom_command_process_platform(command: &str) -> std::pr
     command
 }
 
+pub(crate) fn run_supervised_service_platform(
+    program: &str,
+    args: &[String],
+) -> std::io::Result<i32> {
+    use std::os::unix::process::CommandExt;
+
+    let error = std::process::Command::new(program).args(args).exec();
+    Err(error)
+}
+
+pub(crate) fn process_started_at_unix_millis(pid: u32) -> Option<u64> {
+    let info = process_bsdinfo(pid)?;
+    let seconds = info.pbi_start_tvsec;
+    let microseconds = info.pbi_start_tvusec;
+    seconds.checked_mul(1000)?.checked_add(microseconds / 1000)
+}
+
 pub(crate) fn pane_custom_command_pty_builder_platform(
     command: &str,
 ) -> portable_pty::CommandBuilder {

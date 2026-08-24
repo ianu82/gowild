@@ -117,6 +117,20 @@ pub(crate) fn status_commands_supported() -> bool {
 
 pub(crate) fn configure_status_command(_process: &mut std::process::Command) {}
 
+pub(crate) fn run_supervised_service_platform(
+    program: &str,
+    args: &[String],
+) -> std::io::Result<i32> {
+    std::process::Command::new(program)
+        .args(args)
+        .status()
+        .map(|status| status.code().unwrap_or(1))
+}
+
+pub(crate) fn process_started_at_unix_millis(_pid: u32) -> Option<u64> {
+    None
+}
+
 pub(crate) struct StatusCommandGuard;
 
 impl StatusCommandGuard {
