@@ -10,7 +10,7 @@ use super::manifest::ProjectDefinition;
 use super::model::ProjectError;
 use super::overrides::ProjectOverrides;
 
-mod write;
+pub(super) mod write;
 
 const PRIVATE_STATE_VERSION: u32 = 1;
 const MAX_PRIVATE_STATE_BYTES: u64 = 1024 * 1024;
@@ -245,7 +245,7 @@ fn valid_digest(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn manifest_identity(path: &Path, project_id: &str) -> String {
+pub(super) fn manifest_identity(path: &Path, project_id: &str) -> String {
     let mut hasher = Sha256::new();
     let path = manifest_path_bytes(path);
     hasher.update((path.len() as u64).to_le_bytes());

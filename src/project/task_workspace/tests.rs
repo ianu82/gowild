@@ -5,7 +5,7 @@ use super::*;
 use crate::project::manifest::{LoadedProject, ResolvedRepo};
 use crate::project::model::{ProjectManifest, ProjectRepo};
 
-fn loaded_project() -> LoadedProject {
+pub(super) fn loaded_project() -> LoadedProject {
     LoadedProject {
         manifest_path: PathBuf::from("/projects/example/gowild-project.toml"),
         root: PathBuf::from("/projects/example"),
@@ -77,7 +77,7 @@ fn loaded_project() -> LoadedProject {
     }
 }
 
-fn route() -> TaskRoute {
+pub(super) fn route() -> TaskRoute {
     TaskRoute {
         gateway_id: "mindshub".into(),
         protocol: TaskProtocol::OpenAiResponses,

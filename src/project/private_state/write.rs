@@ -7,11 +7,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::super::manifest::ProjectDefinition;
 use super::super::model::ProjectError;
 use super::{
-    overrides_digest, private_io_error, restrict_file_permissions, ProjectPrivateState,
-    ProjectPrivateStateRepository, ProjectTrust, MAX_PRIVATE_STATE_BYTES,
+    overrides_digest, private_io_error, ProjectPrivateState, ProjectPrivateStateRepository,
+    ProjectTrust, MAX_PRIVATE_STATE_BYTES,
 };
 
 static NEXT_PRIVATE_WRITE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::project) enum PrivateWriteMode {
+    CreateNew,
+    Replace,
+}
 
 impl ProjectPrivateState {
     pub fn grant_trust(
@@ -116,10 +122,19 @@ fn ensure_private_directory(path: &Path) -> Result<(), ProjectError> {
 }
 
 fn atomic_private_write(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
+    atomic_owner_only_write(path, bytes, PrivateWriteMode::Replace)
+        .map_err(|error| private_io_error("write", &error))
+}
+
+pub(in crate::project) fn atomic_owner_only_write(
+    path: &Path,
+    bytes: &[u8],
+    mode: PrivateWriteMode,
+) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
-        ProjectError::new(
-            "invalid_project_private_state",
-            "project private state has no parent directory",
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "private state path has no parent directory",
         )
     })?;
     let nonce = SystemTime::now()
@@ -142,18 +157,39 @@ fn atomic_private_write(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
     }
     let mut file = options
         .open(&temp_path)
-        .map_err(|error| private_io_error("temporary-file creation", &error))?;
+        .map_err(|error| io::Error::new(error.kind(), "temporary-file creation failed"))?;
     if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
         let _ = fs::remove_file(&temp_path);
-        return Err(private_io_error("write", &error));
+        return Err(error);
     }
     drop(file);
-    if let Err(error) = replace_private_file(&temp_path, path) {
+    let commit_result = match mode {
+        PrivateWriteMode::CreateNew => fs::hard_link(&temp_path, path),
+        PrivateWriteMode::Replace => replace_private_file(&temp_path, path),
+    };
+    if let Err(error) = commit_result {
         let _ = fs::remove_file(&temp_path);
-        return Err(private_io_error("commit", &error));
+        return Err(error);
     }
-    restrict_file_permissions(path)?;
+    if mode == PrivateWriteMode::CreateNew {
+        // The destination is committed once the hard link succeeds. A failed
+        // best-effort unlink must not turn that durable commit into a reported
+        // failure; repository readers safely ignore this reserved temp name.
+        let _ = fs::remove_file(&temp_path);
+    }
+    restrict_private_file_permissions(path)?;
     sync_private_directory(parent)
+}
+
+#[cfg(unix)]
+fn restrict_private_file_permissions(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn restrict_private_file_permissions(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -209,13 +245,11 @@ fn restrict_directory_permissions(_path: &Path) -> Result<(), ProjectError> {
 }
 
 #[cfg(unix)]
-fn sync_private_directory(path: &Path) -> Result<(), ProjectError> {
-    fs::File::open(path)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| private_io_error("directory sync", &error))
+fn sync_private_directory(path: &Path) -> io::Result<()> {
+    fs::File::open(path).and_then(|directory| directory.sync_all())
 }
 
 #[cfg(not(unix))]
-fn sync_private_directory(_path: &Path) -> Result<(), ProjectError> {
+fn sync_private_directory(_path: &Path) -> io::Result<()> {
     Ok(())
 }
