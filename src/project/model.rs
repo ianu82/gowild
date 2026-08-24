@@ -401,7 +401,15 @@ fn reserved_runtime_environment_key(key: &str) -> bool {
     key.starts_with("GOWILD_")
         || matches!(
             key,
-            "COMPOSE_PROJECT_NAME" | "TMPDIR" | "TMP" | "TEMP" | "XDG_CACHE_HOME" | "XDG_DATA_HOME"
+            "COMPOSE_PROJECT_NAME"
+                | "COMPOSE_FILE"
+                | "COMPOSE_PATH_SEPARATOR"
+                | "COMPOSE_ENV_FILES"
+                | "TMPDIR"
+                | "TMP"
+                | "TEMP"
+                | "XDG_CACHE_HOME"
+                | "XDG_DATA_HOME"
         )
 }
 
@@ -653,6 +661,7 @@ mod tests {
             environment: BTreeMap::from([
                 ("TMPDIR".into(), "/shared/tmp".into()),
                 ("COMPOSE_PROJECT_NAME".into(), "shared".into()),
+                ("COMPOSE_FILE".into(), "/shared/compose.yaml".into()),
                 ("GOWILD_TASK_ROOT".into(), "/shared/task".into()),
             ]),
         });
@@ -661,6 +670,7 @@ mod tests {
 
         assert!(error.message.contains("TMPDIR"));
         assert!(error.message.contains("COMPOSE_PROJECT_NAME"));
+        assert!(error.message.contains("COMPOSE_FILE"));
         assert!(error.message.contains("GOWILD_TASK_ROOT"));
         assert!(error.message.contains("may not override"));
     }
