@@ -1,3 +1,4 @@
+pub(crate) mod change_set;
 mod discovery;
 mod manifest;
 mod model;
