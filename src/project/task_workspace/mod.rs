@@ -128,6 +128,14 @@ pub struct RuntimeIsolation {
     pub environment: BTreeMap<String, String>,
     pub declared_services: BTreeSet<String>,
     pub declared_ports: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub declared_containers: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub declared_databases: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub declared_data: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub declared_caches: BTreeSet<String>,
     pub compose_enabled: bool,
     #[serde(default)]
     pub ports: BTreeMap<String, u16>,
@@ -214,51 +222,13 @@ impl TaskWorkspace {
             ));
         }
         let root = task_store_root.join(&namespace);
-        let runtime_root = root.join("runtime");
-        let declared_services = project
-            .manifest
-            .services
-            .iter()
-            .map(|service| service.id.clone())
-            .collect();
-        let declared_ports = project
-            .manifest
-            .services
-            .iter()
-            .flat_map(|service| {
-                service
-                    .isolation
-                    .ports
-                    .iter()
-                    .map(|port| format!("{}.{port}", service.id))
-            })
-            .collect();
-        let runtime = RuntimeIsolation {
-            namespace: namespace.clone(),
-            root: runtime_root.clone(),
-            temp: runtime_root.join("tmp"),
-            cache: runtime_root.join("cache"),
-            data: runtime_root.join("data"),
-            compose_project: namespace.clone(),
-            environment: BTreeMap::from([
-                ("COMPOSE_PROJECT_NAME".into(), namespace),
-                ("GOWILD_PROJECT_ID".into(), project.manifest.id.clone()),
-                ("GOWILD_TASK_ID".into(), id.clone()),
-                ("GOWILD_TASK_ROOT".into(), root.display().to_string()),
-                (
-                    "GOWILD_RUNTIME_ROOT".into(),
-                    runtime_root.display().to_string(),
-                ),
-            ]),
-            declared_services,
-            declared_ports,
-            compose_enabled: project
-                .manifest
-                .services
-                .iter()
-                .any(|service| service.isolation.compose),
-            ports: BTreeMap::new(),
-        };
+        let runtime = RuntimeIsolation::for_task(
+            &project.manifest,
+            namespace,
+            &root,
+            &project.manifest.id,
+            &id,
+        );
         let repositories = project
             .repositories
             .iter()

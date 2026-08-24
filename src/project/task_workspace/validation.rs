@@ -59,7 +59,8 @@ impl TaskWorkspace {
             ));
         }
         self.validate_repositories_against_project(project)?;
-        self.runtime.require_current_manifest(&project.manifest)
+        self.runtime
+            .require_current_manifest(&project.manifest, &self.project_id, &self.id)
     }
 
     pub fn resource_is_owned(&self, resource: &OwnedResource) -> bool {
