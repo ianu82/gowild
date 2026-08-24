@@ -94,6 +94,7 @@ mod render_prof;
 mod render_signal;
 mod selection;
 mod server;
+mod service_supervisor;
 mod session;
 mod sound;
 mod terminal;
@@ -528,6 +529,9 @@ fn main() -> io::Result<()> {
             std::process::exit(2);
         }
     };
+    if let Some(result) = service_supervisor::maybe_run(&raw_args) {
+        std::process::exit(result?);
+    }
     let args = match session::configure_from_args(&raw_args) {
         Ok(args) => args,
         Err(err) => {

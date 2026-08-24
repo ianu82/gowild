@@ -51,6 +51,10 @@ pub(crate) fn configure_background_command(command: &mut std::process::Command) 
     configure_background_command_platform(command);
 }
 
+pub(crate) fn run_supervised_service(program: &str, args: &[String]) -> std::io::Result<i32> {
+    run_supervised_service_platform(program, args)
+}
+
 /// Creates a directory whose platform ACL/mode grants access only to its owner.
 pub(crate) fn create_private_directory(path: &std::path::Path) -> std::io::Result<()> {
     create_remote_private_dir(path)
