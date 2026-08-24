@@ -4,6 +4,7 @@ use std::io;
 use std::path::Path;
 
 use super::provision::{git_stdout, task_root_marker, task_worktree_entry, verify_owned_task_root};
+use super::runtime_layout::{runtime_directories, validate_releasable_runtime_directory};
 use super::{OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWorkspace};
 use crate::project::ProjectError;
 
@@ -22,6 +23,27 @@ pub(super) fn preflight_cleanup(task: &TaskWorkspace) -> Result<(), ProjectError
                 return Err(cleanup_conflict(
                     "task workspace root exists without durable ownership".into(),
                 ));
+            }
+        }
+    }
+
+    for path in runtime_directories(task) {
+        let resource = OwnedResource::RuntimeDirectory { path: path.clone() };
+        if task.resource_is_owned(&resource) {
+            validate_releasable_runtime_directory(
+                task,
+                &path,
+                release_may_be_partial(task, &resource),
+            )?;
+        } else {
+            match fs::symlink_metadata(&path) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(cleanup_io("task runtime metadata", &error)),
+                Ok(_) => {
+                    return Err(cleanup_conflict(
+                        "task runtime directory exists without durable ownership".into(),
+                    ));
+                }
             }
         }
     }
@@ -190,7 +212,7 @@ pub(super) fn validate_releasable_root(
         let name = name
             .to_str()
             .ok_or_else(|| cleanup_conflict("task root contains an invalid entry".into()))?;
-        if name != "repositories" && name != marker_name {
+        if name != "repositories" && name != "runtime" && name != marker_name {
             return Err(cleanup_conflict(format!(
                 "task workspace root contains unowned entry '{name}'"
             )));

@@ -71,6 +71,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
             || verify_owned_task_root(&root_snapshot),
             || ensure_owned_task_root(&root_snapshot),
         )?;
+        self.ensure_runtime_layout(&mut task)?;
 
         for repository_id in project.manifest.dependency_order()? {
             if task.repositories[&repository_id].worktree.is_some() {
@@ -182,6 +183,7 @@ fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {
         ));
     }
     verify_owned_task_root(task)?;
+    super::runtime_layout::verify_runtime_layout(task)?;
     for repository_id in task.repositories.keys() {
         if task.repositories[repository_id].worktree.is_none() {
             return Err(ProjectError::new(

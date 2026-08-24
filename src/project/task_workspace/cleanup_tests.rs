@@ -1,6 +1,7 @@
 use super::cleanup::{ensure_branch_released, ensure_task_root_released, ensure_worktree_released};
 use super::provision::TaskWorkspaceProvisioner;
 use super::provision_tests::{git_stdout, persist_phase, run_git, ProjectFixture};
+use super::runtime_layout::{ensure_runtime_directory_released, runtime_directories};
 use super::*;
 
 #[test]
@@ -422,6 +423,19 @@ fn cleanup_retries_a_root_release_recorded_failed_after_external_completion() {
             .unwrap();
         fixture.states.save(&task, expected_revision).unwrap();
         ensure_worktree_released(&task, repository_id).unwrap();
+        let expected_revision = task.revision;
+        task.finish_transition(sequence, TaskTransitionState::Applied, None)
+            .unwrap();
+        fixture.states.save(&task, expected_revision).unwrap();
+    }
+    for path in runtime_directories(&task).into_iter().rev() {
+        let resource = OwnedResource::RuntimeDirectory { path: path.clone() };
+        let expected_revision = task.revision;
+        let sequence = task
+            .plan_transition(TaskTransitionOperation::Release, resource)
+            .unwrap();
+        fixture.states.save(&task, expected_revision).unwrap();
+        ensure_runtime_directory_released(&task, &path).unwrap();
         let expected_revision = task.revision;
         task.finish_transition(sequence, TaskTransitionState::Applied, None)
             .unwrap();
