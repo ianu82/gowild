@@ -625,12 +625,13 @@ pub(crate) fn terminate_service_process_platform(
         return Err(std::io::Error::last_os_error());
     }
     let deadline = Instant::now() + Duration::from_secs(2);
-    while process_started_at_unix_millis(pid) == Some(started_at_unix_millis)
+    while process_exists(pid)
+        && process_started_at_unix_millis(pid) == Some(started_at_unix_millis)
         && Instant::now() < deadline
     {
         std::thread::sleep(Duration::from_millis(20));
     }
-    if process_started_at_unix_millis(pid) == Some(started_at_unix_millis) {
+    if process_exists(pid) && process_started_at_unix_millis(pid) == Some(started_at_unix_millis) {
         Err(std::io::Error::other("service process did not stop"))
     } else {
         Ok(())
