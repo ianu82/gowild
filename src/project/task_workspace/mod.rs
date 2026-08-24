@@ -15,17 +15,22 @@ mod rules;
 mod runtime_validation;
 mod validation;
 
-use rules::{runtime_namespace, validate_absolute_clean_path};
+use rules::{
+    phase_transition_allowed, resources_conflict, runtime_namespace, validate_absolute_clean_path,
+    validate_identifier,
+};
 
 #[cfg(test)]
 mod tests;
 
 pub const TASK_WORKSPACE_VERSION: u32 = 1;
+const MAX_TRANSITIONS: usize = 10_000;
 
 /// Persisted state for one isolated AI task across every repository in a project.
 ///
-/// This is an ownership boundary, not a cache. Lifecycle code may only create
-/// resources represented by this immutable task definition.
+/// This is an ownership manifest, not a cache. Mutation code must persist a
+/// planned transition before changing external state and persist its terminal
+/// state afterwards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskWorkspace {
@@ -37,8 +42,11 @@ pub struct TaskWorkspace {
     pub agent: TaskAgent,
     pub route: TaskRoute,
     pub root: PathBuf,
+    pub phase: TaskWorkspacePhase,
     pub repositories: BTreeMap<String, TaskRepository>,
     pub runtime: RuntimeIsolation,
+    pub journal: Vec<TaskTransition>,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +69,19 @@ pub struct TaskRoute {
     pub gateway_id: String,
     pub protocol: TaskProtocol,
     pub model: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskWorkspacePhase {
+    Planned,
+    Provisioning,
+    Ready,
+    Running,
+    Stopped,
+    Cleaning,
+    NeedsAttention,
+    Cleaned,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +118,68 @@ pub struct RuntimeIsolation {
     pub compose_enabled: bool,
     #[serde(default)]
     pub ports: BTreeMap<String, u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskTransition {
+    pub sequence: u64,
+    pub operation: TaskTransitionOperation,
+    pub resource: OwnedResource,
+    pub state: TaskTransitionState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskTransitionOperation {
+    Acquire,
+    Release,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskTransitionState {
+    Planned,
+    Applied,
+    Failed,
+    RolledBack,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum OwnedResource {
+    WorkspaceDirectory {
+        path: PathBuf,
+    },
+    RuntimeDirectory {
+        path: PathBuf,
+    },
+    RepositoryWorktree {
+        repository_id: String,
+        source_path: PathBuf,
+        checkout_path: PathBuf,
+        base_commit: String,
+    },
+    RepositoryBranch {
+        repository_id: String,
+        checkout_path: PathBuf,
+        branch: String,
+        base_commit: String,
+    },
+    PortReservation {
+        name: String,
+        port: u16,
+    },
+    ComposeProject {
+        name: String,
+    },
+    ServiceProcess {
+        service_id: String,
+        pid: u32,
+        started_at_unix_millis: u64,
+    },
 }
 
 impl TaskWorkspace {
@@ -187,8 +270,11 @@ impl TaskWorkspace {
             agent,
             route,
             root,
+            phase: TaskWorkspacePhase::Planned,
             repositories,
             runtime,
+            journal: Vec::new(),
+            revision: 0,
         };
         workspace.validate(project)?;
         Ok(workspace)
@@ -200,5 +286,139 @@ impl TaskWorkspace {
 
     pub fn branch_name(&self, repository_id: &str) -> String {
         format!("gowild/{}/{repository_id}", self.id)
+    }
+
+    pub fn transition_phase(&mut self, next: TaskWorkspacePhase) -> Result<(), ProjectError> {
+        if !phase_transition_allowed(self.phase, next) {
+            return Err(ProjectError::new(
+                "invalid_task_workspace_phase_transition",
+                format!(
+                    "task workspace cannot move from {:?} to {:?}",
+                    self.phase, next
+                ),
+            ));
+        }
+        self.phase = next;
+        self.bump_revision()?;
+        Ok(())
+    }
+
+    pub fn plan_transition(
+        &mut self,
+        operation: TaskTransitionOperation,
+        resource: OwnedResource,
+    ) -> Result<u64, ProjectError> {
+        if self.journal.len() >= MAX_TRANSITIONS {
+            return Err(ProjectError::new(
+                "task_workspace_journal_full",
+                "task workspace transition journal reached its safety limit",
+            ));
+        }
+        self.validate_resource(&resource)?;
+        if self.journal.iter().any(|transition| {
+            transition.state == TaskTransitionState::Planned
+                && resources_conflict(&transition.resource, &resource)
+        }) {
+            return Err(ProjectError::new(
+                "duplicate_task_workspace_transition",
+                "a pending transition already reserves that resource",
+            ));
+        }
+        match operation {
+            TaskTransitionOperation::Acquire
+                if self.journal.iter().any(|transition| {
+                    transition.state == TaskTransitionState::Applied
+                        && transition.operation == TaskTransitionOperation::Acquire
+                        && self.resource_is_owned(&transition.resource)
+                        && resources_conflict(&transition.resource, &resource)
+                }) =>
+            {
+                return Err(ProjectError::new(
+                    "task_workspace_resource_collision",
+                    "an owned task resource conflicts with the requested acquisition",
+                ));
+            }
+            TaskTransitionOperation::Release if !self.resource_is_owned(&resource) => {
+                return Err(ProjectError::new(
+                    "unowned_task_workspace_resource",
+                    "cleanup cannot release a resource this task does not own",
+                ));
+            }
+            _ => {}
+        }
+        self.validate_operation_precondition(operation, &resource)?;
+        let sequence = self
+            .journal
+            .last()
+            .map(|transition| transition.sequence.checked_add(1))
+            .unwrap_or(Some(1))
+            .ok_or_else(|| {
+                ProjectError::new(
+                    "task_workspace_sequence_exhausted",
+                    "task workspace transition sequence is exhausted",
+                )
+            })?;
+        self.journal.push(TaskTransition {
+            sequence,
+            operation,
+            resource,
+            state: TaskTransitionState::Planned,
+            failure_code: None,
+        });
+        self.bump_revision()?;
+        Ok(sequence)
+    }
+
+    pub fn finish_transition(
+        &mut self,
+        sequence: u64,
+        state: TaskTransitionState,
+        failure_code: Option<&str>,
+    ) -> Result<(), ProjectError> {
+        if state == TaskTransitionState::Planned {
+            return Err(ProjectError::new(
+                "invalid_task_workspace_transition_state",
+                "a planned transition must finish as applied, failed, or rolled back",
+            ));
+        }
+        let index = self
+            .journal
+            .iter()
+            .position(|transition| transition.sequence == sequence)
+            .ok_or_else(|| {
+                ProjectError::new(
+                    "unknown_task_workspace_transition",
+                    format!("task workspace transition {sequence} does not exist"),
+                )
+            })?;
+        if self.journal[index].state != TaskTransitionState::Planned {
+            return Err(ProjectError::new(
+                "task_workspace_transition_already_finished",
+                format!("task workspace transition {sequence} is already terminal"),
+            ));
+        }
+        let failure_code = failure_code.map(str::to_string);
+        if state == TaskTransitionState::Failed {
+            let code = failure_code.as_deref().ok_or_else(|| {
+                ProjectError::new(
+                    "missing_task_workspace_failure_code",
+                    "a failed transition requires a stable failure code",
+                )
+            })?;
+            validate_identifier("transition failure code", code)?;
+        } else if failure_code.is_some() {
+            return Err(ProjectError::new(
+                "unexpected_task_workspace_failure_code",
+                "only failed transitions may record a failure code",
+            ));
+        }
+        if state == TaskTransitionState::Applied {
+            let transition = self.journal[index].clone();
+            self.apply_transition_to_state(&transition)?;
+        }
+        self.journal[index].state = state;
+        self.journal[index].failure_code = failure_code;
+        self.bump_revision()?;
+        Ok(())
     }
 }

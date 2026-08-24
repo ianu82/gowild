@@ -3,8 +3,84 @@ use std::path::{Component, Path};
 
 use sha2::{Digest, Sha256};
 
-use super::TaskRepository;
+use super::{OwnedResource, TaskRepository, TaskWorkspacePhase};
 use crate::project::ProjectError;
+
+pub(super) fn phase_transition_allowed(
+    current: TaskWorkspacePhase,
+    next: TaskWorkspacePhase,
+) -> bool {
+    use TaskWorkspacePhase::{
+        Cleaned, Cleaning, NeedsAttention, Planned, Provisioning, Ready, Running, Stopped,
+    };
+    matches!(
+        (current, next),
+        (Planned, Provisioning | Cleaning)
+            | (Provisioning, Ready | Cleaning | NeedsAttention)
+            | (Ready, Running | Cleaning | NeedsAttention)
+            | (Running, Stopped | NeedsAttention)
+            | (Stopped, Running | Cleaning | NeedsAttention)
+            | (NeedsAttention, Provisioning | Stopped | Cleaning)
+            | (Cleaning, Cleaned | NeedsAttention)
+    )
+}
+
+pub(super) fn resources_conflict(left: &OwnedResource, right: &OwnedResource) -> bool {
+    match (left, right) {
+        (
+            OwnedResource::WorkspaceDirectory { path: left },
+            OwnedResource::WorkspaceDirectory { path: right },
+        )
+        | (
+            OwnedResource::RuntimeDirectory { path: left },
+            OwnedResource::RuntimeDirectory { path: right },
+        ) => left == right,
+        (
+            OwnedResource::RepositoryWorktree {
+                repository_id: left_id,
+                checkout_path: left_path,
+                ..
+            },
+            OwnedResource::RepositoryWorktree {
+                repository_id: right_id,
+                checkout_path: right_path,
+                ..
+            },
+        ) => left_id == right_id || left_path == right_path,
+        (
+            OwnedResource::RepositoryBranch {
+                repository_id: left_id,
+                branch: left_branch,
+                ..
+            },
+            OwnedResource::RepositoryBranch {
+                repository_id: right_id,
+                branch: right_branch,
+                ..
+            },
+        ) => left_id == right_id || left_branch == right_branch,
+        (
+            OwnedResource::PortReservation {
+                name: left_name,
+                port: left_port,
+            },
+            OwnedResource::PortReservation {
+                name: right_name,
+                port: right_port,
+            },
+        ) => left_name == right_name || left_port == right_port,
+        (OwnedResource::ComposeProject { .. }, OwnedResource::ComposeProject { .. }) => true,
+        (
+            OwnedResource::ServiceProcess {
+                service_id: left, ..
+            },
+            OwnedResource::ServiceProcess {
+                service_id: right, ..
+            },
+        ) => left == right,
+        _ => false,
+    }
+}
 
 pub(super) fn validate_dependency_graph(
     repositories: &BTreeMap<String, TaskRepository>,
