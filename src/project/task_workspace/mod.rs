@@ -208,8 +208,7 @@ pub enum OwnedResource {
     },
     ServiceProcess {
         service_id: String,
-        pid: u32,
-        started_at_unix_millis: u64,
+        instance_id: String,
     },
 }
 
