@@ -39,8 +39,11 @@ pub(super) fn loaded_project() -> LoadedProject {
                     environment: BTreeMap::new(),
                     isolation: crate::project::model::RuntimeIsolationSpec {
                         ports: vec!["http".into()],
+                        containers: vec!["server".into()],
+                        databases: vec!["primary".into()],
+                        data: vec!["uploads".into()],
+                        caches: vec!["dependencies".into()],
                         compose: true,
-                        ..crate::project::model::RuntimeIsolationSpec::default()
                     },
                 },
                 crate::project::model::ProjectService {
@@ -117,6 +120,54 @@ fn new_workspace_models_every_repo_and_unique_runtime_namespace() {
         .environment
         .keys()
         .any(|key| key.contains("TOKEN") || key.contains("KEY")));
+    assert_eq!(
+        workspace.runtime.declared_containers,
+        ["api-service.server".to_string()].into_iter().collect()
+    );
+    assert_eq!(
+        workspace.runtime.declared_databases,
+        ["api-service.primary".to_string()].into_iter().collect()
+    );
+    assert_eq!(
+        workspace.runtime.environment["TMPDIR"],
+        workspace.runtime.temp.display().to_string()
+    );
+    assert_eq!(
+        workspace.runtime.environment["XDG_CACHE_HOME"],
+        workspace.runtime.cache.display().to_string()
+    );
+    assert_eq!(
+        workspace.runtime.environment["GOWILD_DATA_API_SERVICE_UPLOADS"],
+        workspace
+            .runtime
+            .data
+            .join("services/api-service/uploads")
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        workspace.runtime.environment["GOWILD_DATABASE_API_SERVICE_PRIMARY"],
+        workspace
+            .runtime
+            .data
+            .join("databases/api-service/primary")
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        workspace.runtime.environment["GOWILD_CACHE_API_SERVICE_DEPENDENCIES"],
+        workspace
+            .runtime
+            .cache
+            .join("services/api-service/dependencies")
+            .display()
+            .to_string()
+    );
+    assert!(
+        workspace.runtime.environment["GOWILD_CONTAINER_API_SERVICE_SERVER"]
+            .starts_with(&format!("{}-api-s-", workspace.runtime.namespace))
+    );
+    assert!(workspace.runtime.environment["GOWILD_CONTAINER_API_SERVICE_SERVER"].len() <= 63);
 
     let second = TaskWorkspace::new(
         &loaded_project(),
@@ -131,6 +182,97 @@ fn new_workspace_models_every_repo_and_unique_runtime_namespace() {
     )
     .unwrap();
     assert_ne!(workspace.runtime.namespace, second.runtime.namespace);
+    assert_ne!(workspace.runtime.temp, second.runtime.temp);
+    assert_ne!(
+        workspace.runtime.environment["GOWILD_CONTAINER_API_SERVICE_SERVER"],
+        second.runtime.environment["GOWILD_CONTAINER_API_SERVICE_SERVER"]
+    );
+}
+
+#[test]
+fn command_environment_adds_only_declared_port_allocations() {
+    let mut workspace = workspace();
+    let reservation = OwnedResource::PortReservation {
+        name: "api-service.http".into(),
+        port: 43_123,
+    };
+    let sequence = workspace
+        .plan_transition(TaskTransitionOperation::Acquire, reservation)
+        .unwrap();
+    workspace
+        .finish_transition(sequence, TaskTransitionState::Applied, None)
+        .unwrap();
+
+    let environment = workspace.runtime.command_environment();
+
+    assert_eq!(environment["GOWILD_PORT_API_SERVICE_HTTP"], "43123");
+    assert_eq!(
+        environment["COMPOSE_PROJECT_NAME"],
+        workspace.runtime.namespace
+    );
+    assert!(!environment.keys().any(|key| key.contains("PASSWORD")));
+}
+
+#[test]
+fn runtime_contract_rejects_ambiguous_environment_keys() {
+    let mut project = loaded_project();
+    project
+        .manifest
+        .services
+        .push(crate::project::model::ProjectService {
+            id: "api".into(),
+            repository: Some("api".into()),
+            cwd: None,
+            argv: vec!["run-colliding-service".into()],
+            environment: BTreeMap::new(),
+            isolation: crate::project::model::RuntimeIsolationSpec {
+                ports: vec!["service-http".into()],
+                ..crate::project::model::RuntimeIsolationSpec::default()
+            },
+        });
+    project.manifest.validate().unwrap();
+
+    let error = TaskWorkspace::new(
+        &project,
+        "colliding-environment",
+        "Reject ambiguous generated environment keys",
+        TaskAgent::Codex,
+        route(),
+        PathBuf::from("/state/tasks"),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, "task_workspace_runtime_environment_collision");
+}
+
+#[test]
+fn legacy_runtime_contract_remains_cleanable_but_cannot_execute() {
+    let project = loaded_project();
+    let mut workspace = workspace();
+    workspace.runtime.environment = BTreeMap::from([
+        (
+            "COMPOSE_PROJECT_NAME".into(),
+            workspace.runtime.namespace.clone(),
+        ),
+        ("GOWILD_PROJECT_ID".into(), workspace.project_id.clone()),
+        ("GOWILD_TASK_ID".into(), workspace.id.clone()),
+        (
+            "GOWILD_TASK_ROOT".into(),
+            workspace.root.display().to_string(),
+        ),
+        (
+            "GOWILD_RUNTIME_ROOT".into(),
+            workspace.runtime.root.display().to_string(),
+        ),
+    ]);
+    workspace.runtime.declared_containers.clear();
+    workspace.runtime.declared_databases.clear();
+    workspace.runtime.declared_data.clear();
+    workspace.runtime.declared_caches.clear();
+
+    workspace.validate_integrity().unwrap();
+    let error = workspace.require_current_project(&project).unwrap_err();
+    assert_eq!(error.code, "task_workspace_runtime_manifest_mismatch");
 }
 
 #[test]
