@@ -299,6 +299,20 @@ fn journal_requires_stable_codes_and_terminal_entries_cannot_change() {
 }
 
 #[test]
+fn journal_replay_rejects_derived_state_tampering() {
+    let mut workspace = workspace();
+    let checkout_path = workspace.repository_checkout_path("api");
+    workspace.repositories.get_mut("api").unwrap().worktree = Some(TaskWorktree {
+        checkout_path,
+        head_commit: "1".repeat(40),
+        branch: None,
+    });
+
+    let error = workspace.validate_integrity().unwrap_err();
+    assert_eq!(error.code, "task_workspace_journal_state_mismatch");
+}
+
+#[test]
 fn state_validation_rejects_tampering_and_unknown_fields() {
     let project = loaded_project();
     let workspace = workspace();
