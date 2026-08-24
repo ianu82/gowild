@@ -75,6 +75,48 @@ impl TaskWorkspace {
         owned
     }
 
+    pub(super) fn owns_active_runtime_resources(&self) -> bool {
+        let mut resolved = Vec::new();
+        for transition in self.journal.iter().rev().filter(|transition| {
+            transition.state == TaskTransitionState::Applied
+                && matches!(
+                    transition.resource,
+                    OwnedResource::ComposeProject { .. } | OwnedResource::ServiceProcess { .. }
+                )
+        }) {
+            if resolved.contains(&transition.resource) {
+                continue;
+            }
+            resolved.push(transition.resource.clone());
+            if transition.operation == TaskTransitionOperation::Acquire {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn has_unresolved_runtime_transition(&self) -> bool {
+        let mut resolved = Vec::new();
+        for transition in self
+            .journal
+            .iter()
+            .rev()
+            .filter(|transition| is_runtime_resource(&transition.resource))
+        {
+            if resolved.contains(&transition.resource) {
+                continue;
+            }
+            resolved.push(transition.resource.clone());
+            if matches!(
+                transition.state,
+                TaskTransitionState::Planned | TaskTransitionState::Failed
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn validate_repository_integrity(&self) -> Result<(), ProjectError> {
         if self.repositories.is_empty() {
             return Err(ProjectError::new(
@@ -532,4 +574,11 @@ impl TaskWorkspace {
         })?;
         Ok(())
     }
+}
+
+fn is_runtime_resource(resource: &OwnedResource) -> bool {
+    matches!(
+        resource,
+        OwnedResource::ComposeProject { .. } | OwnedResource::ServiceProcess { .. }
+    )
 }

@@ -305,7 +305,7 @@ fn failed_stop_is_recoverable_and_cleanup_refuses_owned_services() {
 }
 
 #[test]
-fn service_start_rechecks_trust_and_routes_compose_elsewhere() {
+fn service_start_rechecks_trust_and_skips_compose_for_its_runtime() {
     let fixture = service_fixture(false);
     let provisioner = TaskWorkspaceProvisioner::new(&fixture.states);
     fixture.create_task("untrusted-service");
@@ -342,9 +342,9 @@ fn service_start_rechecks_trust_and_routes_compose_elsewhere() {
                 "compose-service",
                 &runtime,
             )
-            .unwrap_err()
-            .code,
-        "task_compose_runtime_required"
+            .unwrap()
+            .phase,
+        TaskWorkspacePhase::Ready
     );
     assert_eq!(runtime.launch_count(), 0);
 }

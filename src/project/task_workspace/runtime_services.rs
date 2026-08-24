@@ -300,22 +300,21 @@ impl TaskWorkspaceProvisioner<'_> {
         }
         verify_provisioned_task(&task)?;
         self.verify_runtime_ports(&task)?;
-        if project
+        if !project
             .manifest
             .services
             .iter()
-            .any(|service| service.isolation.compose)
+            .any(|service| !service.isolation.compose)
         {
-            return Err(ProjectError::new(
-                "task_compose_runtime_required",
-                "Compose services require the task Compose runtime",
-            ));
-        }
-        if project.manifest.services.is_empty() {
             return Ok(task);
         }
 
-        for service in &project.manifest.services {
+        for service in project
+            .manifest
+            .services
+            .iter()
+            .filter(|service| !service.isolation.compose)
+        {
             let invocation = service_invocation(&task, service)?;
             let resource = service_resource(&invocation.control);
             if task.resource_is_owned(&resource) {
@@ -393,7 +392,10 @@ impl TaskWorkspaceProvisioner<'_> {
                 )?;
             }
         }
-        if task.phase != TaskWorkspacePhase::Stopped {
+        if !task.owns_active_runtime_resources()
+            && !task.has_unresolved_runtime_transition()
+            && task.phase != TaskWorkspacePhase::Stopped
+        {
             self.transition_phase(&mut task, TaskWorkspacePhase::Stopped)?;
         }
         Ok(task)

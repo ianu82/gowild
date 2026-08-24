@@ -19,6 +19,7 @@ pub(crate) mod repository;
 mod rules;
 pub(crate) mod runtime_commands;
 pub(crate) mod runtime_compose;
+mod runtime_compose_lifecycle;
 mod runtime_layout;
 mod runtime_ports;
 pub(crate) mod runtime_services;
@@ -41,6 +42,8 @@ mod provision_tests;
 mod repository_tests;
 #[cfg(test)]
 mod runtime_commands_tests;
+#[cfg(test)]
+mod runtime_compose_lifecycle_tests;
 #[cfg(test)]
 mod runtime_compose_tests;
 #[cfg(test)]
