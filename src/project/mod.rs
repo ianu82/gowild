@@ -3,6 +3,7 @@ mod manifest;
 mod model;
 mod overrides;
 mod private_state;
+pub(crate) mod task_workspace;
 
 pub(crate) use discovery::{discover_project, DiscoveryOptions};
 pub(crate) use manifest::{
