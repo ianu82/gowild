@@ -55,6 +55,33 @@ pub(crate) fn run_supervised_service(program: &str, args: &[String]) -> std::io:
     run_supervised_service_platform(program, args)
 }
 
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
+pub(crate) fn configure_service_supervisor_command(command: &mut std::process::Command) {
+    configure_service_supervisor_command_platform(command);
+}
+
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
+pub(crate) fn service_process_matches(pid: u32, started_at_unix_millis: u64) -> bool {
+    process_exists(pid) && process_started_at_unix_millis(pid) == Some(started_at_unix_millis)
+}
+
+#[allow(
+    dead_code,
+    reason = "task service consumer lands in the next stacked PR"
+)]
+pub(crate) fn terminate_service_process(
+    pid: u32,
+    started_at_unix_millis: u64,
+) -> std::io::Result<()> {
+    terminate_service_process_platform(pid, started_at_unix_millis)
+}
+
 /// Creates a directory whose platform ACL/mode grants access only to its owner.
 pub(crate) fn create_private_directory(path: &std::path::Path) -> std::io::Result<()> {
     create_remote_private_dir(path)
@@ -433,6 +460,49 @@ mod tests {
             pane_custom_command_pty_builder("echo hello").get_argv(),
             &expected
         );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn service_termination_requires_exact_process_identity_and_stops_the_group() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "while :; do sleep 1; done"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        configure_service_supervisor_command(&mut command);
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let started_at_unix_millis = loop {
+            if let Some(started_at) = process_started_at_unix_millis(child.id()) {
+                break started_at;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("service process identity was unavailable");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+
+        let wrong_identity =
+            terminate_service_process(child.id(), started_at_unix_millis.saturating_add(1))
+                .unwrap_err()
+                .kind();
+        let still_running = child.try_wait().unwrap().is_none();
+        let termination = terminate_service_process(child.id(), started_at_unix_millis);
+        if termination.is_err() {
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+
+        assert_eq!(wrong_identity, std::io::ErrorKind::PermissionDenied);
+        assert!(still_running);
+        termination.unwrap();
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
