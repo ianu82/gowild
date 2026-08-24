@@ -597,20 +597,12 @@ pub(crate) fn run_supervised_service_platform(
     child.wait().map(|status| status.code().unwrap_or(1))
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn configure_service_supervisor_command_platform(command: &mut std::process::Command) {
     use std::os::windows::process::CommandExt;
 
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
-#[allow(
-    dead_code,
-    reason = "task service consumer lands in the next stacked PR"
-)]
 pub(crate) fn terminate_service_process_platform(
     pid: u32,
     started_at_unix_millis: u64,

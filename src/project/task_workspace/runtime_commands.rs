@@ -7,7 +7,6 @@ use super::provision::{
     require_matching_definition, verify_provisioned_task, TaskWorkspaceProvisioner,
 };
 use super::{LoadedProject, TaskWorkspace, TaskWorkspacePhase};
-use crate::project::model::ProjectCommand;
 use crate::project::{ProjectDefinition, ProjectError, ProjectPrivateState};
 
 const MAX_COMMAND_OUTPUT_BYTES: usize = 1024 * 1024;
@@ -90,7 +89,7 @@ impl TaskWorkspaceProvisioner<'_> {
             ));
         }
         verify_provisioned_task(task)?;
-        self.verify_command_ports(task)?;
+        self.verify_runtime_ports(task)?;
         let commands = match kind {
             TaskCommandKind::Setup => &project.manifest.setup,
             TaskCommandKind::Test => &project.manifest.tests,
@@ -104,7 +103,8 @@ impl TaskWorkspaceProvisioner<'_> {
                     format!("project has no {} command '{command_id}'", kind.label()),
                 )
             })?;
-        let cwd = resolve_command_cwd(task, command)?;
+        let cwd =
+            resolve_execution_cwd(task, command.repository.as_deref(), command.cwd.as_deref())?;
         let mut environment = task.runtime.command_environment();
         environment.extend(command.environment.clone());
         Ok(TaskCommandInvocation {
@@ -115,7 +115,7 @@ impl TaskWorkspaceProvisioner<'_> {
         })
     }
 
-    fn verify_command_ports(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
+    pub(super) fn verify_runtime_ports(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
         if task.runtime.declared_ports.is_empty() {
             return Ok(());
         }
@@ -148,11 +148,12 @@ impl TaskCommandKind {
     }
 }
 
-fn resolve_command_cwd(
+pub(super) fn resolve_execution_cwd(
     task: &TaskWorkspace,
-    command: &ProjectCommand,
+    repository_id: Option<&str>,
+    cwd: Option<&Path>,
 ) -> Result<PathBuf, ProjectError> {
-    let base = if let Some(repository_id) = &command.repository {
+    let base = if let Some(repository_id) = repository_id {
         task.repositories
             .get(repository_id)
             .and_then(|repository| repository.worktree.as_ref())
@@ -166,10 +167,7 @@ fn resolve_command_cwd(
     } else {
         task.root.join("repositories")
     };
-    let requested = command
-        .cwd
-        .as_ref()
-        .map_or_else(|| base.clone(), |cwd| base.join(cwd));
+    let requested = cwd.map_or_else(|| base.clone(), |cwd| base.join(cwd));
     canonical_directory_within(&requested, &base)
 }
 

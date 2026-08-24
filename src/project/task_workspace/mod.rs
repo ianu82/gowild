@@ -20,6 +20,7 @@ mod rules;
 pub(crate) mod runtime_commands;
 mod runtime_layout;
 mod runtime_ports;
+pub(crate) mod runtime_services;
 mod runtime_validation;
 mod validation;
 
@@ -43,6 +44,8 @@ mod runtime_commands_tests;
 mod runtime_layout_tests;
 #[cfg(test)]
 mod runtime_ports_tests;
+#[cfg(test)]
+mod runtime_services_tests;
 #[cfg(test)]
 mod tests;
 
