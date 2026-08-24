@@ -31,6 +31,12 @@ impl TaskWorkspaceProvisioner<'_> {
                 "a running task must be stopped before cleanup",
             ));
         }
+        if !task.runtime.ports.is_empty() {
+            let broker = self.port_broker()?;
+            for (name, port) in &task.runtime.ports {
+                broker.verify_exact(&task.runtime.namespace, name, *port)?;
+            }
+        }
 
         preflight_cleanup(&task)?;
         if task.phase != TaskWorkspacePhase::Cleaning {
@@ -65,6 +71,22 @@ impl TaskWorkspaceProvisioner<'_> {
                     worktree_resource,
                     || verify_worktree_released(&snapshot, &verify_id),
                     || ensure_worktree_released(&snapshot, &ensure_id),
+                )?;
+            }
+        }
+
+        for (name, port) in task.runtime.ports.clone() {
+            let resource = OwnedResource::PortReservation {
+                name: name.clone(),
+                port,
+            };
+            if task.resource_is_owned(&resource) {
+                let snapshot = task.clone();
+                self.ensure_released(
+                    &mut task,
+                    resource,
+                    || Ok(()),
+                    || self.release_port(&snapshot, &name, port),
                 )?;
             }
         }

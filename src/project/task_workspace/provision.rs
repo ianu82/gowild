@@ -18,15 +18,33 @@ const TASK_ROOT_MARKER_PREFIX: &str = ".gowild-task-workspace-v1";
 /// operation lease prevents a second process from interleaving mutations.
 pub struct TaskWorkspaceProvisioner<'a> {
     states: &'a TaskWorkspaceRepository,
+    ports: Option<&'a super::TaskPortBroker>,
 }
 
 impl<'a> TaskWorkspaceProvisioner<'a> {
     pub fn new(states: &'a TaskWorkspaceRepository) -> Self {
-        Self { states }
+        Self {
+            states,
+            ports: None,
+        }
+    }
+
+    pub fn with_port_broker(
+        states: &'a TaskWorkspaceRepository,
+        ports: &'a super::TaskPortBroker,
+    ) -> Self {
+        Self {
+            states,
+            ports: Some(ports),
+        }
     }
 
     pub(super) fn states(&self) -> &TaskWorkspaceRepository {
         self.states
+    }
+
+    pub(super) fn ports(&self) -> Option<&super::TaskPortBroker> {
+        self.ports
     }
 
     pub fn provision(

@@ -18,6 +18,7 @@ pub(crate) mod provision;
 pub(crate) mod repository;
 mod rules;
 mod runtime_layout;
+mod runtime_ports;
 mod runtime_validation;
 mod validation;
 
@@ -25,6 +26,7 @@ use rules::{
     phase_transition_allowed, resources_conflict, runtime_namespace, validate_absolute_clean_path,
     validate_identifier,
 };
+pub use runtime_ports::TaskPortBroker;
 
 #[cfg(test)]
 mod branch_tests;
@@ -36,6 +38,8 @@ mod provision_tests;
 mod repository_tests;
 #[cfg(test)]
 mod runtime_layout_tests;
+#[cfg(test)]
+mod runtime_ports_tests;
 #[cfg(test)]
 mod tests;
 
