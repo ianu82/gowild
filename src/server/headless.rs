@@ -7457,7 +7457,10 @@ next_tab = ""
                 clear_display_agent: false,
                 clear_state_labels: false,
                 seq: None,
-                ttl: Some(Duration::from_millis(1)),
+                // Expiry is driven below with the captured synthetic deadline. Keep the
+                // wall-clock TTL long enough that a pre-assertion scheduler pause cannot
+                // expire the metadata and make this deterministic under parallel load.
+                ttl: Some(Duration::from_secs(1)),
             })
         );
 
