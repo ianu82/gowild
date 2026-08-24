@@ -153,7 +153,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         self.states.save(task, expected_revision)
     }
 
-    fn record_failed_transition(
+    pub(super) fn record_failed_transition(
         &self,
         task: &mut TaskWorkspace,
         sequence: u64,
@@ -207,7 +207,7 @@ fn verify_task_repository(task: &TaskWorkspace, repository_id: &str) -> Result<(
     }
 }
 
-fn task_root_marker(task: &TaskWorkspace) -> PathBuf {
+pub(super) fn task_root_marker(task: &TaskWorkspace) -> PathBuf {
     task.root.join(format!(
         "{TASK_ROOT_MARKER_PREFIX}-{}-{}-{}",
         task.project_id, task.id, task.manifest_digest
@@ -244,7 +244,7 @@ pub(super) fn ensure_owned_task_root(task: &TaskWorkspace) -> Result<(), Project
     Ok(())
 }
 
-fn verify_owned_task_root(task: &TaskWorkspace) -> Result<(), ProjectError> {
+pub(super) fn verify_owned_task_root(task: &TaskWorkspace) -> Result<(), ProjectError> {
     validate_existing_ancestors(&task.root)?;
     let root = fs::symlink_metadata(&task.root).map_err(|_| {
         ProjectError::new(

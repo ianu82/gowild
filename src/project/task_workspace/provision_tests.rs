@@ -356,7 +356,7 @@ fn provisioner_isolates_parallel_tasks_across_the_same_repositories() {
     );
 }
 
-fn persist_phase(
+pub(super) fn persist_phase(
     states: &TaskWorkspaceRepository,
     task: &mut TaskWorkspace,
     phase: TaskWorkspacePhase,
