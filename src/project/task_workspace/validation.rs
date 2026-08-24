@@ -96,6 +96,14 @@ impl TaskWorkspace {
                     "task workspace repositories repeat a source path",
                 ));
             }
+            if self.root.starts_with(&state.source_path)
+                || state.source_path.starts_with(&self.root)
+            {
+                return Err(ProjectError::new(
+                    "task_workspace_repository_path_collision",
+                    "task workspace data and source repositories must not contain one another",
+                ));
+            }
             validate_git_object_id(&state.base_commit)?;
             let mut dependencies = BTreeSet::new();
             for dependency in &state.depends_on {
