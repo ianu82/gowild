@@ -436,8 +436,7 @@ impl TaskWorkspace {
             }
             OwnedResource::ServiceProcess {
                 service_id,
-                pid,
-                started_at_unix_millis,
+                instance_id,
             } => {
                 validate_identifier("service id", service_id)?;
                 if !self.runtime.declared_services.contains(service_id) {
@@ -446,10 +445,10 @@ impl TaskWorkspace {
                         format!("project does not declare service '{service_id}'"),
                     ));
                 }
-                if *pid == 0 || *started_at_unix_millis == 0 {
+                if instance_id != &service_instance_id(&self.runtime.namespace, service_id) {
                     return Err(ProjectError::new(
                         "invalid_task_workspace_process",
-                        "owned service processes require a pid and start marker",
+                        "owned service process identity does not match this task namespace",
                     ));
                 }
                 Ok(())

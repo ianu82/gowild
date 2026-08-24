@@ -246,6 +246,43 @@ fn runtime_contract_rejects_ambiguous_environment_keys() {
 }
 
 #[test]
+fn service_ownership_uses_a_stable_task_scoped_instance_identity() {
+    let mut task = workspace();
+    let instance_id = super::rules::service_instance_id(&task.runtime.namespace, "api-service");
+    let resource = OwnedResource::ServiceProcess {
+        service_id: "api-service".into(),
+        instance_id: instance_id.clone(),
+    };
+
+    task.plan_transition(TaskTransitionOperation::Acquire, resource.clone())
+        .unwrap();
+    assert_eq!(
+        super::rules::service_instance_id(&task.runtime.namespace, "api-service"),
+        instance_id
+    );
+    assert_ne!(
+        super::rules::service_instance_id(&task.runtime.namespace, "web-service"),
+        instance_id
+    );
+    assert!(!serde_json::to_string(&resource).unwrap().contains("pid"));
+
+    let mut invalid = workspace();
+    assert_eq!(
+        invalid
+            .plan_transition(
+                TaskTransitionOperation::Acquire,
+                OwnedResource::ServiceProcess {
+                    service_id: "api-service".into(),
+                    instance_id: "svc-000000000000000000000000".into(),
+                },
+            )
+            .unwrap_err()
+            .code,
+        "invalid_task_workspace_process"
+    );
+}
+
+#[test]
 fn legacy_runtime_contract_remains_cleanable_but_cannot_execute() {
     let project = loaded_project();
     let mut workspace = workspace();

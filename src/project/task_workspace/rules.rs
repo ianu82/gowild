@@ -227,3 +227,16 @@ pub(super) fn runtime_namespace(project_id: &str, task_id: &str, manifest_digest
     task_slug = task_slug.trim_matches(['-', '.', '_']).to_string();
     format!("gw-{task_slug}-{suffix}")
 }
+
+pub(super) fn service_instance_id(namespace: &str, service_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(namespace.as_bytes());
+    hasher.update([0]);
+    hasher.update(service_id.as_bytes());
+    let digest = hasher.finalize();
+    let suffix = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("svc-{suffix}")
+}
