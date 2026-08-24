@@ -366,9 +366,9 @@ fn validate_execution(
                 "{kind} '{id}' environment key '{key}' is not portable"
             ));
         }
-        if key.starts_with("GOWILD_") {
+        if reserved_runtime_environment_key(key) {
             diagnostics.push(format!(
-                "{kind} '{id}' may not override reserved GOWILD_ environment values"
+                "{kind} '{id}' may not override task runtime environment value '{key}'"
             ));
         }
         if secret_like_key(key) && !value.is_empty() {
@@ -382,6 +382,14 @@ fn validate_execution(
             ));
         }
     }
+}
+
+fn reserved_runtime_environment_key(key: &str) -> bool {
+    key.starts_with("GOWILD_")
+        || matches!(
+            key,
+            "COMPOSE_PROJECT_NAME" | "TMPDIR" | "TMP" | "TEMP" | "XDG_CACHE_HOME" | "XDG_DATA_HOME"
+        )
 }
 
 fn validate_resource_names(
@@ -557,6 +565,29 @@ mod tests {
         let error = manifest.validate().unwrap_err();
         assert!(error.message.contains("may not escape"));
         assert!(error.message.contains("looks secret"));
+    }
+
+    #[test]
+    fn commands_cannot_override_task_runtime_environment() {
+        let mut manifest = manifest(vec![repo("api", &[])]);
+        manifest.setup.push(ProjectCommand {
+            id: "prepare".into(),
+            repository: Some("api".into()),
+            cwd: None,
+            argv: vec!["just".into(), "setup".into()],
+            environment: BTreeMap::from([
+                ("TMPDIR".into(), "/shared/tmp".into()),
+                ("COMPOSE_PROJECT_NAME".into(), "shared".into()),
+                ("GOWILD_TASK_ROOT".into(), "/shared/task".into()),
+            ]),
+        });
+
+        let error = manifest.validate().unwrap_err();
+
+        assert!(error.message.contains("TMPDIR"));
+        assert!(error.message.contains("COMPOSE_PROJECT_NAME"));
+        assert!(error.message.contains("GOWILD_TASK_ROOT"));
+        assert!(error.message.contains("may not override"));
     }
 
     #[test]
