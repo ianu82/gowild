@@ -75,7 +75,7 @@ pub(super) fn read_request(stream: &mut TcpStream) -> Result<BridgeRequest, Requ
             return Err(RequestReadError::malformed("request headers are too large"));
         }
         let mut chunk = [0_u8; 4096];
-        let read = match stream.read(&mut chunk) {
+        let read = match read_retrying_interrupts(stream, &mut chunk) {
             Ok(read) => read,
             Err(_) if bytes.is_empty() => {
                 return Err(RequestReadError::idle_connection(
@@ -160,8 +160,7 @@ pub(super) fn read_request(stream: &mut TcpStream) -> Result<BridgeRequest, Requ
     while body.len() < content_length {
         let remaining = content_length - body.len();
         let mut chunk = vec![0_u8; remaining.min(8192)];
-        let read = stream
-            .read(&mut chunk)
+        let read = read_retrying_interrupts(stream, &mut chunk)
             .map_err(|_| RequestReadError::malformed("request body could not be read"))?;
         if read == 0 {
             return Err(RequestReadError::malformed("request body ended early"));
@@ -175,6 +174,15 @@ pub(super) fn read_request(stream: &mut TcpStream) -> Result<BridgeRequest, Requ
         headers,
         body,
     })
+}
+
+fn read_retrying_interrupts(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match reader.read(buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
 }
 
 pub(super) fn write_error(
@@ -208,6 +216,35 @@ pub(super) fn write_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct InterruptedOnce<R> {
+        reader: R,
+        interrupted: bool,
+    }
+
+    impl<R: Read> Read for InterruptedOnce<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            self.reader.read(buffer)
+        }
+    }
+
+    #[test]
+    fn interrupted_socket_reads_are_retried() {
+        let mut reader = InterruptedOnce {
+            reader: io::Cursor::new(b"request"),
+            interrupted: false,
+        };
+        let mut buffer = [0_u8; 7];
+
+        let read = read_retrying_interrupts(&mut reader, &mut buffer).unwrap();
+
+        assert_eq!(read, buffer.len());
+        assert_eq!(&buffer, b"request");
+    }
 
     fn read_from_client(write: impl FnOnce(&mut TcpStream) + Send + 'static) -> RequestReadError {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

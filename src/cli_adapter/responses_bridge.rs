@@ -198,6 +198,7 @@ fn handle_connection(
     expected_path: &str,
     forwarded_headers: &BTreeSet<String>,
 ) -> io::Result<()> {
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
     let request = match read_request(&mut stream) {
