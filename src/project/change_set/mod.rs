@@ -13,12 +13,21 @@ use super::ProjectError;
 
 mod collector;
 mod planner;
+mod publisher;
 mod verification;
+
+#[allow(
+    unused_imports,
+    reason = "draft publisher consumers land in the next stacked change"
+)]
+pub(crate) use publisher::{DraftPublicationRequest, DraftPullRequestPublisher};
 
 #[cfg(test)]
 mod collector_tests;
 #[cfg(test)]
 mod planner_tests;
+#[cfg(test)]
+mod publisher_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
