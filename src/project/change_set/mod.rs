@@ -12,10 +12,13 @@ use super::task_workspace::{TaskWorkspace, TaskWorkspacePhase};
 use super::ProjectError;
 
 mod collector;
+mod planner;
 mod verification;
 
 #[cfg(test)]
 mod collector_tests;
+#[cfg(test)]
+mod planner_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -129,7 +132,21 @@ pub enum CheckStatus {
 #[serde(deny_unknown_fields)]
 pub struct ChangeSetPublication {
     pub group_id: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub planned_pull_requests: BTreeMap<String, DraftPullRequestPlan>,
     pub draft_pull_requests: BTreeMap<String, DraftPullRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftPullRequestPlan {
+    pub repository_id: String,
+    pub position: u32,
+    pub head_branch: String,
+    pub base_branch: String,
+    pub title: String,
+    pub body: String,
+    pub depends_on: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +235,7 @@ impl ChangeSet {
             checks: BTreeMap::new(),
             publication: ChangeSetPublication {
                 group_id: format!("{}:{}", task.project_id, task.id),
+                planned_pull_requests: BTreeMap::new(),
                 draft_pull_requests: BTreeMap::new(),
             },
             merge_gate: MergeGate::AwaitingApproval,
