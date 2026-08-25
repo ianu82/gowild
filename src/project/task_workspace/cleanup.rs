@@ -5,12 +5,17 @@ use super::cleanup_safety::{
     branch_commit, branch_resource, cleanup_conflict, cleanup_git_failed, cleanup_io,
     preflight_cleanup, reverse_repository_order, validate_releasable_root, worktree_resource,
 };
+use super::operation::{
+    cleanup_step_count, complete_progress, report_progress, require_active,
+    UncontrolledTaskOperation,
+};
 use super::provision::{task_root_marker, task_worktree_entry, TaskWorkspaceProvisioner};
 use super::runtime_layout::{
     ensure_runtime_directory_released, runtime_directories, verify_runtime_directory_released,
 };
 use super::{
-    OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWorkspace, TaskWorkspacePhase,
+    OwnedResource, TaskOperationControl, TaskOperationStage, TaskTransitionOperation,
+    TaskTransitionState, TaskWorkspace, TaskWorkspacePhase,
 };
 use crate::project::ProjectError;
 
@@ -19,10 +24,34 @@ impl TaskWorkspaceProvisioner<'_> {
     /// requires the current project manifest or execution trust, so stale and
     /// interrupted tasks remain recoverable.
     pub fn cleanup(&self, task_id: &str) -> Result<TaskWorkspace, ProjectError> {
-        let _task_lock = self.states().lock_task_operations(task_id)?;
+        self.cleanup_inner(task_id, &UncontrolledTaskOperation, false)
+    }
+
+    pub fn cleanup_with_control(
+        &self,
+        task_id: &str,
+        control: &(impl TaskOperationControl + ?Sized),
+    ) -> Result<TaskWorkspace, ProjectError> {
+        self.cleanup_inner(task_id, control, true)
+    }
+
+    fn cleanup_inner(
+        &self,
+        task_id: &str,
+        control: &(impl TaskOperationControl + ?Sized),
+        nonblocking_lock: bool,
+    ) -> Result<TaskWorkspace, ProjectError> {
+        require_active(control)?;
+        let _task_lock = if nonblocking_lock {
+            self.states().try_lock_task_operations(task_id)?
+        } else {
+            self.states().lock_task_operations(task_id)?
+        };
         let mut task = self.states().load(task_id)?;
         task.validate_integrity()?;
+        let total_steps = cleanup_step_count(&task);
         if task.phase == TaskWorkspacePhase::Cleaned {
+            complete_progress(control, task_id, total_steps);
             return Ok(task);
         }
         if task.phase == TaskWorkspacePhase::Running {
@@ -31,6 +60,13 @@ impl TaskWorkspaceProvisioner<'_> {
                 "a running task must be stopped before cleanup",
             ));
         }
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::Validating,
+            0,
+            total_steps,
+        )?;
         if !task.runtime.ports.is_empty() {
             let broker = self.port_broker()?;
             for (name, port) in &task.runtime.ports {
@@ -42,10 +78,20 @@ impl TaskWorkspaceProvisioner<'_> {
         if task.phase != TaskWorkspacePhase::Cleaning {
             self.transition_phase(&mut task, TaskWorkspacePhase::Cleaning)?;
         }
+        let mut completed_steps = 0;
 
         for repository_id in reverse_repository_order(&task)? {
             if let Some(branch_resource) = branch_resource(&task, &repository_id) {
                 if task.resource_is_owned(&branch_resource) {
+                    report_progress(
+                        control,
+                        task_id,
+                        TaskOperationStage::RepositoryBranch {
+                            repository_id: repository_id.clone(),
+                        },
+                        completed_steps,
+                        total_steps,
+                    )?;
                     let snapshot = task.clone();
                     let verify_id = repository_id.clone();
                     let ensure_id = repository_id.clone();
@@ -57,11 +103,21 @@ impl TaskWorkspaceProvisioner<'_> {
                         || verify_branch_released(&snapshot, &verify_id),
                         || ensure_branch_released(&snapshot, &ensure_id),
                     )?;
+                    completed_steps += 1;
                 }
             }
 
             let worktree_resource = worktree_resource(&task, &repository_id);
             if task.resource_is_owned(&worktree_resource) {
+                report_progress(
+                    control,
+                    task_id,
+                    TaskOperationStage::RepositoryWorktree {
+                        repository_id: repository_id.clone(),
+                    },
+                    completed_steps,
+                    total_steps,
+                )?;
                 let snapshot = task.clone();
                 let verify_id = repository_id.clone();
                 let ensure_id = repository_id.clone();
@@ -72,6 +128,7 @@ impl TaskWorkspaceProvisioner<'_> {
                     || verify_worktree_released(&snapshot, &verify_id),
                     || ensure_worktree_released(&snapshot, &ensure_id),
                 )?;
+                completed_steps += 1;
             }
         }
 
@@ -81,6 +138,13 @@ impl TaskWorkspaceProvisioner<'_> {
                 port,
             };
             if task.resource_is_owned(&resource) {
+                report_progress(
+                    control,
+                    task_id,
+                    TaskOperationStage::Port { name: name.clone() },
+                    completed_steps,
+                    total_steps,
+                )?;
                 let snapshot = task.clone();
                 self.ensure_released(
                     &mut task,
@@ -88,12 +152,20 @@ impl TaskWorkspaceProvisioner<'_> {
                     || Ok(()),
                     || self.release_port(&snapshot, &name, port),
                 )?;
+                completed_steps += 1;
             }
         }
 
         for path in runtime_directories(&task).into_iter().rev() {
             let resource = OwnedResource::RuntimeDirectory { path: path.clone() };
             if task.resource_is_owned(&resource) {
+                report_progress(
+                    control,
+                    task_id,
+                    TaskOperationStage::RuntimeDirectory { path: path.clone() },
+                    completed_steps,
+                    total_steps,
+                )?;
                 let verify_path = path.clone();
                 let snapshot = task.clone();
                 self.ensure_released(
@@ -102,6 +174,7 @@ impl TaskWorkspaceProvisioner<'_> {
                     || verify_runtime_directory_released(&verify_path),
                     || ensure_runtime_directory_released(&snapshot, &path),
                 )?;
+                completed_steps += 1;
             }
         }
 
@@ -109,6 +182,13 @@ impl TaskWorkspaceProvisioner<'_> {
             path: task.root.clone(),
         };
         if task.resource_is_owned(&root_resource) {
+            report_progress(
+                control,
+                task_id,
+                TaskOperationStage::WorkspaceRoot,
+                completed_steps,
+                total_steps,
+            )?;
             let snapshot = task.clone();
             self.ensure_released(
                 &mut task,
@@ -116,9 +196,18 @@ impl TaskWorkspaceProvisioner<'_> {
                 || verify_task_root_released(&snapshot),
                 || ensure_task_root_released(&snapshot),
             )?;
+            completed_steps += 1;
         }
 
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::Finalizing,
+            completed_steps,
+            total_steps,
+        )?;
         self.transition_phase(&mut task, TaskWorkspacePhase::Cleaned)?;
+        complete_progress(control, task_id, total_steps);
         Ok(task)
     }
 
