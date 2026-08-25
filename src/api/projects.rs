@@ -103,7 +103,7 @@ fn open_reader(path: &str) -> Result<ProjectTaskReader, ProjectError> {
     ProjectTaskReader::open(project_path(path)?)
 }
 
-fn project_path(path: &str) -> Result<&Path, ProjectError> {
+pub(super) fn project_path(path: &str) -> Result<&Path, ProjectError> {
     if path.is_empty() || path.contains('\0') {
         return Err(ProjectError::new(
             "invalid_project_path",

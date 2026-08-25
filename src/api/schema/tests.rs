@@ -722,6 +722,67 @@ fn project_task_requests_and_responses_round_trip() {
         create_request
     );
 
+    let provision_request = Request {
+        id: "req_provision_project_task".into(),
+        method: Method::ProjectTaskProvision(ProjectTaskLifecycleParams {
+            path: "/projects/cowork".into(),
+            task_id: "route-settings".into(),
+        }),
+    };
+    let provision_json = serde_json::to_value(&provision_request).unwrap();
+    assert_eq!(provision_json["method"], "project.task.provision");
+    assert_eq!(
+        serde_json::from_value::<Request>(provision_json).unwrap(),
+        provision_request
+    );
+
+    let cancel_request = Request {
+        id: "req_cancel_project_task".into(),
+        method: Method::ProjectTaskOperationCancel(ProjectTaskOperationParams {
+            operation_id: "task-op-42-7".into(),
+        }),
+    };
+    let cancel_json = serde_json::to_value(&cancel_request).unwrap();
+    assert_eq!(cancel_json["method"], "project.task.operation.cancel");
+    assert_eq!(
+        serde_json::from_value::<Request>(cancel_json).unwrap(),
+        cancel_request
+    );
+
+    let operation_response = SuccessResponse {
+        id: "req_provision_project_task".into(),
+        result: ResponseResult::ProjectTaskOperation {
+            schema_version: PROJECT_TASK_API_VERSION,
+            operation: ProjectTaskOperationInfo {
+                operation_id: "task-op-42-7".into(),
+                project_id: "cowork".into(),
+                project_root: "/projects/cowork".into(),
+                task_id: "route-settings".into(),
+                kind: ProjectTaskOperationKind::Provision,
+                status: ProjectTaskOperationStatus::Running,
+                cancellation_requested: false,
+                progress: Some(ProjectTaskOperationProgress {
+                    stage: ProjectTaskOperationStage::Repository {
+                        repository_id: "api".into(),
+                    },
+                    completed_steps: 2,
+                    total_steps: 6,
+                }),
+                error: None,
+            },
+        },
+    };
+    let operation_json = serde_json::to_value(&operation_response).unwrap();
+    assert_eq!(operation_json["result"]["type"], "project_task_operation");
+    assert_eq!(
+        operation_json["result"]["operation"]["progress"]["stage"]["stage"],
+        "repository"
+    );
+    assert_eq!(
+        serde_json::from_value::<SuccessResponse>(operation_json).unwrap(),
+        operation_response
+    );
+
     let response = SuccessResponse {
         id: "req_project_tasks".into(),
         result: ResponseResult::ProjectTaskList {

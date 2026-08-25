@@ -31,6 +31,77 @@ pub struct ProjectTaskCreateParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskLifecycleParams {
+    pub path: String,
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskOperationParams {
+    pub operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskOperationInfo {
+    pub operation_id: String,
+    pub project_id: String,
+    pub project_root: String,
+    pub task_id: String,
+    pub kind: ProjectTaskOperationKind,
+    pub status: ProjectTaskOperationStatus,
+    pub cancellation_requested: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<ProjectTaskOperationProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ProjectTaskOperationError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectTaskOperationKind {
+    Provision,
+    Cleanup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectTaskOperationStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskOperationProgress {
+    pub stage: ProjectTaskOperationStage,
+    pub completed_steps: usize,
+    pub total_steps: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "stage", rename_all = "snake_case")]
+pub enum ProjectTaskOperationStage {
+    Validating,
+    WorkspaceRoot,
+    RuntimeLayout,
+    Repository { repository_id: String },
+    RepositoryBranch { repository_id: String },
+    RepositoryWorktree { repository_id: String },
+    Port { name: String },
+    RuntimeDirectory { path: String },
+    Finalizing,
+    Complete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskOperationError {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProjectTaskProjectInfo {
     pub project_id: String,
     pub name: String,

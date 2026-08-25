@@ -21,6 +21,7 @@ use crate::ipc::{
     poll_local_stream_read, remove_socket_file_if_owned, set_local_stream_polling,
     socket_file_identity, LocalStream, LocalStreamRead, SocketFileIdentity,
 };
+use crate::project::task_operations::ProjectTaskOperationRegistry;
 
 mod pane_graphics_stream;
 
@@ -36,11 +37,13 @@ pub struct ServerHandle {
     path: PathBuf,
     identity: SocketFileIdentity,
     running: Arc<AtomicBool>,
+    project_task_operations: ProjectTaskOperationRegistry,
 }
 
 impl Drop for ServerHandle {
     fn drop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
+        self.project_task_operations.cancel_all();
 
         if let Err(err) = self.remove_socket_file_if_owned() {
             if err.kind() != std::io::ErrorKind::NotFound {
@@ -95,6 +98,8 @@ fn start_server_inner(
 
     let running = Arc::new(AtomicBool::new(true));
     let listener_running = Arc::clone(&running);
+    let project_task_operations = ProjectTaskOperationRegistry::default();
+    let listener_project_task_operations = project_task_operations.clone();
     let thread = std::thread::spawn(move || {
         for stream in listener.incoming() {
             match stream {
@@ -104,11 +109,13 @@ fn start_server_inner(
                     let capabilities = capabilities.clone();
                     let server_stop = server_stop.clone();
                     let connection_running = Arc::clone(&listener_running);
+                    let project_task_operations = listener_project_task_operations.clone();
                     std::thread::spawn(move || {
                         if let Err(err) = handle_connection_with_stop(
                             stream,
                             &api_tx,
                             &event_hub,
+                            &project_task_operations,
                             &connection_running,
                             capabilities,
                             server_stop.as_ref(),
@@ -131,6 +138,7 @@ fn start_server_inner(
         path,
         identity,
         running,
+        project_task_operations,
     })
 }
 
@@ -155,13 +163,23 @@ fn handle_connection(
     running: &Arc<AtomicBool>,
     capabilities: Option<ServerCapabilities>,
 ) -> std::io::Result<()> {
-    handle_connection_with_stop(stream, api_tx, event_hub, running, capabilities, None)
+    let project_task_operations = ProjectTaskOperationRegistry::default();
+    handle_connection_with_stop(
+        stream,
+        api_tx,
+        event_hub,
+        &project_task_operations,
+        running,
+        capabilities,
+        None,
+    )
 }
 
 fn handle_connection_with_stop(
     mut stream: LocalStream,
     api_tx: &ApiRequestSender,
     event_hub: &EventHub,
+    project_task_operations: &ProjectTaskOperationRegistry,
     running: &Arc<AtomicBool>,
     capabilities: Option<ServerCapabilities>,
     server_stop: Option<&Arc<AtomicBool>>,
@@ -286,6 +304,7 @@ fn handle_connection_with_stop(
                     method: method_body,
                 },
                 api_tx,
+                project_task_operations,
                 capabilities,
                 server_stop,
                 Some(response_write_rx),
@@ -340,6 +359,7 @@ fn finish_wait_response(
 fn handle_request(
     request: Request,
     api_tx: &ApiRequestSender,
+    project_task_operations: &ProjectTaskOperationRegistry,
     capabilities: Option<ServerCapabilities>,
     server_stop: Option<&Arc<AtomicBool>>,
     response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
@@ -362,6 +382,7 @@ fn handle_request(
     if matches!(&request.method, Method::ServerStop(_)) {
         if let Some(server_stop) = server_stop {
             server_stop.store(true, Ordering::Release);
+            project_task_operations.cancel_all();
             return serde_json::to_string(&SuccessResponse {
                 id: request.id,
                 result: ResponseResult::Ok {},
@@ -380,6 +401,18 @@ fn handle_request(
         Method::ProjectTaskList(params) => super::projects::task_list(request.id, params),
         Method::ProjectTaskGet(params) => super::projects::task_get(request.id, params),
         Method::ProjectTaskCreate(params) => super::projects::task_create(request.id, params),
+        Method::ProjectTaskProvision(params) => {
+            super::project_operations::task_provision(request.id, params, project_task_operations)
+        }
+        Method::ProjectTaskCleanup(params) => {
+            super::project_operations::task_cleanup(request.id, params, project_task_operations)
+        }
+        Method::ProjectTaskOperationGet(params) => {
+            super::project_operations::operation_get(request.id, params, project_task_operations)
+        }
+        Method::ProjectTaskOperationCancel(params) => {
+            super::project_operations::operation_cancel(request.id, params, project_task_operations)
+        }
         method => dispatch_to_app(
             Request {
                 id: request.id,
@@ -408,6 +441,10 @@ fn api_method_name(method: &Method) -> &'static str {
         Method::ProjectTaskList(_) => "project.task.list",
         Method::ProjectTaskGet(_) => "project.task.get",
         Method::ProjectTaskCreate(_) => "project.task.create",
+        Method::ProjectTaskProvision(_) => "project.task.provision",
+        Method::ProjectTaskCleanup(_) => "project.task.cleanup",
+        Method::ProjectTaskOperationGet(_) => "project.task.operation.get",
+        Method::ProjectTaskOperationCancel(_) => "project.task.operation.cancel",
         Method::WorkspaceCreate(_) => "workspace.create",
         Method::WorkspaceList(_) => "workspace.list",
         Method::WorkspaceGet(_) => "workspace.get",
@@ -1092,12 +1129,14 @@ mod tests {
     #[test]
     fn ping_request_returns_pong() {
         let (tx, _rx) = mpsc::unbounded_channel();
+        let project_task_operations = ProjectTaskOperationRegistry::default();
         let response = handle_request(
             Request {
                 id: "req_1".into(),
                 method: Method::Ping(crate::api::schema::PingParams::default()),
             },
             &tx,
+            &project_task_operations,
             Some(ServerCapabilities {
                 live_handoff: true,
                 detached_server_daemon: true,
@@ -1115,12 +1154,14 @@ mod tests {
     fn server_stop_control_bypasses_app_channel() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let stop = Arc::new(AtomicBool::new(false));
+        let project_task_operations = ProjectTaskOperationRegistry::default();
         let response = handle_request(
             Request {
                 id: "priority_stop".into(),
                 method: Method::ServerStop(crate::api::schema::EmptyParams::default()),
             },
             &tx,
+            &project_task_operations,
             None,
             Some(&stop),
             None,
@@ -1130,6 +1171,13 @@ mod tests {
         assert_eq!(response["id"], "priority_stop");
         assert_eq!(response["result"]["type"], "ok");
         assert!(stop.load(Ordering::Acquire));
+        assert_eq!(
+            project_task_operations
+                .start_provision(Path::new("/path/that/does/not/exist"), "safe-task")
+                .unwrap_err()
+                .code,
+            "project_task_operations_shutting_down"
+        );
 
         let rejected = handle_request(
             Request {
@@ -1137,6 +1185,7 @@ mod tests {
                 method: Method::WorkspaceList(crate::api::schema::EmptyParams::default()),
             },
             &tx,
+            &project_task_operations,
             None,
             Some(&stop),
             None,
@@ -1149,6 +1198,7 @@ mod tests {
     #[test]
     fn project_task_operations_run_off_the_app_event_loop() {
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let project_task_operations = ProjectTaskOperationRegistry::default();
         let response = handle_request(
             Request {
                 id: "task_read".into(),
@@ -1159,6 +1209,7 @@ mod tests {
                 }),
             },
             &tx,
+            &project_task_operations,
             None,
             None,
             None,
@@ -1185,6 +1236,7 @@ mod tests {
                 }),
             },
             &tx,
+            &project_task_operations,
             None,
             None,
             None,
@@ -1192,6 +1244,47 @@ mod tests {
         let response: ErrorResponse = serde_json::from_str(&response).unwrap();
         assert_eq!(response.id, "task_create");
         assert_eq!(response.error.code, "invalid_project_task_id");
+        assert!(rx.try_recv().is_err());
+
+        let response = handle_request(
+            Request {
+                id: "task_provision".into(),
+                method: Method::ProjectTaskProvision(
+                    crate::api::schema::ProjectTaskLifecycleParams {
+                        path: "/project/path/that/does/not/exist".into(),
+                        task_id: "../escape".into(),
+                    },
+                ),
+            },
+            &tx,
+            &project_task_operations,
+            None,
+            None,
+            None,
+        );
+        let response: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(response.id, "task_provision");
+        assert_eq!(response.error.code, "invalid_project_task_id");
+        assert!(rx.try_recv().is_err());
+
+        let response = handle_request(
+            Request {
+                id: "task_operation".into(),
+                method: Method::ProjectTaskOperationGet(
+                    crate::api::schema::ProjectTaskOperationParams {
+                        operation_id: "../escape".into(),
+                    },
+                ),
+            },
+            &tx,
+            &project_task_operations,
+            None,
+            None,
+            None,
+        );
+        let response: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(response.id, "task_operation");
+        assert_eq!(response.error.code, "invalid_project_task_operation_id");
         assert!(rx.try_recv().is_err());
     }
 
@@ -1204,8 +1297,16 @@ mod tests {
         };
 
         let request_for_thread = request.clone();
-        let thread =
-            std::thread::spawn(move || handle_request(request_for_thread, &tx, None, None, None));
+        let thread = std::thread::spawn(move || {
+            handle_request(
+                request_for_thread,
+                &tx,
+                &ProjectTaskOperationRegistry::default(),
+                None,
+                None,
+                None,
+            )
+        });
 
         let msg = rx.blocking_recv().unwrap();
         assert_eq!(msg.request.id, "req_2");
