@@ -527,6 +527,51 @@ fn event_envelope_round_trips() {
 }
 
 #[test]
+fn project_task_operation_event_and_subscription_round_trip() {
+    let subscription = Request {
+        id: "sub_project_task".into(),
+        method: Method::EventsSubscribe(EventsSubscribeParams {
+            subscriptions: vec![Subscription::ProjectTaskOperationChanged {}],
+        }),
+    };
+    let subscription_json = serde_json::to_string(&subscription).unwrap();
+    assert!(subscription_json.contains("\"type\":\"project.task.operation_changed\""));
+    assert_eq!(
+        serde_json::from_str::<Request>(&subscription_json).unwrap(),
+        subscription
+    );
+
+    let event = EventEnvelope {
+        event: EventKind::ProjectTaskOperationChanged,
+        data: EventData::ProjectTaskOperationChanged {
+            operation: ProjectTaskOperationInfo {
+                operation_id: "task-op-42".into(),
+                project_id: "product".into(),
+                project_root: "/projects/product".into(),
+                task_id: "ship-api".into(),
+                kind: ProjectTaskOperationKind::Provision,
+                status: ProjectTaskOperationStatus::Running,
+                cancellation_requested: false,
+                progress: Some(ProjectTaskOperationProgress {
+                    stage: ProjectTaskOperationStage::Repository {
+                        repository_id: "api".into(),
+                    },
+                    completed_steps: 2,
+                    total_steps: 5,
+                }),
+                error: None,
+            },
+        },
+    };
+    let event_json = serde_json::to_string(&event).unwrap();
+    assert!(event_json.contains("\"event\":\"project_task_operation_changed\""));
+    assert_eq!(
+        serde_json::from_str::<EventEnvelope>(&event_json).unwrap(),
+        event
+    );
+}
+
+#[test]
 fn subscribe_request_parses_parameterized_subscriptions() {
     let json = r#"
     {

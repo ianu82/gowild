@@ -208,6 +208,12 @@ impl ActiveSubscription {
                 event_kind: crate::api::schema::EventKind::LayoutUpdated,
                 last_sequence: 0,
             })),
+            Subscription::ProjectTaskOperationChanged {} => {
+                Ok(Self::Event(ActiveEventSubscription {
+                    event_kind: crate::api::schema::EventKind::ProjectTaskOperationChanged,
+                    last_sequence: 0,
+                }))
+            }
             Subscription::PaneOutputMatched {
                 pane_id,
                 source,
@@ -697,6 +703,43 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn project_task_operation_subscription_replays_typed_events() {
+        let event_hub = EventHub::default();
+        let (api_tx, _api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut subscription = ActiveSubscription::new(
+            Subscription::ProjectTaskOperationChanged {},
+            "test",
+            0,
+            &api_tx,
+            &event_hub,
+        )
+        .expect("project task operation subscription");
+        event_hub.push(EventEnvelope {
+            event: EventKind::ProjectTaskOperationChanged,
+            data: EventData::ProjectTaskOperationChanged {
+                operation: crate::api::schema::ProjectTaskOperationInfo {
+                    operation_id: "task-op-42".into(),
+                    project_id: "product".into(),
+                    project_root: "/projects/product".into(),
+                    task_id: "ship-api".into(),
+                    kind: crate::api::schema::ProjectTaskOperationKind::Provision,
+                    status: crate::api::schema::ProjectTaskOperationStatus::Running,
+                    cancellation_requested: false,
+                    progress: None,
+                    error: None,
+                },
+            },
+        });
+
+        let event = subscription
+            .poll(&api_tx, &event_hub)
+            .expect("project task operation event");
+        assert_eq!(event["event"], "project.task.operation_changed");
+        assert_eq!(event["data"]["operation"]["operation_id"], "task-op-42");
+        assert_eq!(event["data"]["operation"]["task_id"], "ship-api");
     }
 
     #[test]

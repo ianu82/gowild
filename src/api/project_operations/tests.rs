@@ -133,6 +133,47 @@ fn lifecycle_inputs_are_rejected_before_filesystem_access() {
     assert!(!Path::new("/path/that/does/not/exist").exists());
 }
 
+#[test]
+fn operation_snapshots_map_to_typed_project_events() {
+    let event = operation_event(ProjectTaskOperationSnapshot {
+        operation_id: "task-op-42".into(),
+        project_id: "product".into(),
+        project_root: "/projects/product".into(),
+        task_id: "ship-api".into(),
+        kind: DomainOperationKind::Provision,
+        status: DomainOperationStatus::Running,
+        cancellation_requested: false,
+        progress: Some(crate::project::task_workspace::TaskOperationProgress {
+            task_id: "ship-api".into(),
+            stage: crate::project::task_workspace::TaskOperationStage::Repository {
+                repository_id: "api".into(),
+            },
+            completed_steps: 2,
+            total_steps: 5,
+        }),
+        error: None,
+    });
+
+    assert_eq!(
+        event.event,
+        crate::api::schema::EventKind::ProjectTaskOperationChanged
+    );
+    let crate::api::schema::EventData::ProjectTaskOperationChanged { operation } = event.data
+    else {
+        panic!("unexpected event data");
+    };
+    assert_eq!(operation.operation_id, "task-op-42");
+    assert_eq!(operation.project_root, "/projects/product");
+    assert_eq!(operation.task_id, "ship-api");
+    assert_eq!(operation.status, ProjectTaskOperationStatus::Running);
+    assert_eq!(
+        operation.progress.unwrap().stage,
+        ProjectTaskOperationStage::Repository {
+            repository_id: "api".into()
+        }
+    );
+}
+
 fn wait_for_terminal(
     operations: &ProjectTaskOperationRegistry,
     operation_id: &str,
