@@ -127,6 +127,76 @@ jobs:
           test -s "${{ matrix.asset }}"
           file "${{ matrix.asset }}"
 
+      - name: Sign tagged macOS release
+        if: runner.os == 'macOS' && github.event_name == 'push'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_CERTIFICATE_P12_BASE64" || {
+            echo "error: APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64 is required for tagged macOS releases" >&2
+            exit 1
+          }
+          test -n "$APPLE_CERTIFICATE_PASSWORD" || {
+            echo "error: APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD is required for tagged macOS releases" >&2
+            exit 1
+          }
+          test -n "$APPLE_SIGNING_IDENTITY" || {
+            echo "error: APPLE_DEVELOPER_ID_SIGNING_IDENTITY is required for tagged macOS releases" >&2
+            exit 1
+          }
+
+          signing_keychain="$RUNNER_TEMP/gowild-signing.keychain-db"
+          certificate="$RUNNER_TEMP/gowild-signing-certificate.p12"
+          signing_password=$(openssl rand -hex 24)
+          cleanup() {
+            security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+            rm -f "$certificate"
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" | /usr/bin/base64 -D > "$certificate"
+          security create-keychain -p "$signing_password" "$signing_keychain"
+          security set-keychain-settings -lut 21600 "$signing_keychain"
+          security unlock-keychain -p "$signing_password" "$signing_keychain"
+          security import "$certificate" \
+            -k "$signing_keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$signing_password" \
+            "$signing_keychain"
+          security list-keychains -d user -s "$signing_keychain"
+
+          codesign \
+            --force \
+            --identifier io.mindshub.gowild.cli \
+            --options runtime \
+            --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "${{ matrix.asset }}"
+
+      - name: Verify tagged macOS signature
+        if: runner.os == 'macOS' && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --strict --verbose=2 "${{ matrix.asset }}"
+          signature=$(codesign -dv --verbose=4 "${{ matrix.asset }}" 2>&1)
+          requirement=$(codesign -d -r- "${{ matrix.asset }}" 2>&1)
+          if grep -q 'Signature=adhoc' <<<"$signature"; then
+            echo "error: refusing to publish an ad-hoc-signed macOS binary" >&2
+            exit 1
+          fi
+          grep -Eq '^TeamIdentifier=[A-Z0-9]+$' <<<"$signature"
+          grep -q 'identifier "io.mindshub.gowild.cli"' <<<"$requirement"
+          grep -q 'anchor apple generic' <<<"$requirement"
+
       - name: Verify native Unix binary
         if: runner.os != 'Windows' && matrix.can_execute
         shell: bash

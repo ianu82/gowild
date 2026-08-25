@@ -185,6 +185,11 @@ def check_release_recipes(repo_root: Path = REPO_ROOT) -> list[str]:
         "--draft=false",
         "latest.json",
         "SHA256SUMS",
+        "APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64",
+        "APPLE_DEVELOPER_ID_SIGNING_IDENTITY",
+        "codesign --verify --strict",
+        "refusing to publish an ad-hoc-signed macOS binary",
+        'identifier "io.mindshub.gowild.cli"',
     ):
         if marker not in workflow:
             errors.append(
