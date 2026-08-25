@@ -41,9 +41,9 @@ jobs:
             asset: gowild-linux-x86_64
             can_execute: true
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             asset: gowild-linux-aarch64
-            can_execute: false
+            can_execute: true
           - target: x86_64-apple-darwin
             os: macos-latest
             asset: gowild-macos-x86_64
@@ -106,11 +106,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build musl-tools gcc-aarch64-linux-gnu
-
-      - name: Set Linux ARM linker
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          sudo apt-get install -y cmake ninja-build musl-tools
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
