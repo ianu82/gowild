@@ -67,6 +67,15 @@ use crate::events::AppEvent;
 
 pub use state::{AppState, Mode, ToastKind, ViewState};
 
+fn initial_gateway_credential_status(
+    authentication: crate::gateway::AuthenticationMode,
+) -> state::GatewayCredentialStatus {
+    match authentication {
+        crate::gateway::AuthenticationMode::None => state::GatewayCredentialStatus::Stored,
+        _ => state::GatewayCredentialStatus::Unknown,
+    }
+}
+
 pub(crate) fn load_plugin_manifest(
     path: &str,
     enabled: bool,
@@ -586,19 +595,10 @@ impl App {
         let gateway_settings = {
             let mut gateway_settings = gateway_settings;
             for (gateway_id, gateway) in &gateway_catalog.gateways {
-                let status = match gateway.auth.mode {
-                    crate::gateway::AuthenticationMode::None => {
-                        state::GatewayCredentialStatus::Stored
-                    }
-                    _ => match gateway.auth.credential_ref.as_deref() {
-                        Some(credential_ref) => match gateway_credentials.get(credential_ref) {
-                            Ok(Some(_)) => state::GatewayCredentialStatus::Stored,
-                            Ok(None) => state::GatewayCredentialStatus::Missing,
-                            Err(_) => state::GatewayCredentialStatus::Unknown,
-                        },
-                        None => state::GatewayCredentialStatus::Unknown,
-                    },
-                };
+                // Reading a protected credential can present an operating-system prompt. Startup
+                // and attach must remain passive, so defer that read until the user explicitly
+                // tests or launches the gateway.
+                let status = initial_gateway_credential_status(gateway.auth.mode);
                 gateway_settings
                     .credential_status
                     .insert(gateway_id.clone(), status);
@@ -2863,6 +2863,28 @@ mod tests {
         let app = App::new(&config, true, None, api_rx, crate::api::EventHub::default());
 
         assert_eq!(app.state.agent_panel_sort, state::AgentPanelSort::Priority);
+    }
+
+    #[test]
+    fn startup_defers_authenticated_gateway_credential_access() {
+        use crate::gateway::AuthenticationMode;
+
+        assert_eq!(
+            initial_gateway_credential_status(AuthenticationMode::BearerToken),
+            state::GatewayCredentialStatus::Unknown
+        );
+        assert_eq!(
+            initial_gateway_credential_status(AuthenticationMode::XApiKey),
+            state::GatewayCredentialStatus::Unknown
+        );
+        assert_eq!(
+            initial_gateway_credential_status(AuthenticationMode::CustomHeader),
+            state::GatewayCredentialStatus::Unknown
+        );
+        assert_eq!(
+            initial_gateway_credential_status(AuthenticationMode::None),
+            state::GatewayCredentialStatus::Stored
+        );
     }
 
     #[test]
