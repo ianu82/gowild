@@ -6,6 +6,13 @@ use super::{
 };
 use crate::project::ProjectError;
 
+mod system;
+
+#[cfg(test)]
+mod system_tests;
+
+pub(crate) use system::GitHubCliDraftPublisher;
+
 /// The complete input for creating or updating one draft review.
 pub struct DraftPublicationRequest<'a> {
     pub checkout_path: &'a Path,
