@@ -1,11 +1,27 @@
 # Changelog
 
-GoWild development begins in **Unreleased**. Versioned entries below that
-heading are preserved as history from the source snapshot recorded in
+GoWild releases begin at **0.1.0**. Entries numbered **0.8.x** and earlier are
+preserved as history from the source snapshot recorded in
 [`ACKNOWLEDGEMENTS`](../../ACKNOWLEDGEMENTS/README.md); they are not GoWild releases, product
 claims, support commitments, or current install instructions.
 
 ## Unreleased
+
+## [0.1.1] - 2026-08-25
+
+### Fixed
+- First-run setup now remains visible when the persistent server creates its
+  initial workspace and resumes at the incomplete step after detach/reattach.
+- Gateway failures now surface actionable diagnostics during setup.
+- Configured gateway state persists without reading protected credentials at
+  startup.
+- macOS gateway credentials now use GoWild's owner-only credential file instead
+  of Keychain, eliminating repeated authorization prompts from unsigned builds.
+- Checksum-verified macOS releases no longer require a Developer ID certificate,
+  while release CI verifies that the packaged binary cannot access GoWild's old
+  Keychain service.
+
+## [0.1.0] - 2026-08-25
 
 ### Added
 - The managed coding-agent launch screen now has a keyboard-only `prefix+a`
@@ -21,9 +37,6 @@ claims, support commitments, or current install instructions.
   confirmation; built-in presets remain non-deletable.
 
 ### Fixed
-- macOS gateway credentials now use GoWild's owner-only credential file instead
-  of Keychain, so checksum-verified unsigned installs do not trigger repeated
-  authorization prompts.
 - Claude Code launches through the built-in MindsHub Inference route now use a
   loopback compatibility bridge that supplies GoWild's upstream request
   identity and converts complete Messages responses into Claude's streaming
