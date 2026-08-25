@@ -376,7 +376,20 @@ fn handle_request(
         );
     }
 
-    dispatch_to_app(request, api_tx, None, response_write_complete, None)
+    match request.method {
+        Method::ProjectTaskList(params) => super::projects::task_list(request.id, params),
+        Method::ProjectTaskGet(params) => super::projects::task_get(request.id, params),
+        method => dispatch_to_app(
+            Request {
+                id: request.id,
+                method,
+            },
+            api_tx,
+            None,
+            response_write_complete,
+            None,
+        ),
+    }
 }
 
 fn api_method_name(method: &Method) -> &'static str {
@@ -391,6 +404,8 @@ fn api_method_name(method: &Method) -> &'static str {
         Method::ClientWindowTitleSet(_) => "client.window_title.set",
         Method::ClientWindowTitleClear(_) => "client.window_title.clear",
         Method::SessionSnapshot(_) => "session.snapshot",
+        Method::ProjectTaskList(_) => "project.task.list",
+        Method::ProjectTaskGet(_) => "project.task.get",
         Method::WorkspaceCreate(_) => "workspace.create",
         Method::WorkspaceList(_) => "workspace.list",
         Method::WorkspaceGet(_) => "workspace.get",
@@ -1126,6 +1141,30 @@ mod tests {
         );
         let rejected: serde_json::Value = serde_json::from_str(&rejected).unwrap();
         assert_eq!(rejected["error"]["code"], "server_unavailable");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn project_task_reads_run_off_the_app_event_loop() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let response = handle_request(
+            Request {
+                id: "task_read".into(),
+                method: Method::ProjectTaskList(crate::api::schema::ProjectTaskListParams {
+                    path: String::new(),
+                    after: None,
+                    limit: None,
+                }),
+            },
+            &tx,
+            None,
+            None,
+            None,
+        );
+
+        let response: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(response.id, "task_read");
+        assert_eq!(response.error.code, "invalid_project_path");
         assert!(rx.try_recv().is_err());
     }
 

@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "project task API consumer lands in the next stacked change"
-)]
-
 use std::path::Path;
 
 use super::change_set::ChangeSet;
@@ -87,20 +82,7 @@ impl ProjectTaskReader {
         after: Option<&str>,
         limit: usize,
     ) -> Result<ProjectTaskPage, ProjectError> {
-        if limit == 0 || limit > MAX_TASK_READ_PAGE_SIZE {
-            return Err(ProjectError::new(
-                "invalid_project_task_page_size",
-                format!("project task page size must be between 1 and {MAX_TASK_READ_PAGE_SIZE}"),
-            ));
-        }
-        if let Some(after) = after {
-            validate_identifier("project task cursor", after).map_err(|_| {
-                ProjectError::new(
-                    "invalid_project_task_cursor",
-                    "project task cursor is not a safe task identifier",
-                )
-            })?;
-        }
+        Self::validate_page(after, limit)?;
         let task_ids = self.states.list_ids()?;
         let start = after.map_or(0, |after| {
             task_ids.partition_point(|task_id| task_id.as_str() <= after)
@@ -118,7 +100,26 @@ impl ProjectTaskReader {
         Ok(ProjectTaskPage { tasks, next_after })
     }
 
+    pub fn validate_page(after: Option<&str>, limit: usize) -> Result<(), ProjectError> {
+        if limit == 0 || limit > MAX_TASK_READ_PAGE_SIZE {
+            return Err(ProjectError::new(
+                "invalid_project_task_page_size",
+                format!("project task page size must be between 1 and {MAX_TASK_READ_PAGE_SIZE}"),
+            ));
+        }
+        if let Some(after) = after {
+            validate_identifier("project task cursor", after).map_err(|_| {
+                ProjectError::new(
+                    "invalid_project_task_cursor",
+                    "project task cursor is not a safe task identifier",
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn get(&self, task_id: &str) -> Result<ProjectTaskSnapshot, ProjectError> {
+        Self::validate_task_id(task_id)?;
         let task = self.states.load(task_id)?;
         let project_validation = task.validate(&self.project);
         let (current_project, attention_code) = match project_validation {
@@ -138,6 +139,15 @@ impl ProjectTaskReader {
             change_set_revision,
             change_set,
             change_set_stale,
+        })
+    }
+
+    pub fn validate_task_id(task_id: &str) -> Result<(), ProjectError> {
+        validate_identifier("project task id", task_id).map_err(|_| {
+            ProjectError::new(
+                "invalid_project_task_id",
+                "project task id is not a safe task identifier",
+            )
         })
     }
 }
