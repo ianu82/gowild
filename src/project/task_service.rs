@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "the async operation registry consumes lifecycle methods in the next stacked change"
+)]
+
 use std::path::Path;
 use std::sync::Arc;
 
