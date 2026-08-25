@@ -2,13 +2,16 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use super::operation::{
+    provision_step_count, report_progress, require_active, UncontrolledTaskOperation,
+};
 use super::repository::{
     directory_is_empty, ensure_private_directory_chain, restrict_directory_permissions,
     validate_existing_ancestors, TaskWorkspaceRepository,
 };
 use super::{
-    LoadedProject, OwnedResource, TaskTransitionOperation, TaskTransitionState, TaskWorkspace,
-    TaskWorkspacePhase,
+    LoadedProject, OwnedResource, TaskOperationControl, TaskOperationProgress, TaskOperationStage,
+    TaskTransitionOperation, TaskTransitionState, TaskWorkspace, TaskWorkspacePhase,
 };
 use crate::project::{ProjectDefinition, ProjectError, ProjectPrivateState};
 
@@ -54,11 +57,54 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         project: &LoadedProject,
         task_id: &str,
     ) -> Result<TaskWorkspace, ProjectError> {
+        self.provision_inner(
+            definition,
+            private_state,
+            project,
+            task_id,
+            &UncontrolledTaskOperation,
+            false,
+        )
+    }
+
+    pub fn provision_with_control(
+        &self,
+        definition: &ProjectDefinition,
+        private_state: &ProjectPrivateState,
+        project: &LoadedProject,
+        task_id: &str,
+        control: &(impl TaskOperationControl + ?Sized),
+    ) -> Result<TaskWorkspace, ProjectError> {
+        self.provision_inner(definition, private_state, project, task_id, control, true)
+    }
+
+    fn provision_inner(
+        &self,
+        definition: &ProjectDefinition,
+        private_state: &ProjectPrivateState,
+        project: &LoadedProject,
+        task_id: &str,
+        control: &(impl TaskOperationControl + ?Sized),
+        nonblocking_lock: bool,
+    ) -> Result<TaskWorkspace, ProjectError> {
+        require_active(control)?;
         require_matching_definition(definition, project)?;
         private_state.require_execution_trust(definition)?;
-        let _operation_lock = self.states.lock_task_operations(task_id)?;
+        let _operation_lock = if nonblocking_lock {
+            self.states.try_lock_task_operations(task_id)?
+        } else {
+            self.states.lock_task_operations(task_id)?
+        };
         let mut task = self.states.load(task_id)?;
         task.validate(project)?;
+        let total_steps = provision_step_count(&task);
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::Validating,
+            0,
+            total_steps,
+        )?;
 
         match task.phase {
             TaskWorkspacePhase::Planned | TaskWorkspacePhase::NeedsAttention => {
@@ -69,6 +115,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
             | TaskWorkspacePhase::Running
             | TaskWorkspacePhase::Stopped => {
                 verify_provisioned_task(&task)?;
+                complete_progress(control, task_id, total_steps);
                 return Ok(task);
             }
             TaskWorkspacePhase::Cleaning | TaskWorkspacePhase::Cleaned => {
@@ -82,6 +129,13 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         let root_resource = OwnedResource::WorkspaceDirectory {
             path: task.root.clone(),
         };
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::WorkspaceRoot,
+            0,
+            total_steps,
+        )?;
         let root_snapshot = task.clone();
         self.ensure_acquired(
             &mut task,
@@ -89,11 +143,30 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
             || verify_owned_task_root(&root_snapshot),
             || ensure_owned_task_root(&root_snapshot),
         )?;
+        let mut completed_steps = 1;
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::RuntimeLayout,
+            completed_steps,
+            total_steps,
+        )?;
         self.ensure_runtime_layout(&mut task)?;
+        completed_steps += 1;
 
         for repository_id in project.manifest.dependency_order()? {
+            report_progress(
+                control,
+                task_id,
+                TaskOperationStage::Repository {
+                    repository_id: repository_id.clone(),
+                },
+                completed_steps,
+                total_steps,
+            )?;
             if task.repositories[&repository_id].worktree.is_some() {
                 verify_task_repository(&task, &repository_id)?;
+                completed_steps += 1;
                 continue;
             }
             let repository = &task.repositories[&repository_id];
@@ -122,10 +195,19 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
                     ensure_detached_task_worktree(&worktree_snapshot, &ensure_repository_id)
                 },
             )?;
+            completed_steps += 1;
         }
 
+        report_progress(
+            control,
+            task_id,
+            TaskOperationStage::Finalizing,
+            completed_steps,
+            total_steps,
+        )?;
         self.transition_phase(&mut task, TaskWorkspacePhase::Ready)?;
         verify_provisioned_task(&task)?;
+        complete_progress(control, task_id, total_steps);
         Ok(task)
     }
 
@@ -188,6 +270,19 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         }
         Ok(())
     }
+}
+
+fn complete_progress(
+    control: &(impl TaskOperationControl + ?Sized),
+    task_id: &str,
+    total_steps: usize,
+) {
+    control.report_progress(&TaskOperationProgress {
+        task_id: task_id.to_string(),
+        stage: TaskOperationStage::Complete,
+        completed_steps: total_steps,
+        total_steps,
+    });
 }
 
 pub(crate) fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {
