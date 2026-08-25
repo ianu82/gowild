@@ -3050,6 +3050,15 @@ impl HeadlessServer {
                 if !direct_attach_requested {
                     self.foreground_client_id = Some(client_id);
                 }
+                if first_app_client
+                    && self.app.state.settings.guided_setup
+                    && matches!(
+                        self.app.state.mode,
+                        app::Mode::Terminal | app::Mode::Navigate
+                    )
+                {
+                    self.app.open_settings_from_onboarding();
+                }
                 if first_app_client {
                     self.app.mark_git_status_refresh_due(Instant::now());
                 }
@@ -5143,6 +5152,10 @@ fn seed_startup_workspace_if_empty(app: &mut app::App) {
         return;
     };
 
+    seed_startup_workspace(app, cwd);
+}
+
+fn seed_startup_workspace(app: &mut app::App, cwd: PathBuf) {
     if !app.state.workspaces.is_empty() {
         info!(
             cwd = %cwd.display(),
@@ -5151,13 +5164,29 @@ fn seed_startup_workspace_if_empty(app: &mut app::App) {
         return;
     }
 
+    let previous_mode = app.state.mode;
+    let preserve_mode = matches!(
+        previous_mode,
+        app::Mode::Onboarding
+            | app::Mode::Settings
+            | app::Mode::ReleaseNotes
+            | app::Mode::ProductAnnouncement
+            | app::Mode::CodingAgentLaunch
+    );
     match app.create_workspace_with_options(cwd.clone(), true) {
         Ok(_) => {
+            if preserve_mode {
+                app.state.mode = previous_mode;
+            }
             info!(cwd = %cwd.display(), "created startup workspace");
         }
         Err(err) => {
             warn!(cwd = %cwd.display(), err = %err, "failed to create startup workspace");
-            app.state.mode = app::Mode::Navigate;
+            if preserve_mode {
+                app.state.mode = previous_mode;
+            } else {
+                app.state.mode = app::Mode::Navigate;
+            }
         }
     }
 }
@@ -5420,6 +5449,56 @@ mod tests {
         for (_, runtime) in server.app.terminal_runtimes.drain() {
             runtime.shutdown();
         }
+    }
+
+    #[tokio::test]
+    async fn startup_workspace_keeps_first_run_onboarding_visible() {
+        let mut server = test_headless_server();
+        server.app.state.mode = crate::app::Mode::Onboarding;
+
+        seed_startup_workspace(&mut server.app, std::env::temp_dir());
+
+        assert_eq!(server.app.state.workspaces.len(), 1);
+        assert_eq!(server.app.state.mode, crate::app::Mode::Onboarding);
+        shutdown_test_runtimes(&mut server);
+    }
+
+    #[tokio::test]
+    async fn startup_workspace_keeps_resumed_guided_setup_visible() {
+        let mut server = test_headless_server();
+        server.app.state.mode = crate::app::Mode::Settings;
+        server.app.state.settings.guided_setup = true;
+
+        seed_startup_workspace(&mut server.app, std::env::temp_dir());
+
+        assert_eq!(server.app.state.workspaces.len(), 1);
+        assert_eq!(server.app.state.mode, crate::app::Mode::Settings);
+        assert!(server.app.state.settings.guided_setup);
+        shutdown_test_runtimes(&mut server);
+    }
+
+    #[test]
+    fn first_client_reattach_resumes_paused_guided_setup() {
+        let mut server = test_headless_server();
+        server.app.state.mode = crate::app::Mode::Terminal;
+        server.app.state.settings.guided_setup = true;
+        let (writer, _control_rx, _render_rx) = test_client_writer();
+
+        assert!(server.handle_server_event(ServerEvent::ClientConnected {
+            client_id: 1,
+            cols: 80,
+            rows: 24,
+            cell_width_px: 0,
+            cell_height_px: 0,
+            render_encoding: RenderEncoding::SemanticFrame,
+            keybindings: None,
+            direct_attach_requested: false,
+            direct_graphics: false,
+            writer,
+        }));
+
+        assert_eq!(server.app.state.mode, crate::app::Mode::Settings);
+        assert!(server.app.state.settings.guided_setup);
     }
 
     fn read_server_message(bytes: Vec<u8>) -> ServerMessage {
