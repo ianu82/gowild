@@ -63,9 +63,13 @@ before launching the corresponding managed agent.
 ```bash
 git clone https://github.com/ianu82/gowild.git
 cd gowild
-cargo install --path . --locked
+./scripts/install-from-source.sh
 gowild --version
 ```
+
+The installer checks every native build prerequisite before Cargo starts. On
+macOS, install them once with `brew install cmake ninja zig@0.15`; the script
+finds Homebrew's versioned Zig even when it is not on `PATH`.
 
 Then open a project in a named persistent session:
 

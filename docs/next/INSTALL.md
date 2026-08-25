@@ -25,9 +25,14 @@ before launch.
 From an independently cloned `ianu82/gowild` working tree:
 
 ```bash
-cargo install --path . --locked
+./scripts/install-from-source.sh
 gowild --version
 ```
+
+The installer validates Rust, CMake, Ninja, and exactly Zig 0.15.2 before Cargo
+starts compiling. On macOS, install the native prerequisites with
+`brew install cmake ninja zig@0.15`; the installer automatically locates the
+versioned Homebrew Zig formula even when it is not on `PATH`.
 
 Cargo places the executable under its install root, normally
 `$HOME/.cargo/bin/gowild`. The application creates only GoWild-owned config,
@@ -40,7 +45,7 @@ Before distributing a source snapshot, verify a fresh install root:
 
 ```bash
 temporary_root="$(mktemp -d)"
-cargo install --path . --locked --root "$temporary_root"
+./scripts/install-from-source.sh --root "$temporary_root"
 "$temporary_root/bin/gowild" --version
 ```
 
