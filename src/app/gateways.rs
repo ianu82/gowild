@@ -515,20 +515,46 @@ impl App {
         {
             candidate.default_gateway_id = Some(gateway_id.clone());
         }
+        let diagnostic = gateway
+            .connection_test
+            .diagnostics
+            .first()
+            .or_else(|| {
+                gateway
+                    .connection_test
+                    .protocols
+                    .values()
+                    .flat_map(|protocol| &protocol.diagnostics)
+                    .next()
+            })
+            .map(|diagnostic| diagnostic.message().to_string());
         let (kind, message) = match status {
             ConnectionStatus::Passed => (
                 GatewayNoticeKind::Success,
-                "Gateway connected. Both configured protocols passed.",
+                "Gateway connected. Both configured protocols passed.".to_string(),
             ),
             ConnectionStatus::Partial => (
                 GatewayNoticeKind::Warning,
-                "Gateway partially connected. Review the protocol results above.",
+                diagnostic.map_or_else(
+                    || "Gateway partially connected. Review the protocol results above.".into(),
+                    |diagnostic| {
+                        format!("Gateway partially connected: {diagnostic} Press t to test again.")
+                    },
+                ),
             ),
             ConnectionStatus::Failed => (
                 GatewayNoticeKind::Error,
-                "Gateway test failed. Review the redacted diagnostics above.",
+                diagnostic.map_or_else(
+                    || "Gateway test failed. Press t to test again.".into(),
+                    |diagnostic| {
+                        format!("Gateway test failed: {diagnostic} Press t to test again.")
+                    },
+                ),
             ),
-            ConnectionStatus::NotTested => (GatewayNoticeKind::Info, "Gateway test did not run."),
+            ConnectionStatus::NotTested => (
+                GatewayNoticeKind::Info,
+                "Gateway test did not run.".to_string(),
+            ),
         };
         self.persist_gateway_catalog(candidate, kind, message);
     }
@@ -849,6 +875,17 @@ mod tests {
                 .status,
             crate::gateway::ConnectionStatus::Failed
         );
+        let notice = app
+            .state
+            .settings
+            .gateways
+            .notice
+            .as_ref()
+            .expect("failed test notice");
+        assert!(notice.message.contains("authentication was rejected"));
+        assert!(notice.message.contains("HTTP 401"));
+        assert!(notice.message.contains("Press t to test again"));
+        assert!(!notice.message.contains("TOP_SECRET_GATEWAY_KEY"));
         let saved = GatewayRepository::new(path.clone())
             .load()
             .expect("persisted gateway test");
