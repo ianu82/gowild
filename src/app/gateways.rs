@@ -331,7 +331,14 @@ impl App {
                         "API key stored in GoWild's owner-only credential file."
                     }
                 };
-                self.set_gateway_notice(GatewayNoticeKind::Success, message);
+                let mut candidate = self.state.gateway_catalog.clone();
+                candidate
+                    .gateways
+                    .get_mut(gateway_id)
+                    .expect("validated gateway exists")
+                    .auth
+                    .credential_configured = true;
+                self.persist_gateway_catalog(candidate, GatewayNoticeKind::Success, message);
             }
             Err(error) => {
                 self.set_gateway_notice(
@@ -591,11 +598,16 @@ impl App {
 
 fn normalize_custom_gateway_auth(gateway: &mut Gateway, existing: Option<&Gateway>) {
     match gateway.auth.mode {
-        AuthenticationMode::None => gateway.auth.credential_ref = None,
+        AuthenticationMode::None => {
+            gateway.auth.credential_ref = None;
+            gateway.auth.credential_configured = false;
+        }
         _ => {
             gateway.auth.credential_ref = existing
                 .and_then(|gateway| gateway.auth.credential_ref.clone())
                 .or_else(|| Some(custom_gateway_credential_ref(&gateway.id)));
+            gateway.auth.credential_configured =
+                existing.is_some_and(|gateway| gateway.auth.credential_configured);
         }
     }
 }
@@ -821,10 +833,14 @@ mod tests {
         );
         assert!(app.state.settings.gateways.secret_input.is_empty());
         assert!(!app.state.settings.gateways.editing_credential);
+        let metadata = std::fs::read_to_string(&path).expect("gateway metadata");
         assert!(
-            !path.exists(),
-            "credentials must not create gateway metadata"
+            app.state.gateway_catalog.gateways["mindshub"]
+                .auth
+                .credential_configured
         );
+        assert!(metadata.contains("credential_configured"));
+        assert!(!metadata.contains("TOP_SECRET_GATEWAY_KEY"));
         let _ = std::fs::remove_dir_all(path.parent().expect("gateway config directory"));
     }
 
