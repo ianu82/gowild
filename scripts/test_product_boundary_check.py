@@ -48,6 +48,16 @@ class ProductBoundaryCheckTests(unittest.TestCase):
     def test_release_workflow_stages_before_publishing(self) -> None:
         self.assertEqual(boundary.check_release_recipes(), [])
 
+    def test_release_workflow_allows_unsigned_mac_builds_without_keychain(self) -> None:
+        workflow = (
+            boundary.REPO_ROOT / ".github/workflows/binary-release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64", workflow)
+        self.assertNotIn("APPLE_DEVELOPER_ID_SIGNING_IDENTITY", workflow)
+        self.assertIn("Verify macOS credential isolation", workflow)
+        self.assertIn("still contains keyring", workflow)
+        self.assertIn("io.mindshub.gowild.gateway", workflow)
+
     def test_project_license_is_tbd_and_imported_license_is_retained(self) -> None:
         self.assertEqual(boundary.check_license_boundaries(), [])
 

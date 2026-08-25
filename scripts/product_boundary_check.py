@@ -185,15 +185,24 @@ def check_release_recipes(repo_root: Path = REPO_ROOT) -> list[str]:
         "--draft=false",
         "latest.json",
         "SHA256SUMS",
-        "APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64",
-        "APPLE_DEVELOPER_ID_SIGNING_IDENTITY",
-        "codesign --verify --strict",
-        "refusing to publish an ad-hoc-signed macOS binary",
-        'identifier "io.mindshub.gowild.cli"',
+        "Verify macOS credential isolation",
+        "macOS release dependency graph still contains keyring",
+        "io.mindshub.gowild.gateway",
+        "macOS release binary still contains the Keychain service identifier",
     ):
         if marker not in workflow:
             errors.append(
                 f".github/workflows/binary-release.yml: missing release safety {marker!r}"
+            )
+    for marker in (
+        "APPLE_DEVELOPER_ID_CERTIFICATE_P12_BASE64",
+        "APPLE_DEVELOPER_ID_SIGNING_IDENTITY",
+        "refusing to publish an ad-hoc-signed macOS binary",
+    ):
+        if marker in workflow:
+            errors.append(
+                ".github/workflows/binary-release.yml: "
+                f"ordinary Mac releases must not require {marker!r}"
             )
     return errors
 
