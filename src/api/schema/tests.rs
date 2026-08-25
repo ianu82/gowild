@@ -564,7 +564,7 @@ fn project_task_operation_event_and_subscription_round_trip() {
         },
     };
     let event_json = serde_json::to_string(&event).unwrap();
-    assert!(event_json.contains("\"event\":\"project.task.operation_changed\""));
+    assert!(event_json.contains("\"event\":\"project_task_operation_changed\""));
     assert_eq!(
         serde_json::from_str::<EventEnvelope>(&event_json).unwrap(),
         event
