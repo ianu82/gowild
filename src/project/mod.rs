@@ -7,6 +7,7 @@ mod private_state;
 mod task_context;
 pub(crate) mod task_operations;
 mod task_read;
+mod task_recovery;
 mod task_service;
 pub(crate) mod task_workspace;
 
@@ -18,4 +19,7 @@ pub(crate) use model::{ProjectError, PROJECT_MANIFEST_FILE};
 pub(crate) use private_state::ProjectTrustStatus;
 pub(crate) use private_state::{ProjectPrivateState, ProjectPrivateStateRepository};
 pub(crate) use task_read::{ProjectTaskReader, ProjectTaskSnapshot};
+#[cfg(test)]
+pub(crate) use task_recovery::ProjectTaskRecovery;
+pub(crate) use task_recovery::ProjectTaskRecoveryAction;
 pub(crate) use task_service::{CreateProjectTask, ProjectTaskService};

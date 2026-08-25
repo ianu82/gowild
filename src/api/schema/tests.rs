@@ -810,6 +810,18 @@ fn project_task_requests_and_responses_round_trip() {
                 active_repository_count: 2,
                 current_project: true,
                 attention_code: None,
+                recovery: ProjectTaskRecoveryInfo {
+                    action: ProjectTaskRecoveryAction::None,
+                    interrupted: false,
+                    project_definition_changed: false,
+                    runtime_verification_required: false,
+                    pending_acquisitions: 0,
+                    pending_releases: 0,
+                    failed_acquisitions: 0,
+                    failed_releases: 0,
+                    owned_resource_count: 7,
+                    last_failure_code: None,
+                },
                 change_set: Some(ProjectTaskChangeSetSummary {
                     record_revision: 4,
                     task_revision: 12,

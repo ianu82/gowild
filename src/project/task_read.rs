@@ -3,6 +3,7 @@ use std::path::Path;
 use super::change_set::ChangeSet;
 use super::private_state::ProjectTrustStatus;
 use super::task_context::ProjectTaskContext;
+use super::task_recovery::ProjectTaskRecovery;
 use super::task_workspace::{validate_identifier, TaskWorkspace};
 use super::ProjectError;
 
@@ -21,6 +22,7 @@ pub struct ProjectTaskSnapshot {
     pub change_set_revision: Option<u64>,
     pub change_set: Option<ChangeSet>,
     pub change_set_stale: bool,
+    pub recovery: ProjectTaskRecovery,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +126,7 @@ impl ProjectTaskReader {
         let change_set_stale = change_set
             .as_ref()
             .is_some_and(|change_set| change_set.is_stale_for_task(&task));
+        let recovery = ProjectTaskRecovery::from_task(&task, current_project);
         Ok(ProjectTaskSnapshot {
             task,
             current_project,
@@ -131,6 +134,7 @@ impl ProjectTaskReader {
             change_set_revision,
             change_set,
             change_set_stale,
+            recovery,
         })
     }
 
@@ -204,6 +208,10 @@ mod tests {
         assert_eq!(reader.project_id(), project.manifest.id);
         assert!(snapshot.current_project);
         assert_eq!(snapshot.task, task);
+        assert_eq!(
+            snapshot.recovery.action,
+            crate::project::ProjectTaskRecoveryAction::Provision
+        );
     }
 
     #[test]
@@ -289,6 +297,11 @@ mod tests {
             snapshot.attention_code,
             Some("task_workspace_project_mismatch")
         );
+        assert_eq!(
+            snapshot.recovery.action,
+            crate::project::ProjectTaskRecoveryAction::ReviewProjectDefinition
+        );
+        assert!(snapshot.recovery.project_definition_changed);
     }
 
     fn reader_for(

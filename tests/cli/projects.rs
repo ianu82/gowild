@@ -114,7 +114,18 @@ fn project_task_list_prints_route_recovery_and_paging_facts() {
                         "repository_count": 3,
                         "active_repository_count": 2,
                         "current_project": false,
-                        "attention_code": "task_workspace_project_changed"
+                        "attention_code": "task_workspace_project_changed",
+                        "recovery": {
+                            "action": "reconcile_runtime",
+                            "interrupted": false,
+                            "project_definition_changed": true,
+                            "runtime_verification_required": true,
+                            "pending_acquisitions": 0,
+                            "pending_releases": 0,
+                            "failed_acquisitions": 0,
+                            "failed_releases": 0,
+                            "owned_resource_count": 7
+                        }
                     }],
                     "next_after": "route-settings"
                 }
@@ -148,6 +159,7 @@ fn project_task_list_prints_route_recovery_and_paging_facts() {
     assert!(stdout.contains("Claude"));
     assert!(stdout.contains("provider/team/very-long-model-id-with-routing-suffix"));
     assert!(stdout.contains("needs attention: task_workspace_project_changed"));
+    assert!(stdout.contains("recovery: reconcile runtime ownership"));
     assert!(stdout.contains("Continue with --after route-settings"));
 
     server.join().unwrap();
