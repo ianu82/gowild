@@ -56,9 +56,26 @@ GoWild leaves the launch screen open with an actionable error.
 
 ## Quick start
 
-GoWild currently ships as a source install. You need Git, the pinned Rust
-toolchain, CMake, Ninja, and Zig 0.15.2. Install Codex CLI and/or Claude Code
-before launching the corresponding managed agent.
+Install the checksum-verified release on macOS or Linux—no Rust, Zig, CMake, or
+Ninja required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ianu82/gowild/main/website/install.sh | sh
+```
+
+The installer uses a writable user directory already on `PATH` when available,
+and prints the exact installed command otherwise. Windows users can run the
+PowerShell installer documented in the [installation guide](docs/next/INSTALL.md).
+
+Install Codex CLI and/or Claude Code before launching the corresponding managed
+agent. Then open a project in a named persistent session:
+
+```bash
+cd path/to/your/project
+gowild --session my-project
+```
+
+To build GoWild itself, use the checked source installer:
 
 ```bash
 git clone https://github.com/ianu82/gowild.git
@@ -70,13 +87,6 @@ gowild --version
 The installer checks every native build prerequisite before Cargo starts. On
 macOS, install them once with `brew install cmake ninja zig@0.15`; the script
 finds Homebrew's versioned Zig even when it is not on `PATH`.
-
-Then open a project in a named persistent session:
-
-```bash
-cd path/to/your/project
-gowild --session my-project
-```
 
 First-run setup walks you through the complete path:
 
@@ -164,9 +174,10 @@ tasks without polling every tab.
 Other detected coding agents can still run inside GoWild terminals, but their
 inference gateway is not managed yet.
 
-GoWild does not yet publish stable binaries, hosted installers, or an update
-channel. Source installation is the supported path while GoWild-owned release
-artifacts, signing, and manifests are built and verified.
+GoWild publishes checksum-pinned binaries for Linux and macOS on x86-64 and
+ARM64, plus a Windows x86-64 bundle with its app-local ConPTY runtime. The
+project is not yet code-signed or notarized; checksums protect download
+integrity, while GitHub retains the release source and build history.
 
 ## For automation and contributors
 

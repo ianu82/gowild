@@ -1,0 +1,240 @@
+name: Binary release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/binary-release.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "build.rs"
+      - "scripts/package_windows_conpty.py"
+      - "scripts/package_windows_conpty.ps1"
+      - "scripts/release_manifest.py"
+      - "scripts/test_release_manifest.py"
+      - "vendor/**"
+      - "website/install.ps1"
+      - "website/install.sh"
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN_VERSION: 1.96.1
+
+concurrency:
+  group: binary-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: package (${{ matrix.target }})
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            asset: gowild-linux-x86_64
+            can_execute: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            asset: gowild-linux-aarch64
+            can_execute: false
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset: gowild-macos-x86_64
+            can_execute: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset: gowild-macos-aarch64
+            can_execute: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+            asset: gowild-windows-x86_64.zip
+            can_execute: true
+    runs-on: ${{ matrix.os }}
+    env:
+      LIBGHOSTTY_VT_OPTIMIZE: ReleaseFast
+      LIBGHOSTTY_VT_SIMD: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify tagged version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_version=$(sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' Cargo.toml | head -1)
+          tag_version=${GITHUB_REF_NAME#v}
+          if ! printf '%s\n' "$tag_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "error: release tag must be vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          test "$cargo_version" = "$tag_version" || {
+            echo "error: tag $GITHUB_REF_NAME does not match Cargo.toml $cargo_version" >&2
+            exit 1
+          }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: ${{ matrix.target }}
+
+      - name: Install Zig
+        if: runner.os != 'macOS'
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
+          use-cache: false
+
+      - name: Install patched Zig and build tools on macOS
+        if: runner.os == 'macOS'
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install zig@0.15 cmake ninja
+          echo "$(brew --prefix zig@0.15)/bin" >> "$GITHUB_PATH"
+          "$(brew --prefix zig@0.15)/bin/zig" version
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build musl-tools gcc-aarch64-linux-gnu
+
+      - name: Set Linux ARM linker
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          cache-bin: false
+          key: binary-release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "target/${{ matrix.target }}/release/gowild" "${{ matrix.asset }}"
+          chmod 755 "${{ matrix.asset }}"
+          test -s "${{ matrix.asset }}"
+          file "${{ matrix.asset }}"
+
+      - name: Verify native Unix binary
+        if: runner.os != 'Windows' && matrix.can_execute
+        shell: bash
+        run: |
+          expected="gowild $(sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' Cargo.toml | head -1)"
+          actual=$("./${{ matrix.asset }}" --version)
+          test "$actual" = "$expected"
+
+      - name: Package and verify Windows bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $package = Join-Path $env:RUNNER_TEMP "Microsoft.Windows.Console.ConPTY.nupkg"
+          $stage = Join-Path $env:RUNNER_TEMP "gowild-windows-x86_64"
+          .\scripts\package_windows_conpty.ps1 `
+            -GoWildExe target\${{ matrix.target }}\release\gowild.exe `
+            -PackagePath $package `
+            -StageDir $stage `
+            -OutputPath ${{ matrix.asset }}
+          $version = (& (Join-Path $stage "gowild.exe") --version | Out-String).Trim()
+          $cargoVersion = ((Get-Content Cargo.toml | Select-String '^version = "').Line -split '"')[1]
+          if ($version -ne "gowild $cargoVersion") {
+            throw "Packaged Windows binary has unexpected identity: $version"
+          }
+
+      - name: Upload package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  validate:
+    name: validate release set
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Validate manifest and installer contracts
+        run: |
+          version=$(sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' Cargo.toml | head -1)
+          protocol=$(sed -n 's/^pub const PROTOCOL_VERSION: u32 = \([0-9][0-9]*\);/\1/p' src/protocol/wire.rs)
+          python3 scripts/release_manifest.py \
+            --assets-dir release-artifacts \
+            --version "$version" \
+            --repository "$GITHUB_REPOSITORY" \
+            --protocol "$protocol" \
+            --notes "GoWild $version" \
+            --output release-artifacts/latest.json
+          python3 -m unittest scripts.test_release_manifest scripts.test_unix_installer
+          unzip -t release-artifacts/gowild-windows-x86_64.zip
+          test "$(find release-artifacts -maxdepth 1 -type f -name 'gowild-*' | wc -l)" -eq 5
+
+      - name: Upload verified release set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verified-release-set
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish GitHub release
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-release-set
+          path: release-artifacts
+
+      - name: Publish only a complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum gowild-* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "GoWild ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            gowild-* latest.json SHA256SUMS
+          expected=$(printf '%s\n' SHA256SUMS gowild-linux-aarch64 gowild-linux-x86_64 gowild-macos-aarch64 gowild-macos-x86_64 gowild-windows-x86_64.zip latest.json)
+          actual=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          test "$actual" = "$expected"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

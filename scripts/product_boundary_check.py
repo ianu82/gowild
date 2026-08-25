@@ -35,8 +35,10 @@ ACTIVE_CODE_FILES = (
     Path("build.rs"),
     Path("flake.nix"),
     Path("justfile"),
+    Path("scripts/release_manifest.py"),
     Path("scripts/install-from-source.sh"),
     Path("scripts/source_install_check.py"),
+    Path("scripts/test_release_manifest.py"),
     Path("scripts/test_source_installer.py"),
 )
 
@@ -169,42 +171,45 @@ def check_brand_assets(repo_root: Path = REPO_ROOT) -> list[str]:
 
 
 def check_release_recipes(repo_root: Path = REPO_ROOT) -> list[str]:
-    justfile = (repo_root / "justfile").read_text(encoding="utf-8")
-    required_errors = (
-        "GoWild has no owned website yet",
-        "GoWild release documentation is disabled",
-        "GoWild pre-release validation is disabled",
-        "GoWild release preparation is disabled",
-        "GoWild publishing is disabled",
-        "GoWild releases are disabled",
-    )
-    return [
-        f"justfile: missing fail-closed release boundary {message!r}"
-        for message in required_errors
-        if message not in justfile
-    ]
+    errors: list[str] = []
+    workflow_path = repo_root / ".github/workflows/binary-release.yml"
+    if not workflow_path.is_file():
+        return [".github/workflows/binary-release.yml: owned release workflow is missing"]
+
+    workflow = workflow_path.read_text(encoding="utf-8")
+    for marker in (
+        'tags: ["v*.*.*"]',
+        "persist-credentials: false",
+        "scripts/release_manifest.py",
+        "--draft",
+        "--draft=false",
+        "latest.json",
+        "SHA256SUMS",
+    ):
+        if marker not in workflow:
+            errors.append(
+                f".github/workflows/binary-release.yml: missing release safety {marker!r}"
+            )
+    return errors
 
 
 def check_install_boundaries(repo_root: Path = REPO_ROOT) -> list[str]:
     errors: list[str] = []
     unix_installer = (repo_root / "website/install.sh").read_text(encoding="utf-8")
     windows_installer = (repo_root / "website/install.ps1").read_text(encoding="utf-8")
-    manifest_default = "https://github.com/ianu82/gowild/" + "latest.json"
-    preview_default = "https://github.com/ianu82/gowild/" + "preview.json"
+    manifest_default = (
+        "https://github.com/ianu82/gowild/releases/latest/download/latest.json"
+    )
 
-    if 'MANIFEST_URL="${GOWILD_MANIFEST_URL:-}"' not in unix_installer:
-        errors.append("website/install.sh: manifest URL must require explicit release input")
-    if "hosted GoWild installation is disabled" not in unix_installer:
-        errors.append("website/install.sh: missing fail-closed hosted-install message")
-    if manifest_default in unix_installer or "gowild.dev" in unix_installer:
-        errors.append("website/install.sh: contains an unowned public install default")
+    if manifest_default not in unix_installer:
+        errors.append("website/install.sh: GoWild release manifest default is missing")
+    if "SHA256" not in unix_installer or "checksum did not match" not in unix_installer:
+        errors.append("website/install.sh: checksum verification is missing")
 
-    if "-not $useLocalPackage -and [string]::IsNullOrWhiteSpace($ManifestUrl)" not in windows_installer:
-        errors.append("website/install.ps1: manifest/local-package gate is missing")
-    if "Hosted GoWild installation is disabled" not in windows_installer:
-        errors.append("website/install.ps1: missing fail-closed hosted-install message")
-    if manifest_default in windows_installer or preview_default in windows_installer:
-        errors.append("website/install.ps1: contains an unreviewed public manifest default")
+    if manifest_default not in windows_installer:
+        errors.append("website/install.ps1: GoWild release manifest default is missing")
+    if "Test-FileDigest" not in windows_installer:
+        errors.append("website/install.ps1: checksum verification is missing")
 
     cargo_manifest = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
     if "publish = false" not in cargo_manifest:
