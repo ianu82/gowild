@@ -720,7 +720,7 @@ fn render_guided_setup(app: &AppState, frame: &mut Frame, area: Rect) {
         ),
         GuidedSetupStep::ConnectMindshub if app.settings.gateways.editing_credential => (
             "Enter your MindsHub API key",
-            "Input is hidden and stored locally in the operating-system credential store.",
+            "Input is hidden and stored separately from normal gateway settings.",
         ),
         GuidedSetupStep::ConnectMindshub => (
             "Connect MindsHub Inference",

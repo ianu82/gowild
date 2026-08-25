@@ -21,11 +21,12 @@ also rejects transport-controlled names such as `Host`, `Content-Length`, and
 `Transfer-Encoding` in both custom and secret-bearing header configuration.
 
 Credentials are addressed by an opaque reference such as `gateway:mindshub`.
-GoWild first uses the operating system credential store (Keychain Services,
-Windows Credential Manager, or Secret Service). On Unix, if that store is not
-available, it can use a separate `credentials.json` fallback with a `0700`
-directory and `0600` file. Windows fails closed because ordinary Unix mode bits
-cannot establish an owner-only ACL there.
+On macOS, GoWild stores them in a separate `credentials.json` file inside its
+`0700` config directory and enforces `0600` on the file. This avoids Keychain
+authorization prompts for checksum-verified CLI releases that are intentionally
+distributed without Apple code signing. Linux prefers Secret Service and can
+fall back to the same owner-only file. Windows uses Credential Manager and fails
+closed instead of writing a file whose ACL GoWild cannot prove is private.
 
 The credential type cannot be serialized, displays only `[REDACTED]` in debug
 output, and zeroes its buffer when dropped. Connection diagnostics redact known
