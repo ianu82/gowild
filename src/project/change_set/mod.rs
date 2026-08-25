@@ -12,11 +12,14 @@ use super::task_workspace::{TaskWorkspace, TaskWorkspacePhase};
 use super::ProjectError;
 
 mod collector;
+mod verification;
 
 #[cfg(test)]
 mod collector_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod verification_tests;
 
 pub const CHANGE_SET_VERSION: u32 = 1;
 
@@ -109,6 +112,8 @@ pub struct ChangeSetCheck {
     pub status: CheckStatus,
     pub duration_ms: Option<u64>,
     pub exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

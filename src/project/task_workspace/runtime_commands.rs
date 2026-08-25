@@ -71,7 +71,7 @@ impl TaskWorkspaceProvisioner<'_> {
         self.resolve_command(project, &task, kind, command_id)
     }
 
-    fn resolve_command(
+    pub(crate) fn resolve_command(
         &self,
         project: &LoadedProject,
         task: &TaskWorkspace,
@@ -115,7 +115,7 @@ impl TaskWorkspaceProvisioner<'_> {
         })
     }
 
-    pub(super) fn verify_runtime_ports(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
+    pub(crate) fn verify_runtime_ports(&self, task: &TaskWorkspace) -> Result<(), ProjectError> {
         if task.runtime.declared_ports.is_empty() {
             return Ok(());
         }
@@ -194,7 +194,7 @@ fn canonical_directory_within(path: &Path, boundary: &Path) -> Result<PathBuf, P
     }
 }
 
-pub(super) fn run_invocation(
+pub(crate) fn run_invocation(
     invocation: TaskCommandInvocation,
 ) -> Result<TaskCommandResult, ProjectError> {
     let Some((program, arguments)) = invocation.argv.split_first() else {

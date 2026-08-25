@@ -39,7 +39,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         }
     }
 
-    pub(super) fn states(&self) -> &TaskWorkspaceRepository {
+    pub(crate) fn states(&self) -> &TaskWorkspaceRepository {
         self.states
     }
 
@@ -430,7 +430,7 @@ pub(super) fn git_stdout(
     }
 }
 
-pub(super) fn require_matching_definition(
+pub(crate) fn require_matching_definition(
     definition: &ProjectDefinition,
     project: &LoadedProject,
 ) -> Result<(), ProjectError> {

@@ -28,25 +28,31 @@ impl TaskWorkspaceRepository {
         let task = self.load(task_id)?;
         task.validate(project)?;
         verify_provisioned_task(&task)?;
-        let mut change_set = ChangeSet::for_task(&task)?;
-        for repository_id in &change_set.dependency_order {
-            let repository = change_set
-                .repositories
-                .get_mut(repository_id)
-                .ok_or_else(|| {
-                    ProjectError::new(
-                        "task_change_set_repository_mismatch",
-                        "change-set dependency order references an unknown repository",
-                    )
-                })?;
-            repository.snapshot = inspect_repository(
-                repository_id,
-                &repository.checkout_path,
-                &repository.base_commit,
-            )?;
-        }
-        Ok(change_set)
+        inspect_task(&task)
     }
+}
+
+pub(super) fn inspect_task(
+    task: &crate::project::task_workspace::TaskWorkspace,
+) -> Result<ChangeSet, ProjectError> {
+    let mut change_set = ChangeSet::for_task(task)?;
+    for repository_id in &change_set.dependency_order {
+        let repository = change_set
+            .repositories
+            .get_mut(repository_id)
+            .ok_or_else(|| {
+                ProjectError::new(
+                    "task_change_set_repository_mismatch",
+                    "change-set dependency order references an unknown repository",
+                )
+            })?;
+        repository.snapshot = inspect_repository(
+            repository_id,
+            &repository.checkout_path,
+            &repository.base_commit,
+        )?;
+    }
+    Ok(change_set)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
