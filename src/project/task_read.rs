@@ -1,13 +1,10 @@
 use std::path::Path;
 
 use super::change_set::ChangeSet;
-use super::manifest::{load_project_definition, resolve_project_definition, LoadedProject};
-use super::private_state::{
-    ProjectPrivateState, ProjectPrivateStateRepository, ProjectTrustStatus,
-};
-use super::task_workspace::repository::TaskWorkspaceRepository;
+use super::private_state::ProjectTrustStatus;
+use super::task_context::ProjectTaskContext;
 use super::task_workspace::{validate_identifier, TaskWorkspace};
-use super::{ProjectDefinition, ProjectError};
+use super::ProjectError;
 
 const MAX_TASK_READ_PAGE_SIZE: usize = 200;
 
@@ -36,45 +33,36 @@ pub struct ProjectTaskPage {
 /// state boundaries used by lifecycle operations.
 #[derive(Debug)]
 pub struct ProjectTaskReader {
-    definition: ProjectDefinition,
-    private_state: ProjectPrivateState,
-    project: LoadedProject,
-    states: TaskWorkspaceRepository,
+    context: ProjectTaskContext,
 }
 
 impl ProjectTaskReader {
     pub fn open(path: &Path) -> Result<Self, ProjectError> {
-        let definition = load_project_definition(path)?;
-        let private_state_repository = ProjectPrivateStateRepository::in_default_state_dir();
-        let private_state = private_state_repository.load(&definition)?;
-        let project = resolve_project_definition(definition.clone(), &private_state.overrides)?;
-        let states = TaskWorkspaceRepository::in_default_state_dir(&definition);
         Ok(Self {
-            definition,
-            private_state,
-            project,
-            states,
+            context: ProjectTaskContext::open(path)?,
         })
     }
 
     pub fn project_id(&self) -> &str {
-        &self.project.manifest.id
+        &self.context.project.manifest.id
     }
 
     pub fn project_name(&self) -> &str {
-        &self.project.manifest.name
+        &self.context.project.manifest.name
     }
 
     pub fn project_root(&self) -> &Path {
-        &self.project.root
+        &self.context.project.root
     }
 
     pub fn manifest_digest(&self) -> &str {
-        &self.project.digest
+        &self.context.project.digest
     }
 
     pub fn trust_status(&self) -> ProjectTrustStatus {
-        self.private_state.trust_status(&self.definition)
+        self.context
+            .private_state
+            .trust_status(&self.context.definition)
     }
 
     pub fn list_page(
@@ -83,7 +71,7 @@ impl ProjectTaskReader {
         limit: usize,
     ) -> Result<ProjectTaskPage, ProjectError> {
         Self::validate_page(after, limit)?;
-        let task_ids = self.states.list_ids()?;
+        let task_ids = self.context.states.list_ids()?;
         let start = after.map_or(0, |after| {
             task_ids.partition_point(|task_id| task_id.as_str() <= after)
         });
@@ -120,13 +108,13 @@ impl ProjectTaskReader {
 
     pub fn get(&self, task_id: &str) -> Result<ProjectTaskSnapshot, ProjectError> {
         Self::validate_task_id(task_id)?;
-        let task = self.states.load(task_id)?;
-        let project_validation = task.validate(&self.project);
+        let task = self.context.states.load(task_id)?;
+        let project_validation = task.validate(&self.context.project);
         let (current_project, attention_code) = match project_validation {
             Ok(()) => (true, None),
             Err(error) => (false, Some(error.code)),
         };
-        let change_set_record = self.states.load_change_set(&task)?;
+        let change_set_record = self.context.states.load_change_set(&task)?;
         let change_set_revision = change_set_record.as_ref().map(|record| record.revision);
         let change_set = change_set_record.map(|record| record.change_set);
         let change_set_stale = change_set
@@ -155,7 +143,10 @@ impl ProjectTaskReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::resolve_project_definition;
     use crate::project::task_workspace::provision_tests::ProjectFixture;
+    use crate::project::task_workspace::repository::TaskWorkspaceRepository;
+    use crate::project::ProjectPrivateStateRepository;
 
     struct StateHomeGuard(Option<std::ffi::OsString>);
 
@@ -233,12 +224,7 @@ mod tests {
             states.create(&task).unwrap();
         }
 
-        let reader = ProjectTaskReader {
-            definition: fixture.definition.clone(),
-            private_state: fixture.private_state.clone(),
-            project,
-            states,
-        };
+        let reader = reader_for(&fixture, project, states);
         let page = reader.list_page(None, 100).unwrap();
         let tasks = page.tasks;
         assert_eq!(
@@ -259,12 +245,7 @@ mod tests {
         for task_id in ["third", "first", "second"] {
             fixture.create_task(task_id);
         }
-        let reader = ProjectTaskReader {
-            definition: fixture.definition.clone(),
-            private_state: fixture.private_state.clone(),
-            project: fixture.project.clone(),
-            states: fixture.states.clone(),
-        };
+        let reader = reader_for(&fixture, fixture.project.clone(), fixture.states.clone());
 
         let first = reader.list_page(None, 2).unwrap();
         assert_eq!(
@@ -297,17 +278,27 @@ mod tests {
         let mut current_project = fixture.project.clone();
         current_project.digest = "f".repeat(64);
 
-        let reader = ProjectTaskReader {
-            definition: fixture.definition.clone(),
-            private_state: fixture.private_state.clone(),
-            project: current_project,
-            states: fixture.states.clone(),
-        };
+        let reader = reader_for(&fixture, current_project, fixture.states.clone());
         let snapshot = reader.get("stale-task").unwrap();
         assert!(!snapshot.current_project);
         assert_eq!(
             snapshot.attention_code,
             Some("task_workspace_project_mismatch")
         );
+    }
+
+    fn reader_for(
+        fixture: &ProjectFixture,
+        project: crate::project::manifest::LoadedProject,
+        states: TaskWorkspaceRepository,
+    ) -> ProjectTaskReader {
+        ProjectTaskReader {
+            context: ProjectTaskContext {
+                definition: fixture.definition.clone(),
+                private_state: fixture.private_state.clone(),
+                project,
+                states,
+            },
+        }
     }
 }
