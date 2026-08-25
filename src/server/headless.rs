@@ -3050,6 +3050,15 @@ impl HeadlessServer {
                 if !direct_attach_requested {
                     self.foreground_client_id = Some(client_id);
                 }
+                if first_app_client
+                    && self.app.state.settings.guided_setup
+                    && matches!(
+                        self.app.state.mode,
+                        app::Mode::Terminal | app::Mode::Navigate
+                    )
+                {
+                    self.app.open_settings_from_onboarding();
+                }
                 if first_app_client {
                     self.app.mark_git_status_refresh_due(Instant::now());
                 }
@@ -5466,6 +5475,30 @@ mod tests {
         assert_eq!(server.app.state.mode, crate::app::Mode::Settings);
         assert!(server.app.state.settings.guided_setup);
         shutdown_test_runtimes(&mut server);
+    }
+
+    #[test]
+    fn first_client_reattach_resumes_paused_guided_setup() {
+        let mut server = test_headless_server();
+        server.app.state.mode = crate::app::Mode::Terminal;
+        server.app.state.settings.guided_setup = true;
+        let (writer, _control_rx, _render_rx) = test_client_writer();
+
+        assert!(server.handle_server_event(ServerEvent::ClientConnected {
+            client_id: 1,
+            cols: 80,
+            rows: 24,
+            cell_width_px: 0,
+            cell_height_px: 0,
+            render_encoding: RenderEncoding::SemanticFrame,
+            keybindings: None,
+            direct_attach_requested: false,
+            direct_graphics: false,
+            writer,
+        }));
+
+        assert_eq!(server.app.state.mode, crate::app::Mode::Settings);
+        assert!(server.app.state.settings.guided_setup);
     }
 
     fn read_server_message(bytes: Vec<u8>) -> ServerMessage {
