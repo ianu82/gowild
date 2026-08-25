@@ -15,7 +15,9 @@ use super::plugins::{
     InstalledPluginInfo, PluginActionInfo, PluginCommandLogInfo, PluginInvocationContext,
     PluginPaneInfo,
 };
-use super::projects::{ProjectTaskInfo, ProjectTaskProjectInfo, ProjectTaskSummary};
+use super::projects::{
+    ProjectTaskInfo, ProjectTaskOperationInfo, ProjectTaskProjectInfo, ProjectTaskSummary,
+};
 use super::server::ServerCapabilities;
 use super::session::SessionSnapshot;
 use super::tabs::TabInfo;
@@ -63,6 +65,10 @@ pub enum ResponseResult {
         schema_version: u32,
         project: ProjectTaskProjectInfo,
         task: ProjectTaskInfo,
+    },
+    ProjectTaskOperation {
+        schema_version: u32,
+        operation: ProjectTaskOperationInfo,
     },
     WorkspaceInfo {
         workspace: WorkspaceInfo,

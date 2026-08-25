@@ -1,5 +1,6 @@
 pub mod client;
 mod event_hub;
+mod project_operations;
 mod projects;
 pub mod schema;
 mod server;

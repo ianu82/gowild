@@ -3718,6 +3718,21 @@
           ],
           "type": "object"
         },
+        "ProjectTaskLifecycleParams": {
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "task_id"
+          ],
+          "type": "object"
+        },
         "ProjectTaskListParams": {
           "properties": {
             "after": {
@@ -3741,6 +3756,17 @@
           },
           "required": [
             "path"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskOperationParams": {
+          "properties": {
+            "operation_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation_id"
           ],
           "type": "object"
         },
@@ -4766,6 +4792,70 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/ProjectTaskCreateParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.provision",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskLifecycleParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.cleanup",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskLifecycleParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.operation.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskOperationParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.operation.cancel",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskOperationParams"
             }
           },
           "required": [
@@ -9130,6 +9220,260 @@
           ],
           "type": "string"
         },
+        "ProjectTaskOperationError": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskOperationInfo": {
+          "properties": {
+            "cancellation_requested": {
+              "type": "boolean"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationKind"
+            },
+            "operation_id": {
+              "type": "string"
+            },
+            "progress": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationProgress"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "project_root": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationStatus"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation_id",
+            "project_id",
+            "project_root",
+            "task_id",
+            "kind",
+            "status",
+            "cancellation_requested"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskOperationKind": {
+          "enum": [
+            "provision",
+            "cleanup"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskOperationProgress": {
+          "properties": {
+            "completed_steps": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stage": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationStage"
+            },
+            "total_steps": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "stage",
+            "completed_steps",
+            "total_steps"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskOperationStage": {
+          "oneOf": [
+            {
+              "properties": {
+                "stage": {
+                  "const": "validating",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "stage": {
+                  "const": "workspace_root",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "stage": {
+                  "const": "runtime_layout",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "repository_id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "const": "repository",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage",
+                "repository_id"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "repository_id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "const": "repository_branch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage",
+                "repository_id"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "repository_id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "const": "repository_worktree",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage",
+                "repository_id"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "stage": {
+                  "const": "port",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "stage": {
+                  "const": "runtime_directory",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage",
+                "path"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "stage": {
+                  "const": "finalizing",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "stage": {
+                  "const": "complete",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stage"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProjectTaskOperationStatus": {
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
         "ProjectTaskPhase": {
           "enum": [
             "planned",
@@ -9443,6 +9787,28 @@
                 "schema_version",
                 "project",
                 "task"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "operation": {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskOperationInfo"
+                },
+                "schema_version": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "project_task_operation",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "schema_version",
+                "operation"
               ],
               "type": "object"
             },
