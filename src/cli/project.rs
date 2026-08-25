@@ -286,13 +286,16 @@ fn print_project_help() {
     eprintln!("  gowild project override <set-base|clear-base> ...");
     eprintln!("  gowild project trust [PATH] --digest SHA256");
     eprintln!("  gowild project untrust [PATH]");
-    eprintln!("  gowild project task <list|get> ...");
+    eprintln!("  gowild project task <list|get|create> ...");
 }
 
 fn print_project_task_help() {
     eprintln!("gowild project task commands:");
     eprintln!("  gowild project task list [PATH] [--after TASK_ID] [--limit N] [--json]");
     eprintln!("  gowild project task get <TASK_ID> [PATH] [--json]");
+    eprintln!(
+        "  gowild project task create <TASK_ID> --outcome TEXT --agent <codex|claude> --gateway ID --model ID [PATH] [--json]"
+    );
 }
 
 #[cfg(test)]
