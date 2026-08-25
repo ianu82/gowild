@@ -20,8 +20,8 @@ pub(crate) use credentials::{
     Credential, CredentialBackend, CredentialRemoval, CredentialStore, SystemCredentialStore,
 };
 pub(crate) use model::{
-    AuthenticationMode, CachedModel, ConnectionStatus, Gateway, GatewayCatalog, GatewayFeature,
-    GatewayPreset, GatewayProtocol, ValidationError, MINDSHUB_ANTHROPIC_BASE_URL,
+    AuthenticationMode, CachedModel, ConnectionStatus, Gateway, GatewayAuth, GatewayCatalog,
+    GatewayFeature, GatewayPreset, GatewayProtocol, ValidationError, MINDSHUB_ANTHROPIC_BASE_URL,
     MINDSHUB_RESPONSES_BASE_URL,
 };
 #[cfg(test)]
