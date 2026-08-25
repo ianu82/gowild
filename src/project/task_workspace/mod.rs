@@ -14,6 +14,7 @@ use super::model::ProjectError;
 pub(crate) mod branch;
 pub(crate) mod cleanup;
 mod cleanup_safety;
+mod operation;
 pub(crate) mod provision;
 pub(crate) mod repository;
 mod rules;
@@ -26,6 +27,7 @@ pub(crate) mod runtime_services;
 mod runtime_validation;
 mod validation;
 
+pub(crate) use operation::{TaskOperationControl, TaskOperationProgress, TaskOperationStage};
 use rules::{
     phase_transition_allowed, resources_conflict, runtime_namespace, validate_absolute_clean_path,
 };
@@ -38,6 +40,8 @@ pub use runtime_ports::TaskPortBroker;
 mod branch_tests;
 #[cfg(test)]
 mod cleanup_tests;
+#[cfg(test)]
+mod operation_tests;
 #[cfg(test)]
 pub(crate) mod provision_tests;
 #[cfg(test)]
