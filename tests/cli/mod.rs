@@ -6,6 +6,7 @@ mod harness;
 mod hooks;
 mod panes;
 mod plugins;
+mod projects;
 mod protocol;
 mod protocol_guard;
 mod sessions;
