@@ -22,6 +22,15 @@ pub struct ProjectTaskGetParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskCreateParams {
+    pub path: String,
+    pub task_id: String,
+    pub outcome: String,
+    pub agent: ProjectTaskAgent,
+    pub route: ProjectTaskRouteInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProjectTaskProjectInfo {
     pub project_id: String,
     pub name: String,

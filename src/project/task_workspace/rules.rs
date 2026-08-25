@@ -152,7 +152,7 @@ pub(super) fn validate_manifest_identifier(label: &str, value: &str) -> Result<(
     }
 }
 
-pub(super) fn validate_outcome(outcome: &str) -> Result<(), ProjectError> {
+pub(in crate::project) fn validate_outcome(outcome: &str) -> Result<(), ProjectError> {
     if outcome.trim().is_empty()
         || outcome.len() > 4_096
         || outcome.chars().any(|character| {
