@@ -133,7 +133,7 @@ fn review_body(
     )
 }
 
-fn validate_review_branch(
+pub(super) fn validate_review_branch(
     repository_id: &str,
     role: &str,
     branch: &str,

@@ -65,7 +65,7 @@ fn unprovisioned_fixture() -> TaskWorkspace {
     .unwrap()
 }
 
-fn fixture() -> TaskWorkspace {
+pub(super) fn fixture() -> TaskWorkspace {
     let mut task = unprovisioned_fixture();
     task.transition_phase(TaskWorkspacePhase::Provisioning)
         .unwrap();

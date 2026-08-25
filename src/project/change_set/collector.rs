@@ -10,8 +10,9 @@ use crate::project::ProjectError;
 mod process;
 
 use process::{diff_digest, git_bytes, git_text};
+pub(super) use process::{DIFF_DISPLAY_BYTES, MAX_DIFF_BYTES};
 
-const MAX_CHANGED_FILES: usize = 50_000;
+pub(super) const MAX_CHANGED_FILES: usize = 50_000;
 
 impl TaskWorkspaceRepository {
     /// Captures one dependency-ordered, read-only view of all task checkouts.
@@ -363,7 +364,10 @@ fn path_from_git(repository_id: &str, value: &[u8]) -> Result<PathBuf, ProjectEr
         .map_err(|_| git_invalid_output(repository_id))
 }
 
-fn validate_relative_git_path(repository_id: &str, path: &Path) -> Result<(), ProjectError> {
+pub(super) fn validate_relative_git_path(
+    repository_id: &str,
+    path: &Path,
+) -> Result<(), ProjectError> {
     if path.as_os_str().is_empty()
         || path.is_absolute()
         || path
