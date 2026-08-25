@@ -24,7 +24,7 @@ struct PortLeaseKey {
 
 /// Process-owned loopback listeners that prevent parallel GoWild tasks from
 /// selecting the same declared port between allocation and service startup.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TaskPortBroker {
     leases: Mutex<BTreeMap<PortLeaseKey, TcpListener>>,
 }
