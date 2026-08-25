@@ -221,6 +221,19 @@ class ConventionalCommitTests(unittest.TestCase):
         self.assertTrue(conventional_commits.valid_subject("feat!: change config"))
         self.assertFalse(conventional_commits.valid_subject("update preview channel"))
 
+    @mock.patch("scripts.conventional_commits.subprocess.check_output")
+    def test_git_subjects_excludes_generated_merge_commits(self, check_output):
+        check_output.return_value = "fix(update): handle preview\n"
+
+        self.assertEqual(
+            conventional_commits.git_subjects("before..after"),
+            ["fix(update): handle preview"],
+        )
+        check_output.assert_called_once_with(
+            ["git", "log", "--no-merges", "--pretty=format:%s", "before..after"],
+            text=True,
+        )
+
     def test_commit_message_subject_skips_comments(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "COMMIT_EDITMSG"
