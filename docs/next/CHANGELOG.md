@@ -21,6 +21,9 @@ claims, support commitments, or current install instructions.
   confirmation; built-in presets remain non-deletable.
 
 ### Fixed
+- macOS gateway credentials now use GoWild's owner-only credential file instead
+  of Keychain, so checksum-verified unsigned installs do not trigger repeated
+  authorization prompts.
 - Claude Code launches through the built-in MindsHub Inference route now use a
   loopback compatibility bridge that supplies GoWild's upstream request
   identity and converts complete Messages responses into Claude's streaming

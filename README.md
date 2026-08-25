@@ -46,7 +46,7 @@ Claude Code → GoWild → Anthropic Messages  → gateway → chosen model
 | Know what will happen before launch | A fail-closed route screen showing CLI, gateway, protocol, and full model ID |
 | Work with several agents at once | Workspaces, tabs, panes, agent status, and a managed Codex-to-Claude handoff |
 | Close the terminal without losing work | Persistent named sessions, detach/reattach, native agent resume, and SSH attachment |
-| Avoid leaking credentials | OS credential storage, masked entry, redacted diagnostics, and child-only secret injection |
+| Avoid leaking credentials | Owner-only credential storage, masked entry, redacted diagnostics, and child-only secret injection |
 | Find the right model quickly | Authenticated discovery and a searchable chooser with separate defaults per CLI |
 | Make the terminal feel like yours | Cowork dark, Cowork light, follow-terminal mode, mouse support, and configurable shortcuts |
 

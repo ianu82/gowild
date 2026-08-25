@@ -5,10 +5,12 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(not(target_os = "macos"))]
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+#[cfg(not(target_os = "macos"))]
 const KEYRING_SERVICE: &str = "io.mindshub.gowild.gateway";
 const CREDENTIAL_FILE_SCHEMA_VERSION: u32 = 1;
 const MAX_CREDENTIAL_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -109,10 +111,11 @@ impl fmt::Display for CredentialStoreError {
 
 impl std::error::Error for CredentialStoreError {}
 
-/// Uses Keychain Services, Windows Credential Manager, or Secret Service.
-/// Unix systems can fall back to a separate owner-only file when the platform
-/// store is unavailable; Windows fails closed instead of writing a file whose
-/// ACL GoWild cannot prove is private.
+/// Uses an owner-only file on macOS, where unsigned CLI releases cannot access
+/// Keychain without disruptive authorization prompts. Other platforms prefer
+/// their native credential store; Unix can fall back to the same owner-only
+/// file, while Windows fails closed instead of writing a file whose ACL GoWild
+/// cannot prove is private.
 pub(crate) struct SystemCredentialStore {
     fallback: Option<FileCredentialStore>,
 }
@@ -131,13 +134,44 @@ impl SystemCredentialStore {
         Self { fallback }
     }
 
+    #[cfg(not(target_os = "macos"))]
     fn entry(credential_ref: &str) -> Result<Entry, CredentialStoreError> {
         validate_reference(credential_ref)?;
         Entry::new(KEYRING_SERVICE, credential_ref)
             .map_err(|_| CredentialStoreError::SystemStoreUnavailable)
     }
+
+    #[cfg(target_os = "macos")]
+    fn macos_file_store(&self) -> Result<&FileCredentialStore, CredentialStoreError> {
+        self.fallback
+            .as_ref()
+            .ok_or(CredentialStoreError::FileFallbackUnsupported)
+    }
 }
 
+#[cfg(target_os = "macos")]
+impl CredentialStore for SystemCredentialStore {
+    fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError> {
+        validate_reference(credential_ref)?;
+        self.macos_file_store()?.get(credential_ref)
+    }
+
+    fn set(
+        &self,
+        credential_ref: &str,
+        credential: &Credential,
+    ) -> Result<CredentialBackend, CredentialStoreError> {
+        validate_reference(credential_ref)?;
+        self.macos_file_store()?.set(credential_ref, credential)
+    }
+
+    fn delete(&self, credential_ref: &str) -> Result<(), CredentialStoreError> {
+        validate_reference(credential_ref)?;
+        self.macos_file_store()?.delete(credential_ref)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 impl CredentialStore for SystemCredentialStore {
     fn get(&self, credential_ref: &str) -> Result<Option<Credential>, CredentialStoreError> {
         validate_reference(credential_ref)?;
@@ -197,6 +231,7 @@ impl CredentialStore for SystemCredentialStore {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 impl SystemCredentialStore {
     fn fallback_get_for(
         &self,
@@ -478,6 +513,45 @@ mod tests {
             Err(CredentialStoreError::CorruptFile)
         ));
         assert_eq!(fs::read_to_string(&target).unwrap(), "do not overwrite");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_system_store_uses_only_the_owner_only_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "gowild-macos-system-credential-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = root.join("credentials.json");
+        let store = SystemCredentialStore::new(&root);
+        let credential = Credential::new("test-macos-file-secret").unwrap();
+
+        assert_eq!(
+            store.set("gateway:test", &credential).unwrap(),
+            CredentialBackend::RestrictedFile
+        );
+        assert_eq!(
+            store.get("gateway:test").unwrap().unwrap().expose(),
+            credential.expose()
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        store.delete("gateway:test").unwrap();
+        assert!(store.get("gateway:test").unwrap().is_none());
         fs::remove_dir_all(root).unwrap();
     }
 }

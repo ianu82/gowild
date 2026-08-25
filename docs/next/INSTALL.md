@@ -30,6 +30,12 @@ GoWild release binaries are not yet code-signed or notarized. The installer
 still fails closed on a missing asset, malformed manifest, missing checksum,
 checksum mismatch, or incomplete Windows runtime bundle.
 
+On macOS, gateway credentials are stored in GoWild's owner-only config directory
+instead of Keychain, so installing or updating the unsigned CLI does not create
+repeated Keychain authorization prompts. Existing Keychain entries from earlier
+builds are left untouched; enter the gateway key once in the updated GoWild
+setup to create the owner-only credential file.
+
 ## Build from source
 
 ### Prerequisites
