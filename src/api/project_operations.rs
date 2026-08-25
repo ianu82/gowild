@@ -79,6 +79,17 @@ fn encode_operation(
     }
 }
 
+pub(super) fn operation_event(
+    operation: ProjectTaskOperationSnapshot,
+) -> crate::api::schema::EventEnvelope {
+    crate::api::schema::EventEnvelope {
+        event: crate::api::schema::EventKind::ProjectTaskOperationChanged,
+        data: crate::api::schema::EventData::ProjectTaskOperationChanged {
+            operation: operation_info(operation),
+        },
+    }
+}
+
 fn operation_info(operation: ProjectTaskOperationSnapshot) -> ProjectTaskOperationInfo {
     ProjectTaskOperationInfo {
         operation_id: operation.operation_id,

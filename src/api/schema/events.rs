@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::common::{AgentStatus, ReadSource};
 use super::panes::{PaneInfo, PaneReadResult, PaneScrollInfo};
+use super::projects::ProjectTaskOperationInfo;
 use super::tabs::TabInfo;
 use super::workspaces::WorkspaceInfo;
 use super::worktrees::WorktreeInfo;
@@ -82,6 +83,8 @@ pub enum Subscription {
     PaneScrollChanged { pane_id: String },
     #[serde(rename = "layout.updated")]
     LayoutUpdated {},
+    #[serde(rename = "project.task.operation_changed")]
+    ProjectTaskOperationChanged {},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -218,6 +221,7 @@ pub enum EventKind {
     PaneAgentDetected,
     PaneAgentStatusChanged,
     LayoutUpdated,
+    ProjectTaskOperationChanged,
 }
 
 impl EventKind {
@@ -249,6 +253,7 @@ impl EventKind {
             EventKind::PaneAgentDetected => "pane.agent_detected",
             EventKind::PaneAgentStatusChanged => "pane.agent_status_changed",
             EventKind::LayoutUpdated => "layout.updated",
+            EventKind::ProjectTaskOperationChanged => "project.task.operation_changed",
         }
     }
 }
@@ -281,6 +286,7 @@ pub const KNOWN_EVENT_KINDS: &[EventKind] = &[
     EventKind::PaneAgentDetected,
     EventKind::PaneAgentStatusChanged,
     EventKind::LayoutUpdated,
+    EventKind::ProjectTaskOperationChanged,
 ];
 
 pub const PLUGIN_HOOK_EVENT_KINDS: &[EventKind] = &[
@@ -354,6 +360,7 @@ mod known_event_name_tests {
         assert!(!names.contains(&"layout.updated"));
         assert!(!names.contains(&"workspace.metadata_updated"));
         assert!(!names.contains(&"pane.updated"));
+        assert!(!names.contains(&"project.task.operation_changed"));
         assert!(names.contains(&"pane.moved"));
     }
 }
@@ -552,5 +559,8 @@ pub enum EventData {
     },
     LayoutUpdated {
         layout: super::panes::PaneLayoutSnapshot,
+    },
+    ProjectTaskOperationChanged {
+        operation: ProjectTaskOperationInfo,
     },
 }

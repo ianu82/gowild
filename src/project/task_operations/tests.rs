@@ -125,6 +125,73 @@ fn registry_reports_progress_and_terminal_success() {
 }
 
 #[test]
+fn observer_receives_running_progress_and_terminal_snapshots() {
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let observer_events = Arc::clone(&observed);
+    let registry = ProjectTaskOperationRegistry::with_observer(Arc::new(move |snapshot| {
+        observer_events.lock().unwrap().push(snapshot);
+    }));
+    let started = registry
+        .start_operation(
+            "project".into(),
+            PathBuf::from("/project"),
+            "observed".into(),
+            ProjectTaskOperationKind::Provision,
+            |control| {
+                control.report_progress(&TaskOperationProgress {
+                    task_id: "observed".into(),
+                    stage: TaskOperationStage::Finalizing,
+                    completed_steps: 3,
+                    total_steps: 4,
+                });
+                Ok(())
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        wait_until_terminal(&registry, &started.operation_id).status,
+        ProjectTaskOperationStatus::Succeeded
+    );
+    let events = observed.lock().unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0].status, ProjectTaskOperationStatus::Running);
+    assert_eq!(events[0].progress, None);
+    assert_eq!(events[1].status, ProjectTaskOperationStatus::Running);
+    assert_eq!(
+        events[1].progress.as_ref().unwrap().stage,
+        TaskOperationStage::Finalizing
+    );
+    assert_eq!(events[2].status, ProjectTaskOperationStatus::Succeeded);
+    assert_eq!(events[2].project_id, "project");
+    assert_eq!(events[2].task_id, "observed");
+    assert!(events
+        .iter()
+        .all(|event| event.operation_id == started.operation_id));
+}
+
+#[test]
+fn observer_panics_cannot_fail_workspace_operations() {
+    let registry = ProjectTaskOperationRegistry::with_observer(Arc::new(|_| {
+        panic!("synthetic observer panic");
+    }));
+    let started = registry
+        .start_operation(
+            "project".into(),
+            PathBuf::from("/project"),
+            "observer-panic".into(),
+            ProjectTaskOperationKind::Cleanup,
+            |_| Ok(()),
+        )
+        .unwrap();
+
+    assert_eq!(
+        wait_until_terminal(&registry, &started.operation_id).status,
+        ProjectTaskOperationStatus::Succeeded
+    );
+}
+
+#[test]
 fn cancellation_is_cooperative_and_idempotently_observable() {
     let registry = ProjectTaskOperationRegistry::default();
     let started = registry

@@ -98,7 +98,11 @@ fn start_server_inner(
 
     let running = Arc::new(AtomicBool::new(true));
     let listener_running = Arc::clone(&running);
-    let project_task_operations = ProjectTaskOperationRegistry::default();
+    let operation_event_hub = event_hub.clone();
+    let project_task_operations =
+        ProjectTaskOperationRegistry::with_observer(Arc::new(move |operation| {
+            operation_event_hub.push(super::project_operations::operation_event(operation));
+        }));
     let listener_project_task_operations = project_task_operations.clone();
     let thread = std::thread::spawn(move || {
         for stream in listener.incoming() {

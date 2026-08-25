@@ -77,12 +77,27 @@ struct RegistryState {
     active_tasks: BTreeMap<TaskOperationKey, String>,
 }
 
-#[derive(Debug)]
 struct RegistryInner {
     state: Mutex<RegistryState>,
     ports: Arc<TaskPortBroker>,
+    observer: Option<Arc<OperationObserver>>,
     next_sequence: AtomicU64,
     shutting_down: AtomicBool,
+}
+
+type OperationObserver = dyn Fn(ProjectTaskOperationSnapshot) + Send + Sync + 'static;
+
+impl std::fmt::Debug for RegistryInner {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RegistryInner")
+            .field("state", &self.state)
+            .field("ports", &self.ports)
+            .field("observer_configured", &self.observer.is_some())
+            .field("next_sequence", &self.next_sequence)
+            .field("shutting_down", &self.shutting_down)
+            .finish()
+    }
 }
 
 /// Server-owned, bounded registry for long-running project task mutations.
@@ -101,10 +116,19 @@ impl Default for ProjectTaskOperationRegistry {
 
 impl ProjectTaskOperationRegistry {
     pub fn new(ports: Arc<TaskPortBroker>) -> Self {
+        Self::new_inner(ports, None)
+    }
+
+    pub(crate) fn with_observer(observer: Arc<OperationObserver>) -> Self {
+        Self::new_inner(Arc::new(TaskPortBroker::default()), Some(observer))
+    }
+
+    fn new_inner(ports: Arc<TaskPortBroker>, observer: Option<Arc<OperationObserver>>) -> Self {
         Self {
             inner: Arc::new(RegistryInner {
                 state: Mutex::new(RegistryState::default()),
                 ports,
+                observer,
                 next_sequence: AtomicU64::new(1),
                 shutting_down: AtomicBool::new(false),
             }),
@@ -141,19 +165,29 @@ impl ProjectTaskOperationRegistry {
 
     pub fn cancel(&self, operation_id: &str) -> Result<ProjectTaskOperationSnapshot, ProjectError> {
         validate_operation_id(operation_id)?;
-        let state = self.lock_state()?;
-        let entry = state.operations.get(operation_id).ok_or_else(|| {
-            ProjectError::new(
-                "project_task_operation_not_found",
-                "project task operation was not found in this server process",
-            )
-        })?;
-        let mut record = lock_record(entry)?;
-        if !record.snapshot.status.is_terminal() {
-            entry.cancelled.store(true, Ordering::Release);
-            record.snapshot.cancellation_requested = true;
+        let entry = {
+            let state = self.lock_state()?;
+            Arc::clone(state.operations.get(operation_id).ok_or_else(|| {
+                ProjectError::new(
+                    "project_task_operation_not_found",
+                    "project task operation was not found in this server process",
+                )
+            })?)
+        };
+        let (snapshot, changed) = {
+            let mut record = lock_record(&entry)?;
+            let changed =
+                !record.snapshot.status.is_terminal() && !record.snapshot.cancellation_requested;
+            if !record.snapshot.status.is_terminal() {
+                entry.cancelled.store(true, Ordering::Release);
+                record.snapshot.cancellation_requested = true;
+            }
+            (record.snapshot.clone(), changed)
+        };
+        if changed {
+            notify_observer(&self.inner, snapshot.clone());
         }
-        Ok(record.snapshot.clone())
+        Ok(snapshot)
     }
 
     pub fn cancel_all(&self) {
@@ -161,14 +195,20 @@ impl ProjectTaskOperationRegistry {
         let Ok(state) = self.inner.state.lock() else {
             return;
         };
+        let mut changed = Vec::new();
         for entry in state.operations.values() {
             let Ok(mut record) = entry.record.lock() else {
                 continue;
             };
-            if !record.snapshot.status.is_terminal() {
+            if !record.snapshot.status.is_terminal() && !record.snapshot.cancellation_requested {
                 entry.cancelled.store(true, Ordering::Release);
                 record.snapshot.cancellation_requested = true;
+                changed.push(record.snapshot.clone());
             }
+        }
+        drop(state);
+        for snapshot in changed {
+            notify_observer(&self.inner, snapshot);
         }
     }
 
@@ -264,10 +304,10 @@ impl ProjectTaskOperationRegistry {
         let spawn_result = std::thread::Builder::new()
             .name(worker_name(kind).to_string())
             .spawn(move || {
-                mark_running(&worker_entry);
+                mark_running(&inner, &worker_entry);
                 let control = RegistryOperationControl {
                     entry: Arc::clone(&worker_entry),
-                    shutting_down: Arc::clone(&inner),
+                    inner: Arc::clone(&inner),
                 };
                 let result =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&control)))
@@ -304,17 +344,17 @@ impl ProjectTaskOperationRegistry {
 
 struct RegistryOperationControl {
     entry: Arc<OperationEntry>,
-    shutting_down: Arc<RegistryInner>,
+    inner: Arc<RegistryInner>,
 }
 
 impl TaskOperationControl for RegistryOperationControl {
     fn is_cancelled(&self) -> bool {
         self.entry.cancelled.load(Ordering::Acquire)
-            || self.shutting_down.shutting_down.load(Ordering::Acquire)
+            || self.inner.shutting_down.load(Ordering::Acquire)
     }
 
     fn report_progress(&self, progress: &TaskOperationProgress) {
-        if let Ok(mut record) = self.entry.record.lock() {
+        let snapshot = if let Ok(mut record) = self.entry.record.lock() {
             if progress.task_id != record.snapshot.task_id
                 || progress.completed_steps > progress.total_steps
                 || record.snapshot.progress.as_ref().is_some_and(|previous| {
@@ -325,13 +365,25 @@ impl TaskOperationControl for RegistryOperationControl {
                 return;
             }
             record.snapshot.progress = Some(progress.clone());
+            Some(record.snapshot.clone())
+        } else {
+            None
+        };
+        if let Some(snapshot) = snapshot {
+            notify_observer(&self.inner, snapshot);
         }
     }
 }
 
-fn mark_running(entry: &OperationEntry) {
-    if let Ok(mut record) = entry.record.lock() {
+fn mark_running(inner: &RegistryInner, entry: &OperationEntry) {
+    let snapshot = if let Ok(mut record) = entry.record.lock() {
         record.snapshot.status = ProjectTaskOperationStatus::Running;
+        Some(record.snapshot.clone())
+    } else {
+        None
+    };
+    if let Some(snapshot) = snapshot {
+        notify_observer(inner, snapshot);
     }
 }
 
@@ -342,29 +394,41 @@ fn finish_operation(
     entry: &OperationEntry,
     result: Result<(), ProjectError>,
 ) {
-    let Ok(mut state) = inner.state.lock() else {
+    let snapshot = {
+        let Ok(mut state) = inner.state.lock() else {
+            return;
+        };
+        let Ok(mut record) = entry.record.lock() else {
+            return;
+        };
+        match result {
+            Ok(()) => record.snapshot.status = ProjectTaskOperationStatus::Succeeded,
+            Err(error) if error.code == "project_task_operation_cancelled" => {
+                record.snapshot.status = ProjectTaskOperationStatus::Cancelled;
+                record.snapshot.cancellation_requested = true;
+            }
+            Err(error) => {
+                record.snapshot.status = ProjectTaskOperationStatus::Failed;
+                record.snapshot.error = Some(ProjectTaskOperationError {
+                    code: error.code,
+                    message: error.message,
+                });
+            }
+        }
+        if state.active_tasks.get(key).map(String::as_str) == Some(operation_id) {
+            state.active_tasks.remove(key);
+        }
+        record.snapshot.clone()
+    };
+    notify_observer(inner, snapshot);
+}
+
+fn notify_observer(inner: &RegistryInner, snapshot: ProjectTaskOperationSnapshot) {
+    let Some(observer) = &inner.observer else {
         return;
     };
-    let Ok(mut record) = entry.record.lock() else {
-        return;
-    };
-    match result {
-        Ok(()) => record.snapshot.status = ProjectTaskOperationStatus::Succeeded,
-        Err(error) if error.code == "project_task_operation_cancelled" => {
-            record.snapshot.status = ProjectTaskOperationStatus::Cancelled;
-            record.snapshot.cancellation_requested = true;
-        }
-        Err(error) => {
-            record.snapshot.status = ProjectTaskOperationStatus::Failed;
-            record.snapshot.error = Some(ProjectTaskOperationError {
-                code: error.code,
-                message: error.message,
-            });
-        }
-    }
-    if state.active_tasks.get(key).map(String::as_str) == Some(operation_id) {
-        state.active_tasks.remove(key);
-    }
+    let observer = Arc::clone(observer);
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| observer(snapshot)));
 }
 
 fn prune_terminal_operations(state: &mut RegistryState) {
