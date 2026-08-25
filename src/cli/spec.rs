@@ -324,6 +324,25 @@ fn project_command() -> Command {
                 .about("Revoke manifest trust")
                 .arg(path_arg("path", "PATH").required(false)),
         )
+        .subcommand(
+            Command::new("task")
+                .about("Inspect durable project tasks over the socket API")
+                .subcommand(
+                    Command::new("list")
+                        .about("List project tasks")
+                        .arg(path_arg("path", "PATH").required(false))
+                        .arg(option("after", "TASK_ID"))
+                        .arg(option("limit", "N"))
+                        .arg(json_flag()),
+                )
+                .subcommand(
+                    Command::new("get")
+                        .about("Show one project task")
+                        .arg(required("task_id", "TASK_ID"))
+                        .arg(path_arg("path", "PATH").required(false))
+                        .arg(json_flag()),
+                ),
+        )
 }
 
 fn tab_command() -> Command {

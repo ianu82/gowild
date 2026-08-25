@@ -9,6 +9,7 @@ use crate::project::{
 };
 
 mod private_state;
+mod task;
 
 pub(super) fn run_project_command(args: &[String]) -> std::io::Result<i32> {
     let Some(subcommand) = args.first().map(String::as_str) else {
@@ -22,6 +23,7 @@ pub(super) fn run_project_command(args: &[String]) -> std::io::Result<i32> {
         "override" => private_state::run_override_command(&args[1..]),
         "trust" => private_state::run_trust(&args[1..]),
         "untrust" => private_state::run_untrust(&args[1..]),
+        "task" => task::run(&args[1..]),
         "help" | "--help" | "-h" => {
             print_project_help();
             Ok(0)
@@ -284,6 +286,13 @@ fn print_project_help() {
     eprintln!("  gowild project override <set-base|clear-base> ...");
     eprintln!("  gowild project trust [PATH] --digest SHA256");
     eprintln!("  gowild project untrust [PATH]");
+    eprintln!("  gowild project task <list|get> ...");
+}
+
+fn print_project_task_help() {
+    eprintln!("gowild project task commands:");
+    eprintln!("  gowild project task list [PATH] [--after TASK_ID] [--limit N] [--json]");
+    eprintln!("  gowild project task get <TASK_ID> [PATH] [--json]");
 }
 
 #[cfg(test)]
