@@ -190,7 +190,7 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
     }
 }
 
-pub(super) fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {
+pub(crate) fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {
     let root_resource = OwnedResource::WorkspaceDirectory {
         path: task.root.clone(),
     };

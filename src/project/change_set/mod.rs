@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use super::task_workspace::{TaskWorkspace, TaskWorkspacePhase};
 use super::ProjectError;
 
+mod collector;
+
+#[cfg(test)]
+mod collector_tests;
 #[cfg(test)]
 mod tests;
 
