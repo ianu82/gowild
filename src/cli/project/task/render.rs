@@ -1,7 +1,7 @@
 use crate::api::schema::{
     ProjectTaskAgent, ProjectTaskChangeSetSummary, ProjectTaskInfo, ProjectTaskMergeGate,
-    ProjectTaskPhase, ProjectTaskProjectInfo, ProjectTaskProtocol, ProjectTaskSummary,
-    ProjectTaskTrust,
+    ProjectTaskPhase, ProjectTaskProjectInfo, ProjectTaskProtocol, ProjectTaskRecoveryAction,
+    ProjectTaskSummary, ProjectTaskTrust,
 };
 
 pub(super) fn format_task_list(
@@ -111,10 +111,31 @@ fn format_task_summary(task: &ProjectTaskSummary) -> String {
             task.attention_code.as_deref().unwrap_or("project_changed")
         ));
     }
+    if task.recovery.action != ProjectTaskRecoveryAction::None {
+        output.push_str(&format!(
+            "  recovery: {}\n",
+            recovery_action_label(task.recovery.action)
+        ));
+    }
+    if let Some(code) = &task.recovery.last_failure_code {
+        output.push_str(&format!("  last failure: {code}\n"));
+    }
     if let Some(change_set) = &task.change_set {
         output.push_str(&format_change_set(change_set));
     }
     output
+}
+
+fn recovery_action_label(action: ProjectTaskRecoveryAction) -> &'static str {
+    match action {
+        ProjectTaskRecoveryAction::None => "none",
+        ProjectTaskRecoveryAction::Provision => "provision task workspace",
+        ProjectTaskRecoveryAction::ResumeProvisioning => "resume interrupted provisioning",
+        ProjectTaskRecoveryAction::ResumeCleanup => "resume interrupted cleanup",
+        ProjectTaskRecoveryAction::ReconcileRuntime => "reconcile runtime ownership",
+        ProjectTaskRecoveryAction::ReviewAttention => "review task attention state",
+        ProjectTaskRecoveryAction::ReviewProjectDefinition => "review changed project definition",
+    }
 }
 
 fn format_change_set(change_set: &ProjectTaskChangeSetSummary) -> String {
@@ -181,8 +202,8 @@ fn merge_gate_label(gate: ProjectTaskMergeGate) -> &'static str {
 mod tests {
     use super::*;
     use crate::api::schema::{
-        ProjectTaskCheckSummary, ProjectTaskIsolationInfo, ProjectTaskRepositoryInfo,
-        ProjectTaskRouteInfo,
+        ProjectTaskCheckSummary, ProjectTaskIsolationInfo, ProjectTaskRecoveryInfo,
+        ProjectTaskRepositoryInfo, ProjectTaskRouteInfo,
     };
     use std::collections::BTreeMap;
 
@@ -272,6 +293,18 @@ mod tests {
             active_repository_count: 2,
             current_project: true,
             attention_code: None,
+            recovery: ProjectTaskRecoveryInfo {
+                action: ProjectTaskRecoveryAction::ReconcileRuntime,
+                interrupted: false,
+                project_definition_changed: false,
+                runtime_verification_required: true,
+                pending_acquisitions: 0,
+                pending_releases: 0,
+                failed_acquisitions: 0,
+                failed_releases: 0,
+                owned_resource_count: 7,
+                last_failure_code: None,
+            },
             change_set: Some(ProjectTaskChangeSetSummary {
                 record_revision: 4,
                 task_revision: 12,

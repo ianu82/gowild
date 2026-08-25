@@ -9067,6 +9067,20 @@
             "project_id": {
               "type": "string"
             },
+            "recovery": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskRecoveryInfo",
+              "default": {
+                "action": "none",
+                "failed_acquisitions": 0,
+                "failed_releases": 0,
+                "interrupted": false,
+                "owned_resource_count": 0,
+                "pending_acquisitions": 0,
+                "pending_releases": 0,
+                "project_definition_changed": false,
+                "runtime_verification_required": false
+              }
+            },
             "repositories": {
               "items": {
                 "$ref": "#/schemas/success_response/$defs/ProjectTaskRepositoryInfo"
@@ -9521,6 +9535,77 @@
           ],
           "type": "string"
         },
+        "ProjectTaskRecoveryAction": {
+          "enum": [
+            "none",
+            "provision",
+            "resume_provisioning",
+            "resume_cleanup",
+            "reconcile_runtime",
+            "review_attention",
+            "review_project_definition"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskRecoveryInfo": {
+          "properties": {
+            "action": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskRecoveryAction"
+            },
+            "failed_acquisitions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed_releases": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "interrupted": {
+              "type": "boolean"
+            },
+            "last_failure_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "owned_resource_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pending_acquisitions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pending_releases": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_definition_changed": {
+              "type": "boolean"
+            },
+            "runtime_verification_required": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action",
+            "interrupted",
+            "project_definition_changed",
+            "runtime_verification_required",
+            "pending_acquisitions",
+            "pending_releases",
+            "failed_acquisitions",
+            "failed_releases",
+            "owned_resource_count"
+          ],
+          "type": "object"
+        },
         "ProjectTaskRepositoryInfo": {
           "properties": {
             "base_commit": {
@@ -9621,6 +9706,20 @@
             },
             "project_id": {
               "type": "string"
+            },
+            "recovery": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskRecoveryInfo",
+              "default": {
+                "action": "none",
+                "failed_acquisitions": 0,
+                "failed_releases": 0,
+                "interrupted": false,
+                "owned_resource_count": 0,
+                "pending_acquisitions": 0,
+                "pending_releases": 0,
+                "project_definition_changed": false,
+                "runtime_verification_required": false
+              }
             },
             "repository_count": {
               "format": "uint",

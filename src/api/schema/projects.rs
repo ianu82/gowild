@@ -133,8 +133,54 @@ pub struct ProjectTaskSummary {
     pub current_project: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_code: Option<String>,
+    #[serde(default)]
+    pub recovery: ProjectTaskRecoveryInfo,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change_set: Option<ProjectTaskChangeSetSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProjectTaskRecoveryInfo {
+    pub action: ProjectTaskRecoveryAction,
+    pub interrupted: bool,
+    pub project_definition_changed: bool,
+    pub runtime_verification_required: bool,
+    pub pending_acquisitions: usize,
+    pub pending_releases: usize,
+    pub failed_acquisitions: usize,
+    pub failed_releases: usize,
+    pub owned_resource_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_failure_code: Option<String>,
+}
+
+impl Default for ProjectTaskRecoveryInfo {
+    fn default() -> Self {
+        Self {
+            action: ProjectTaskRecoveryAction::None,
+            interrupted: false,
+            project_definition_changed: false,
+            runtime_verification_required: false,
+            pending_acquisitions: 0,
+            pending_releases: 0,
+            failed_acquisitions: 0,
+            failed_releases: 0,
+            owned_resource_count: 0,
+            last_failure_code: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectTaskRecoveryAction {
+    None,
+    Provision,
+    ResumeProvisioning,
+    ResumeCleanup,
+    ReconcileRuntime,
+    ReviewAttention,
+    ReviewProjectDefinition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

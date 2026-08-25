@@ -4,14 +4,16 @@ use crate::api::schema::{
     ErrorBody, ErrorResponse, ProjectTaskAgent, ProjectTaskChangeSetSummary,
     ProjectTaskCheckSummary, ProjectTaskCreateParams, ProjectTaskGetParams, ProjectTaskInfo,
     ProjectTaskIsolationInfo, ProjectTaskListParams, ProjectTaskMergeGate, ProjectTaskPhase,
-    ProjectTaskProjectInfo, ProjectTaskProtocol, ProjectTaskRepositoryInfo, ProjectTaskRouteInfo,
-    ProjectTaskSummary, ProjectTaskTrust, ResponseResult, SuccessResponse,
-    DEFAULT_PROJECT_TASK_PAGE_SIZE, PROJECT_TASK_API_VERSION,
+    ProjectTaskProjectInfo, ProjectTaskProtocol, ProjectTaskRecoveryAction,
+    ProjectTaskRecoveryInfo, ProjectTaskRepositoryInfo, ProjectTaskRouteInfo, ProjectTaskSummary,
+    ProjectTaskTrust, ResponseResult, SuccessResponse, DEFAULT_PROJECT_TASK_PAGE_SIZE,
+    PROJECT_TASK_API_VERSION,
 };
 use crate::project::change_set::{CheckStatus, MergeApproval, MergeGate};
 use crate::project::task_workspace::{TaskAgent, TaskProtocol, TaskRoute, TaskWorkspacePhase};
 use crate::project::{
-    CreateProjectTask, ProjectError, ProjectTaskReader, ProjectTaskService, ProjectTaskSnapshot,
+    CreateProjectTask, ProjectError, ProjectTaskReader,
+    ProjectTaskRecoveryAction as RecoveryAction, ProjectTaskService, ProjectTaskSnapshot,
     ProjectTrustStatus,
 };
 
@@ -220,7 +222,34 @@ fn task_summary(snapshot: &ProjectTaskSnapshot) -> ProjectTaskSummary {
             .count(),
         current_project: snapshot.current_project,
         attention_code: snapshot.attention_code.map(str::to_string),
+        recovery: recovery_info(snapshot),
         change_set: change_set_summary(snapshot),
+    }
+}
+
+fn recovery_info(snapshot: &ProjectTaskSnapshot) -> ProjectTaskRecoveryInfo {
+    let recovery = &snapshot.recovery;
+    ProjectTaskRecoveryInfo {
+        action: match recovery.action {
+            RecoveryAction::None => ProjectTaskRecoveryAction::None,
+            RecoveryAction::Provision => ProjectTaskRecoveryAction::Provision,
+            RecoveryAction::ResumeProvisioning => ProjectTaskRecoveryAction::ResumeProvisioning,
+            RecoveryAction::ResumeCleanup => ProjectTaskRecoveryAction::ResumeCleanup,
+            RecoveryAction::ReconcileRuntime => ProjectTaskRecoveryAction::ReconcileRuntime,
+            RecoveryAction::ReviewAttention => ProjectTaskRecoveryAction::ReviewAttention,
+            RecoveryAction::ReviewProjectDefinition => {
+                ProjectTaskRecoveryAction::ReviewProjectDefinition
+            }
+        },
+        interrupted: recovery.interrupted,
+        project_definition_changed: recovery.project_definition_changed,
+        runtime_verification_required: recovery.runtime_verification_required,
+        pending_acquisitions: recovery.pending_acquisitions,
+        pending_releases: recovery.pending_releases,
+        failed_acquisitions: recovery.failed_acquisitions,
+        failed_releases: recovery.failed_releases,
+        owned_resource_count: recovery.owned_resource_count,
+        last_failure_code: recovery.last_failure_code.clone(),
     }
 }
 
@@ -329,6 +358,7 @@ mod tests {
             .environment
             .insert("PRIVATE_TOKEN".into(), "do-not-expose".into());
         let snapshot = ProjectTaskSnapshot {
+            recovery: crate::project::ProjectTaskRecovery::from_task(&task, true),
             task,
             current_project: true,
             attention_code: None,
@@ -340,6 +370,7 @@ mod tests {
         let encoded = serde_json::to_string(&task_info(&snapshot)).unwrap();
         assert!(encoded.contains("PRIVATE_TOKEN"));
         assert!(!encoded.contains("do-not-expose"));
+        assert!(encoded.contains("\"action\":\"provision\""));
     }
 
     #[test]
