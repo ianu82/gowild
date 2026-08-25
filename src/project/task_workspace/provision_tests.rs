@@ -17,16 +17,16 @@ use crate::project::{ProjectDefinition, ProjectPrivateState, ProjectPrivateState
 
 static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
 
-pub(super) struct ProjectFixture {
-    pub(super) root: PathBuf,
-    pub(super) definition: ProjectDefinition,
-    pub(super) private_state: ProjectPrivateState,
-    pub(super) project: LoadedProject,
-    pub(super) states: TaskWorkspaceRepository,
+pub(crate) struct ProjectFixture {
+    pub(crate) root: PathBuf,
+    pub(crate) definition: ProjectDefinition,
+    pub(crate) private_state: ProjectPrivateState,
+    pub(crate) project: LoadedProject,
+    pub(crate) states: TaskWorkspaceRepository,
 }
 
 impl ProjectFixture {
-    pub(super) fn new(executable: bool) -> Self {
+    pub(crate) fn new(executable: bool) -> Self {
         let root = test_root("task-provisioning");
         std::fs::create_dir_all(&root).unwrap();
         let repositories = [
@@ -100,7 +100,7 @@ impl ProjectFixture {
         }
     }
 
-    pub(super) fn create_task(&self, task_id: &str) -> TaskWorkspace {
+    pub(crate) fn create_task(&self, task_id: &str) -> TaskWorkspace {
         let task = TaskWorkspace::new(
             &self.project,
             task_id,

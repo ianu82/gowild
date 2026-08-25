@@ -37,7 +37,7 @@ mod branch_tests;
 #[cfg(test)]
 mod cleanup_tests;
 #[cfg(test)]
-mod provision_tests;
+pub(crate) mod provision_tests;
 #[cfg(test)]
 mod repository_tests;
 #[cfg(test)]
