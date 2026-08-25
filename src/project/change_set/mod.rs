@@ -18,6 +18,11 @@ mod verification;
 
 #[allow(
     unused_imports,
+    reason = "GitHub draft publisher API consumer lands in the next stacked change"
+)]
+pub(crate) use publisher::GitHubCliDraftPublisher;
+#[allow(
+    unused_imports,
     reason = "draft publisher consumers land in the next stacked change"
 )]
 pub(crate) use publisher::{DraftPublicationRequest, DraftPullRequestPublisher};
