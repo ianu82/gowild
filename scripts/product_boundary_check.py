@@ -35,7 +35,9 @@ ACTIVE_CODE_FILES = (
     Path("build.rs"),
     Path("flake.nix"),
     Path("justfile"),
+    Path("scripts/install-from-source.sh"),
     Path("scripts/source_install_check.py"),
+    Path("scripts/test_source_installer.py"),
 )
 
 ROOT_READMES = (Path("README.md"), Path("README.zh-CN.md"))

@@ -57,7 +57,7 @@ fn main() {
         .to_string();
 
     let zig = env::var("ZIG").unwrap_or_else(|_| "zig".into());
-    let mut command = Command::new(zig);
+    let mut command = Command::new(&zig);
     command
         .arg("build")
         .arg("-Demit-lib-vt")
@@ -73,7 +73,13 @@ fn main() {
     let status = command
         .current_dir(&vendored_dir)
         .status()
-        .expect("failed to execute zig build for vendored libghostty-vt");
+        .unwrap_or_else(|error| {
+            panic!(
+                "could not run Zig ({zig}) for vendored libghostty-vt: {error}. \
+             GoWild requires Zig 0.15.2 for source builds; use \
+             ./scripts/install-from-source.sh for an early prerequisite check"
+            )
+        });
     assert!(
         status.success(),
         "zig build for vendored libghostty-vt failed: {status}"

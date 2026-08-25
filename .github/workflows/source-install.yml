@@ -12,6 +12,8 @@ on:
       - "justfile"
       - "rust-toolchain.toml"
       - "scripts/source_install_check.py"
+      - "scripts/install-from-source.sh"
+      - "scripts/test_source_installer.py"
       - "src/**"
       - "vendor/**"
   push:
@@ -25,6 +27,8 @@ on:
       - "justfile"
       - "rust-toolchain.toml"
       - "scripts/source_install_check.py"
+      - "scripts/install-from-source.sh"
+      - "scripts/test_source_installer.py"
       - "src/**"
       - "vendor/**"
 
@@ -64,3 +68,6 @@ jobs:
 
       - name: Install into a clean root
         run: python3 scripts/source_install_check.py
+
+      - name: Verify source installer preflight
+        run: python3 -m unittest scripts.test_source_installer
