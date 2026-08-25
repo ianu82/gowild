@@ -10,6 +10,11 @@ use crate::project::{ProjectDefinition, ProjectError};
 
 mod storage;
 
+mod change_set;
+
+#[cfg(test)]
+mod change_set_tests;
+
 pub(super) use storage::{
     directory_is_empty, ensure_private_directory_chain, restrict_directory_permissions,
     validate_existing_ancestors,
@@ -23,7 +28,7 @@ use storage::{
 
 const MAX_TASK_STATE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TASKS_PER_PROJECT: usize = 10_000;
-const MAX_STATE_DIRECTORY_ENTRIES: usize = 20_000;
+const MAX_STATE_DIRECTORY_ENTRIES: usize = 50_000;
 const STORE_MARKER_FILE: &str = ".gowild-task-store-v1";
 const STORE_MARKER_CONTENT: &[u8] = b"gowild task workspace state v1\n";
 const OPERATION_LOCK_PREFIX: &str = ".task-operation-";
@@ -242,7 +247,7 @@ impl TaskWorkspaceRepository {
             if entry_count > MAX_STATE_DIRECTORY_ENTRIES {
                 return Err(ProjectError::new(
                     "too_many_task_workspaces",
-                    "project task state exceeds the 20000-entry safety limit",
+                    "project task state exceeds the 50000-entry safety limit",
                 ));
             }
             if entry.file_name() == STORE_MARKER_FILE {
@@ -270,6 +275,9 @@ impl TaskWorkspaceRepository {
                 continue;
             }
             if operation_lock_repository_id(name).is_some() {
+                continue;
+            }
+            if change_set::state_file_task_id(name).is_some() {
                 continue;
             }
             let task_id = name.strip_suffix(".json").ok_or_else(|| {
