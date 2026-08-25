@@ -23,7 +23,8 @@ class UnixInstallerTests(unittest.TestCase):
         self.bin_dir.mkdir()
         self.install_dir = self.root / "install"
         self.payload = self.root / "payload"
-        self.payload.write_bytes(b"fake-gowild-binary\n")
+        self.payload.write_text("#!/bin/sh\necho 'gowild 9.9.9'\n", encoding="utf-8")
+        self.payload.chmod(0o755)
         self.expected_sha256 = hashlib.sha256(self.payload.read_bytes()).hexdigest()
         self.curl_calls = self.root / "curl-calls"
 
@@ -145,12 +146,15 @@ exec {sha256sum} "$@"
             check=False,
         )
 
-    def test_missing_explicit_manifest_fails_before_network_access(self) -> None:
+    def test_default_manifest_uses_the_owned_latest_release(self) -> None:
         result = self._run_installer(self.expected_sha256, with_manifest=False)
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("hosted GoWild installation is disabled", result.stderr)
-        self.assertFalse(self.curl_calls.exists(), "disabled installer must not invoke curl")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.curl_calls.read_text(encoding="utf-8")
+        self.assertIn(
+            "https://github.com/ianu82/gowild/releases/latest/download/latest.json",
+            calls,
+        )
 
     def test_valid_download_uses_each_supported_checksum_tool(self) -> None:
         for tool in ("sha256sum", "shasum", "openssl"):
@@ -184,6 +188,19 @@ exec {sha256sum} "$@"
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("valid SHA-256 checksum", result.stderr)
+        self.assertEqual(installed.read_bytes(), b"existing-gowild\n")
+
+    def test_wrong_binary_version_does_not_replace_existing_binary(self) -> None:
+        self.install_dir.mkdir()
+        installed = self.install_dir / "gowild"
+        installed.write_bytes(b"existing-gowild\n")
+        self.payload.write_text("#!/bin/sh\necho 'gowild 8.8.8'\n", encoding="utf-8")
+        checksum = hashlib.sha256(self.payload.read_bytes()).hexdigest()
+
+        result = self._run_installer(checksum)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected gowild 9.9.9", result.stderr)
         self.assertEqual(installed.read_bytes(), b"existing-gowild\n")
 
 

@@ -3,13 +3,14 @@
 This directory is **not the GoWild website**.
 
 It is retained as an auditable record of the source snapshot identified in
-[`PROVENANCE.md`](../PROVENANCE.md), plus installer code that remains covered by
-local packaging tests. Its pages describe the imported product and include
-historical names, URLs, releases, commands, sponsorship, and social links.
+[`PROVENANCE.md`](../PROVENANCE.md). Its pages describe the imported product and
+include historical names, URLs, releases, commands, sponsorship, and social
+links. The two exceptions are `install.sh` and `install.ps1`: they are active,
+GoWild-owned release installers covered by packaging tests and release checks.
 
-Do not deploy, publish, preview, index, mechanically rebrand, or treat this tree
-as current GoWild documentation. The package scripts and repository website
-recipe fail closed deliberately.
+Do not deploy, publish, preview, index, mechanically rebrand, or treat the site
+tree as current GoWild documentation. The package scripts and repository
+website recipe fail closed deliberately.
 
 Current GoWild documentation lives in the top-level files under
 [`docs/next`](../docs/next/README.md). A new public site must be created from

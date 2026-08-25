@@ -1,7 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$Channel = $env:GOWILD_CHANNEL,
-    [string]$ManifestUrl = $env:GOWILD_MANIFEST_URL,
+    [string]$ManifestUrl = $(
+        if ([string]::IsNullOrWhiteSpace($env:GOWILD_MANIFEST_URL)) {
+            "https://github.com/ianu82/gowild/releases/latest/download/latest.json"
+        } else {
+            $env:GOWILD_MANIFEST_URL
+        }
+    ),
     [string]$InstallDir = $env:GOWILD_INSTALL_DIR,
     [string]$ExpectedBuildId = $env:GOWILD_EXPECTED_BUILD_ID,
     [int]$Retain = 3,
@@ -35,10 +41,6 @@ $useLocalPackage = $localPackageValueCount -eq 4
 if ($useLocalPackage -and $LocalPackageFormat -notin @("zip", "exe")) {
     throw "Local GoWild package has unsupported format '$LocalPackageFormat'."
 }
-if (-not $useLocalPackage -and [string]::IsNullOrWhiteSpace($ManifestUrl)) {
-    throw "Hosted GoWild installation is disabled until a signed release channel exists. See https://github.com/ianu82/gowild/blob/main/docs/next/INSTALL.md"
-}
-
 function Write-Step {
     param([string]$Message)
     Write-Host "==> $Message"

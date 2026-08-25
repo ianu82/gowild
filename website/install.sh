@@ -2,8 +2,22 @@
 set -eu
 
 BIN="gowild"
-MANIFEST_URL="${GOWILD_MANIFEST_URL:-}"
-INSTALL_DIR="${GOWILD_INSTALL_DIR:-$HOME/.local/bin}"
+MANIFEST_URL="${GOWILD_MANIFEST_URL:-https://github.com/ianu82/gowild/releases/latest/download/latest.json}"
+INSTALL_DIR="${GOWILD_INSTALL_DIR:-}"
+
+default_install_dir() {
+    for candidate in "$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/bin"; do
+        case ":$PATH:" in
+            *":$candidate:"*)
+                if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+                    printf '%s\n' "$candidate"
+                    return
+                fi
+                ;;
+        esac
+    done
+    printf '%s/.local/bin\n' "$HOME"
+}
 
 main() {
     echo ""
@@ -13,8 +27,8 @@ main() {
     echo "      II  II"
     echo ""
 
-    if [ -z "$MANIFEST_URL" ]; then
-        err "hosted GoWild installation is disabled until a signed release channel exists. See https://github.com/ianu82/gowild/blob/main/docs/next/INSTALL.md"
+    if [ -z "$INSTALL_DIR" ]; then
+        INSTALL_DIR=$(default_install_dir)
     fi
 
     # detect platform
@@ -38,12 +52,10 @@ main() {
     need curl
     need awk
 
-    # Remote installation is available only to explicit package verification
-    # and future reviewed release automation.
     TARGET="${os}-${arch}"
-    log "fetching configured release manifest..."
+    log "fetching GoWild release manifest..."
     MANIFEST="$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 20 "$MANIFEST_URL")" \
-        || err "can't reach configured manifest ${MANIFEST_URL}"
+        || err "can't reach release manifest ${MANIFEST_URL}"
     URL="$(printf '%s\n' "$MANIFEST" | awk -v target="\"${TARGET}\"" '
         /^[[:space:]]*"assets"[[:space:]]*:/ { in_assets = 1; next }
         in_assets && /^[[:space:]]*}/ { exit }
@@ -108,10 +120,16 @@ main() {
         err "downloaded GoWild checksum did not match"
     fi
 
+    chmod +x "${TMP}/${BIN}"
+    INSTALLED_VERSION=$("${TMP}/${BIN}" --version 2>/dev/null) \
+        || err "downloaded GoWild failed its version check"
+    if [ -n "$VERSION" ] && [ "$INSTALLED_VERSION" != "gowild ${VERSION}" ]; then
+        err "downloaded GoWild reported ${INSTALLED_VERSION}; expected gowild ${VERSION}"
+    fi
+
     # install
     mkdir -p "$INSTALL_DIR"
     mv "${TMP}/${BIN}" "${INSTALL_DIR}/${BIN}"
-    chmod +x "${INSTALL_DIR}/${BIN}"
 
     log "installed ${BIN} to ${INSTALL_DIR}/${BIN}"
 
@@ -128,11 +146,15 @@ main() {
             ;;
     esac
 
-    # verify
-    if command -v "$BIN" >/dev/null 2>&1; then
-        echo ""
-        log "ready. run 'gowild' to get started."
-    fi
+    # verify the exact installed path; a newly created install directory may
+    # not be visible to the parent shell yet.
+    "$INSTALL_DIR/$BIN" --version >/dev/null \
+        || err "installed GoWild failed its version check"
+    echo ""
+    case ":${PATH}:" in
+        *":${INSTALL_DIR}:"*) log "ready. run 'gowild' to get started." ;;
+        *) log "ready. run '${INSTALL_DIR}/${BIN}' to get started." ;;
+    esac
 
     echo ""
 }

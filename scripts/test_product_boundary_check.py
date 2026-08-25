@@ -42,8 +42,11 @@ class ProductBoundaryCheckTests(unittest.TestCase):
             [],
         )
 
-    def test_retained_installers_and_crate_publish_fail_closed(self) -> None:
+    def test_owned_release_and_checksum_install_boundaries(self) -> None:
         self.assertEqual(boundary.check_install_boundaries(), [])
+
+    def test_release_workflow_stages_before_publishing(self) -> None:
+        self.assertEqual(boundary.check_release_recipes(), [])
 
     def test_project_license_is_tbd_and_imported_license_is_retained(self) -> None:
         self.assertEqual(boundary.check_license_boundaries(), [])
