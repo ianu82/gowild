@@ -5,6 +5,7 @@ mod model;
 mod overrides;
 mod private_state;
 mod task_context;
+pub(crate) mod task_operations;
 mod task_read;
 mod task_service;
 pub(crate) mod task_workspace;

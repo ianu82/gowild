@@ -115,6 +115,19 @@ impl ProjectTaskService {
         ProjectTaskReader::from_context(self.context.clone())
     }
 
+    pub(crate) fn project_id(&self) -> &str {
+        &self.context.project.manifest.id
+    }
+
+    pub(crate) fn project_root(&self) -> &Path {
+        &self.context.project.root
+    }
+
+    pub(crate) fn load_task(&self, task_id: &str) -> Result<TaskWorkspace, ProjectError> {
+        ProjectTaskReader::validate_task_id(task_id)?;
+        self.context.states.load(task_id)
+    }
+
     fn provisioner(&self) -> TaskWorkspaceProvisioner<'_> {
         TaskWorkspaceProvisioner::with_port_broker(&self.context.states, &self.ports)
     }
