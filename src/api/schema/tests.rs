@@ -775,7 +775,7 @@ fn project_task_requests_and_responses_round_trip() {
     let operation_json = serde_json::to_value(&operation_response).unwrap();
     assert_eq!(operation_json["result"]["type"], "project_task_operation");
     assert_eq!(
-        operation_json["result"]["operation"]["progress"]["stage"],
+        operation_json["result"]["operation"]["progress"]["stage"]["stage"],
         "repository"
     );
     assert_eq!(
