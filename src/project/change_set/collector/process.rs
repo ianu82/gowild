@@ -9,8 +9,8 @@ use crate::project::change_set::DiffSummary;
 use crate::project::ProjectError;
 
 const MAX_GIT_FACT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_DIFF_BYTES: u64 = 64 * 1024 * 1024;
-const DIFF_DISPLAY_BYTES: u64 = 1024 * 1024;
+pub(in crate::project::change_set) const MAX_DIFF_BYTES: u64 = 64 * 1024 * 1024;
+pub(in crate::project::change_set) const DIFF_DISPLAY_BYTES: u64 = 1024 * 1024;
 const MAX_GIT_ERROR_BYTES: usize = 64 * 1024;
 
 pub(super) fn diff_digest(

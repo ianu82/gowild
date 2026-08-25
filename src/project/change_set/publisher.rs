@@ -92,7 +92,7 @@ impl ChangeSet {
         Ok(&self.publication.draft_pull_requests)
     }
 
-    fn validate_publication_plan(&self) -> Result<(), ProjectError> {
+    pub(super) fn validate_publication_plan(&self) -> Result<(), ProjectError> {
         if self.publication.planned_pull_requests.is_empty() {
             return Err(ProjectError::new(
                 "task_change_set_not_planned",

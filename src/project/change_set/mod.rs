@@ -14,6 +14,7 @@ use super::ProjectError;
 mod collector;
 mod planner;
 mod publisher;
+mod validation;
 mod verification;
 
 #[allow(
@@ -35,6 +36,8 @@ mod planner_tests;
 mod publisher_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod validation_tests;
 #[cfg(test)]
 mod verification_tests;
 

@@ -28,8 +28,8 @@ mod validation;
 
 use rules::{
     phase_transition_allowed, resources_conflict, runtime_namespace, validate_absolute_clean_path,
-    validate_identifier,
 };
+pub(in crate::project) use rules::{validate_digest, validate_git_object_id, validate_identifier};
 pub use runtime_ports::TaskPortBroker;
 
 #[cfg(test)]

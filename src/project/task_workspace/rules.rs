@@ -109,7 +109,10 @@ pub(super) fn validate_dependency_graph(
     }
 }
 
-pub(super) fn validate_identifier(label: &str, value: &str) -> Result<(), ProjectError> {
+pub(in crate::project) fn validate_identifier(
+    label: &str,
+    value: &str,
+) -> Result<(), ProjectError> {
     if value.is_empty()
         || value.len() > 64
         || !value.bytes().all(|byte| {
@@ -179,7 +182,7 @@ pub(super) fn validate_absolute_clean_path(label: &str, path: &Path) -> Result<(
     Ok(())
 }
 
-pub(super) fn validate_digest(
+pub(in crate::project) fn validate_digest(
     label: &str,
     digest: &str,
     length: usize,
@@ -197,7 +200,7 @@ pub(super) fn validate_digest(
     Ok(())
 }
 
-pub(super) fn validate_git_object_id(value: &str) -> Result<(), ProjectError> {
+pub(in crate::project) fn validate_git_object_id(value: &str) -> Result<(), ProjectError> {
     if !matches!(value.len(), 40 | 64)
         || !value
             .bytes()
