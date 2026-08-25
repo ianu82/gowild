@@ -684,6 +684,78 @@ fn session_snapshot_request_and_response_round_trip() {
 }
 
 #[test]
+fn project_task_read_requests_and_responses_round_trip() {
+    let request = Request {
+        id: "req_project_tasks".into(),
+        method: Method::ProjectTaskGet(ProjectTaskGetParams {
+            path: "/projects/cowork".into(),
+            task_id: "route-settings".into(),
+        }),
+    };
+    let json = serde_json::to_value(&request).unwrap();
+    assert_eq!(json["method"], "project.task.get");
+    assert_eq!(json["params"]["task_id"], "route-settings");
+    assert_eq!(serde_json::from_value::<Request>(json).unwrap(), request);
+
+    let response = SuccessResponse {
+        id: "req_project_tasks".into(),
+        result: ResponseResult::ProjectTaskList {
+            schema_version: PROJECT_TASK_API_VERSION,
+            project: ProjectTaskProjectInfo {
+                project_id: "cowork".into(),
+                name: "MindsHub Cowork".into(),
+                root: "/projects/cowork".into(),
+                manifest_digest: "a".repeat(64),
+                trust: ProjectTaskTrust::Trusted,
+            },
+            tasks: vec![ProjectTaskSummary {
+                task_id: "route-settings".into(),
+                project_id: "cowork".into(),
+                outcome: "Add route settings".into(),
+                agent: ProjectTaskAgent::Codex,
+                route: ProjectTaskRouteInfo {
+                    gateway_id: "mindshub".into(),
+                    protocol: ProjectTaskProtocol::OpenAiResponses,
+                    model: "test-model".into(),
+                },
+                phase: ProjectTaskPhase::Ready,
+                revision: 12,
+                repository_count: 3,
+                active_repository_count: 2,
+                current_project: true,
+                attention_code: None,
+                change_set: Some(ProjectTaskChangeSetSummary {
+                    record_revision: 4,
+                    task_revision: 12,
+                    stale: false,
+                    repository_count: 3,
+                    affected_repository_count: 2,
+                    checks: ProjectTaskCheckSummary {
+                        passed: 2,
+                        ..ProjectTaskCheckSummary::default()
+                    },
+                    planned_pull_request_count: 2,
+                    draft_pull_request_count: 0,
+                    merge_gate: ProjectTaskMergeGate::AwaitingApproval,
+                }),
+            }],
+            next_after: Some("route-settings".into()),
+        },
+    };
+    let json = serde_json::to_value(&response).unwrap();
+    assert_eq!(json["result"]["type"], "project_task_list");
+    assert_eq!(json["result"]["schema_version"], 1);
+    assert_eq!(
+        json["result"]["tasks"][0]["route"]["gateway_id"],
+        "mindshub"
+    );
+    assert_eq!(
+        serde_json::from_value::<SuccessResponse>(json).unwrap(),
+        response
+    );
+}
+
+#[test]
 fn worktree_request_and_response_round_trip() {
     let request = Request {
         id: "req_worktree".into(),

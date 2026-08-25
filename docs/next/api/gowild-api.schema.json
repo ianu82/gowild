@@ -3669,6 +3669,47 @@
             }
           ]
         },
+        "ProjectTaskGetParams": {
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "task_id"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskListParams": {
+          "properties": {
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "limit": {
+              "format": "uint16",
+              "maximum": 200,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
         "ReadFormat": {
           "enum": [
             "text",
@@ -4617,6 +4658,38 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskListParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskGetParams"
             }
           },
           "required": [
@@ -8691,6 +8764,484 @@
             }
           ]
         },
+        "ProjectTaskAgent": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskChangeSetSummary": {
+          "properties": {
+            "affected_repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "checks": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskCheckSummary"
+            },
+            "draft_pull_request_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "merge_gate": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskMergeGate"
+            },
+            "planned_pull_request_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "record_revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "task_revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "record_revision",
+            "task_revision",
+            "stale",
+            "repository_count",
+            "affected_repository_count",
+            "checks",
+            "planned_pull_request_count",
+            "draft_pull_request_count",
+            "merge_gate"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskCheckSummary": {
+          "properties": {
+            "failed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pending": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "skipped": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pending",
+            "passed",
+            "failed",
+            "skipped"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskInfo": {
+          "properties": {
+            "active_repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "agent": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskAgent"
+            },
+            "attention_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "change_set": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskChangeSetSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "current_project": {
+              "type": "boolean"
+            },
+            "isolation": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskIsolationInfo"
+            },
+            "manifest_digest": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "phase": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskPhase"
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "repositories": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ProjectTaskRepositoryInfo"
+              },
+              "type": "array"
+            },
+            "repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "root": {
+              "type": "string"
+            },
+            "route": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskRouteInfo"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "task_schema_version": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "task_id",
+            "project_id",
+            "outcome",
+            "agent",
+            "route",
+            "phase",
+            "revision",
+            "repository_count",
+            "active_repository_count",
+            "current_project",
+            "task_schema_version",
+            "manifest_digest",
+            "root",
+            "repositories",
+            "isolation"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskIsolationInfo": {
+          "description": "Secret-safe runtime ownership facts. Only environment key names are exposed;\nvalues never cross the API boundary.",
+          "properties": {
+            "cache": {
+              "type": "string"
+            },
+            "compose_enabled": {
+              "type": "boolean"
+            },
+            "compose_project": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            },
+            "declared_caches": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "declared_containers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "declared_data": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "declared_databases": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "declared_ports": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "declared_services": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "environment_keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "ports": {
+              "additionalProperties": {
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "root": {
+              "type": "string"
+            },
+            "temp": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace",
+            "root",
+            "temp",
+            "cache",
+            "data",
+            "compose_project",
+            "compose_enabled",
+            "environment_keys",
+            "declared_services",
+            "declared_ports",
+            "declared_containers",
+            "declared_databases",
+            "declared_data",
+            "declared_caches",
+            "ports"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskMergeGate": {
+          "enum": [
+            "awaiting_approval",
+            "approved_by_human",
+            "approved_by_policy"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskPhase": {
+          "enum": [
+            "planned",
+            "provisioning",
+            "ready",
+            "running",
+            "stopped",
+            "cleaning",
+            "needs_attention",
+            "cleaned"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskProjectInfo": {
+          "properties": {
+            "manifest_digest": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string"
+            },
+            "trust": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskTrust"
+            }
+          },
+          "required": [
+            "project_id",
+            "name",
+            "root",
+            "manifest_digest",
+            "trust"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskProtocol": {
+          "enum": [
+            "open_ai_responses",
+            "anthropic_messages"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskRepositoryInfo": {
+          "properties": {
+            "base_commit": {
+              "type": "string"
+            },
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "checkout_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "depends_on": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "head_commit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repository_id": {
+              "type": "string"
+            },
+            "source_path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "repository_id",
+            "source_path",
+            "base_commit",
+            "depends_on"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskRouteInfo": {
+          "properties": {
+            "gateway_id": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "protocol": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskProtocol"
+            }
+          },
+          "required": [
+            "gateway_id",
+            "protocol",
+            "model"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskSummary": {
+          "properties": {
+            "active_repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "agent": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskAgent"
+            },
+            "attention_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "change_set": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskChangeSetSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "current_project": {
+              "type": "boolean"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "phase": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskPhase"
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "repository_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "route": {
+              "$ref": "#/schemas/success_response/$defs/ProjectTaskRouteInfo"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id",
+            "project_id",
+            "outcome",
+            "agent",
+            "route",
+            "phase",
+            "revision",
+            "repository_count",
+            "active_repository_count",
+            "current_project"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskTrust": {
+          "enum": [
+            "not_required",
+            "trusted",
+            "untrusted",
+            "stale"
+          ],
+          "type": "string"
+        },
         "ReadFormat": {
           "enum": [
             "text",
@@ -8755,6 +9306,67 @@
               "required": [
                 "type",
                 "snapshot"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "next_after": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "project": {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskProjectInfo"
+                },
+                "schema_version": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tasks": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/ProjectTaskSummary"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "project_task_list",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "schema_version",
+                "project",
+                "tasks"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "project": {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskProjectInfo"
+                },
+                "schema_version": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "task": {
+                  "$ref": "#/schemas/success_response/$defs/ProjectTaskInfo"
+                },
+                "type": {
+                  "const": "project_task_info",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "schema_version",
+                "project",
+                "task"
               ],
               "type": "object"
             },

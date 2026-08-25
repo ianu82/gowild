@@ -15,6 +15,7 @@ use super::plugins::{
     InstalledPluginInfo, PluginActionInfo, PluginCommandLogInfo, PluginInvocationContext,
     PluginPaneInfo,
 };
+use super::projects::{ProjectTaskInfo, ProjectTaskProjectInfo, ProjectTaskSummary};
 use super::server::ServerCapabilities;
 use super::session::SessionSnapshot;
 use super::tabs::TabInfo;
@@ -50,6 +51,18 @@ pub enum ResponseResult {
     },
     SessionSnapshot {
         snapshot: Box<SessionSnapshot>,
+    },
+    ProjectTaskList {
+        schema_version: u32,
+        project: ProjectTaskProjectInfo,
+        tasks: Vec<ProjectTaskSummary>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next_after: Option<String>,
+    },
+    ProjectTaskInfo {
+        schema_version: u32,
+        project: ProjectTaskProjectInfo,
+        task: ProjectTaskInfo,
     },
     WorkspaceInfo {
         workspace: WorkspaceInfo,

@@ -6,6 +6,7 @@ pub mod events;
 pub mod integrations;
 pub mod panes;
 pub mod plugins;
+pub mod projects;
 pub mod response;
 pub mod server;
 pub mod session;
@@ -19,6 +20,7 @@ pub use events::*;
 pub use integrations::*;
 pub use panes::*;
 pub use plugins::*;
+pub use projects::*;
 pub use response::*;
 pub use server::*;
 pub use session::*;
@@ -63,6 +65,10 @@ pub enum Method {
     ClientWindowTitleClear(EmptyParams),
     #[serde(rename = "session.snapshot")]
     SessionSnapshot(EmptyParams),
+    #[serde(rename = "project.task.list")]
+    ProjectTaskList(ProjectTaskListParams),
+    #[serde(rename = "project.task.get")]
+    ProjectTaskGet(ProjectTaskGetParams),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreateParams),
     #[serde(rename = "workspace.list")]
