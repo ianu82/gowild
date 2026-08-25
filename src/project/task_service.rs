@@ -1,13 +1,8 @@
-#![allow(
-    dead_code,
-    reason = "project task mutation API consumer lands in the next stacked change"
-)]
-
 use std::path::Path;
 
 use super::task_context::ProjectTaskContext;
-use super::task_workspace::{TaskAgent, TaskRoute, TaskWorkspace};
-use super::ProjectError;
+use super::task_workspace::{validate_outcome, TaskAgent, TaskRoute, TaskWorkspace};
+use super::{ProjectError, ProjectTaskReader};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateProjectTask {
@@ -15,6 +10,14 @@ pub struct CreateProjectTask {
     pub outcome: String,
     pub agent: TaskAgent,
     pub route: TaskRoute,
+}
+
+impl CreateProjectTask {
+    pub fn validate(&self) -> Result<(), ProjectError> {
+        ProjectTaskReader::validate_task_id(&self.task_id)?;
+        validate_outcome(&self.outcome)?;
+        self.route.validate(self.agent)
+    }
 }
 
 /// Mutation boundary for durable project-task state. Creating a task records
@@ -32,6 +35,7 @@ impl ProjectTaskService {
     }
 
     pub fn create(&self, request: CreateProjectTask) -> Result<TaskWorkspace, ProjectError> {
+        request.validate()?;
         let task = TaskWorkspace::new(
             &self.context.project,
             request.task_id,
@@ -42,6 +46,10 @@ impl ProjectTaskService {
         )?;
         self.context.states.create(&task)?;
         Ok(task)
+    }
+
+    pub fn reader(&self) -> ProjectTaskReader {
+        ProjectTaskReader::from_context(self.context.clone())
     }
 }
 

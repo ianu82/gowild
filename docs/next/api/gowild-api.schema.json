@@ -3669,6 +3669,40 @@
             }
           ]
         },
+        "ProjectTaskAgent": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskCreateParams": {
+          "properties": {
+            "agent": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskAgent"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "route": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskRouteInfo"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "task_id",
+            "outcome",
+            "agent",
+            "route"
+          ],
+          "type": "object"
+        },
         "ProjectTaskGetParams": {
           "properties": {
             "path": {
@@ -3707,6 +3741,32 @@
           },
           "required": [
             "path"
+          ],
+          "type": "object"
+        },
+        "ProjectTaskProtocol": {
+          "enum": [
+            "open_ai_responses",
+            "anthropic_messages"
+          ],
+          "type": "string"
+        },
+        "ProjectTaskRouteInfo": {
+          "properties": {
+            "gateway_id": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "protocol": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskProtocol"
+            }
+          },
+          "required": [
+            "gateway_id",
+            "protocol",
+            "model"
           ],
           "type": "object"
         },
@@ -4690,6 +4750,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/ProjectTaskGetParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "project.task.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ProjectTaskCreateParams"
             }
           },
           "required": [

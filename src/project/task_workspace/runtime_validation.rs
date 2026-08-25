@@ -30,7 +30,7 @@ struct RuntimeEnvironmentContext<'a> {
 }
 
 impl TaskRoute {
-    pub(super) fn validate(&self, agent: TaskAgent) -> Result<(), ProjectError> {
+    pub(in crate::project) fn validate(&self, agent: TaskAgent) -> Result<(), ProjectError> {
         validate_identifier("gateway id", &self.gateway_id)?;
         if self.model.trim().is_empty()
             || self.model.len() > 512

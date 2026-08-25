@@ -684,7 +684,7 @@ fn session_snapshot_request_and_response_round_trip() {
 }
 
 #[test]
-fn project_task_read_requests_and_responses_round_trip() {
+fn project_task_requests_and_responses_round_trip() {
     let request = Request {
         id: "req_project_tasks".into(),
         method: Method::ProjectTaskGet(ProjectTaskGetParams {
@@ -696,6 +696,31 @@ fn project_task_read_requests_and_responses_round_trip() {
     assert_eq!(json["method"], "project.task.get");
     assert_eq!(json["params"]["task_id"], "route-settings");
     assert_eq!(serde_json::from_value::<Request>(json).unwrap(), request);
+
+    let create_request = Request {
+        id: "req_create_project_task".into(),
+        method: Method::ProjectTaskCreate(ProjectTaskCreateParams {
+            path: "/projects/cowork".into(),
+            task_id: "route-settings".into(),
+            outcome: "Add route settings across every repository".into(),
+            agent: ProjectTaskAgent::Claude,
+            route: ProjectTaskRouteInfo {
+                gateway_id: "mindshub".into(),
+                protocol: ProjectTaskProtocol::AnthropicMessages,
+                model: "provider/team/full-model-id".into(),
+            },
+        }),
+    };
+    let create_json = serde_json::to_value(&create_request).unwrap();
+    assert_eq!(create_json["method"], "project.task.create");
+    assert_eq!(
+        create_json["params"]["route"]["model"],
+        "provider/team/full-model-id"
+    );
+    assert_eq!(
+        serde_json::from_value::<Request>(create_json).unwrap(),
+        create_request
+    );
 
     let response = SuccessResponse {
         id: "req_project_tasks".into(),

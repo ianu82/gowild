@@ -7,7 +7,7 @@ use super::{ProjectDefinition, ProjectError};
 
 /// One validated view of the checked-in definition, machine-private overrides,
 /// resolved repositories and GoWild-owned task state roots.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct ProjectTaskContext {
     pub definition: ProjectDefinition,
     pub private_state: ProjectPrivateState,

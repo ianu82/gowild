@@ -69,6 +69,8 @@ pub enum Method {
     ProjectTaskList(ProjectTaskListParams),
     #[serde(rename = "project.task.get")]
     ProjectTaskGet(ProjectTaskGetParams),
+    #[serde(rename = "project.task.create")]
+    ProjectTaskCreate(ProjectTaskCreateParams),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreateParams),
     #[serde(rename = "workspace.list")]

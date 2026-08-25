@@ -43,6 +43,10 @@ impl ProjectTaskReader {
         })
     }
 
+    pub(super) fn from_context(context: ProjectTaskContext) -> Self {
+        Self { context }
+    }
+
     pub fn project_id(&self) -> &str {
         &self.context.project.manifest.id
     }

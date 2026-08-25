@@ -379,6 +379,7 @@ fn handle_request(
     match request.method {
         Method::ProjectTaskList(params) => super::projects::task_list(request.id, params),
         Method::ProjectTaskGet(params) => super::projects::task_get(request.id, params),
+        Method::ProjectTaskCreate(params) => super::projects::task_create(request.id, params),
         method => dispatch_to_app(
             Request {
                 id: request.id,
@@ -406,6 +407,7 @@ fn api_method_name(method: &Method) -> &'static str {
         Method::SessionSnapshot(_) => "session.snapshot",
         Method::ProjectTaskList(_) => "project.task.list",
         Method::ProjectTaskGet(_) => "project.task.get",
+        Method::ProjectTaskCreate(_) => "project.task.create",
         Method::WorkspaceCreate(_) => "workspace.create",
         Method::WorkspaceList(_) => "workspace.list",
         Method::WorkspaceGet(_) => "workspace.get",
@@ -1145,7 +1147,7 @@ mod tests {
     }
 
     #[test]
-    fn project_task_reads_run_off_the_app_event_loop() {
+    fn project_task_operations_run_off_the_app_event_loop() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let response = handle_request(
             Request {
@@ -1165,6 +1167,31 @@ mod tests {
         let response: ErrorResponse = serde_json::from_str(&response).unwrap();
         assert_eq!(response.id, "task_read");
         assert_eq!(response.error.code, "invalid_project_path");
+        assert!(rx.try_recv().is_err());
+
+        let response = handle_request(
+            Request {
+                id: "task_create".into(),
+                method: Method::ProjectTaskCreate(crate::api::schema::ProjectTaskCreateParams {
+                    path: "/project/path/that/does/not/exist".into(),
+                    task_id: "../escape".into(),
+                    outcome: "Create a durable task".into(),
+                    agent: crate::api::schema::ProjectTaskAgent::Codex,
+                    route: crate::api::schema::ProjectTaskRouteInfo {
+                        gateway_id: "mindshub".into(),
+                        protocol: crate::api::schema::ProjectTaskProtocol::OpenAiResponses,
+                        model: "provider/team/model".into(),
+                    },
+                }),
+            },
+            &tx,
+            None,
+            None,
+            None,
+        );
+        let response: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(response.id, "task_create");
+        assert_eq!(response.error.code, "invalid_project_task_id");
         assert!(rx.try_recv().is_err());
     }
 
