@@ -4,6 +4,7 @@ use crate::api::schema::{
     Method, ProjectTaskGetParams, ProjectTaskListParams, Request, ResponseResult, SuccessResponse,
 };
 
+mod create;
 mod render;
 
 use render::{format_task_info, format_task_list};
@@ -14,6 +15,7 @@ pub(super) fn run(args: &[String]) -> std::io::Result<i32> {
     match args.first().map(String::as_str) {
         Some("list") => task_list(&args[1..]),
         Some("get") => task_get(&args[1..]),
+        Some("create") => create::run(&args[1..]),
         Some("help" | "--help" | "-h") => {
             super::print_project_task_help();
             Ok(0)

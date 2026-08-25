@@ -326,7 +326,7 @@ fn project_command() -> Command {
         )
         .subcommand(
             Command::new("task")
-                .about("Inspect durable project tasks over the socket API")
+                .about("Plan and inspect durable project tasks over the socket API")
                 .subcommand(
                     Command::new("list")
                         .about("List project tasks")
@@ -339,6 +339,34 @@ fn project_command() -> Command {
                     Command::new("get")
                         .about("Show one project task")
                         .arg(required("task_id", "TASK_ID"))
+                        .arg(path_arg("path", "PATH").required(false))
+                        .arg(json_flag()),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about("Record planned task intent without provisioning resources")
+                        .arg(required("task_id", "TASK_ID"))
+                        .arg(
+                            option("outcome", "TEXT")
+                                .required(true)
+                                .help("Describe the concrete outcome for the coding task"),
+                        )
+                        .arg(
+                            option("agent", "AGENT")
+                                .required(true)
+                                .value_parser(["codex", "claude"])
+                                .help("Choose the coding CLI"),
+                        )
+                        .arg(
+                            option("gateway", "ID")
+                                .required(true)
+                                .help("Use this configured LLM gateway"),
+                        )
+                        .arg(
+                            option("model", "ID")
+                                .required(true)
+                                .help("Preserve this full gateway model ID"),
+                        )
                         .arg(path_arg("path", "PATH").required(false))
                         .arg(json_flag()),
                 ),
