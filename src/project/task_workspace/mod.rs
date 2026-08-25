@@ -27,7 +27,7 @@ pub(crate) mod runtime_services;
 mod runtime_validation;
 mod validation;
 
-pub(crate) use operation::{TaskOperationControl, TaskOperationProgress, TaskOperationStage};
+pub(crate) use operation::{TaskOperationControl, TaskOperationStage};
 use rules::{
     phase_transition_allowed, resources_conflict, runtime_namespace, validate_absolute_clean_path,
 };

@@ -3,14 +3,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::operation::{
-    provision_step_count, report_progress, require_active, UncontrolledTaskOperation,
+    complete_progress, provision_step_count, report_progress, require_active,
+    UncontrolledTaskOperation,
 };
 use super::repository::{
     directory_is_empty, ensure_private_directory_chain, restrict_directory_permissions,
     validate_existing_ancestors, TaskWorkspaceRepository,
 };
 use super::{
-    LoadedProject, OwnedResource, TaskOperationControl, TaskOperationProgress, TaskOperationStage,
+    LoadedProject, OwnedResource, TaskOperationControl, TaskOperationStage,
     TaskTransitionOperation, TaskTransitionState, TaskWorkspace, TaskWorkspacePhase,
 };
 use crate::project::{ProjectDefinition, ProjectError, ProjectPrivateState};
@@ -270,19 +271,6 @@ impl<'a> TaskWorkspaceProvisioner<'a> {
         }
         Ok(())
     }
-}
-
-fn complete_progress(
-    control: &(impl TaskOperationControl + ?Sized),
-    task_id: &str,
-    total_steps: usize,
-) {
-    control.report_progress(&TaskOperationProgress {
-        task_id: task_id.to_string(),
-        stage: TaskOperationStage::Complete,
-        completed_steps: total_steps,
-        total_steps,
-    });
 }
 
 pub(crate) fn verify_provisioned_task(task: &TaskWorkspace) -> Result<(), ProjectError> {

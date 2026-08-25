@@ -1,16 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+use super::operation::TaskOperationProgress;
 use super::provision::TaskWorkspaceProvisioner;
 use super::provision_tests::ProjectFixture;
-use super::{TaskOperationControl, TaskOperationProgress, TaskOperationStage, TaskWorkspacePhase};
+use super::{TaskOperationControl, TaskOperationStage, TaskWorkspacePhase};
 
 #[test]
 fn provisioning_cancels_before_the_next_resource_and_resumes_from_durable_state() {
     let fixture = ProjectFixture::new(false);
     fixture.create_task("controlled-provision");
     let provisioner = TaskWorkspaceProvisioner::new(&fixture.states);
-    let control = RecordingControl::cancel_at_repository("api");
+    let control = RecordingControl::cancel_at_stage(TaskOperationStage::Repository {
+        repository_id: "api".into(),
+    });
 
     let error = provisioner
         .provision_with_control(
@@ -117,17 +120,80 @@ fn controlled_provisioning_fails_fast_when_another_operation_owns_the_task() {
     assert!(control.progress.lock().unwrap().is_empty());
 }
 
+#[test]
+fn cleanup_cancels_before_the_next_release_and_resumes_without_data_loss() {
+    let fixture = ProjectFixture::new(false);
+    fixture.create_task("controlled-cleanup");
+    let provisioner = TaskWorkspaceProvisioner::new(&fixture.states);
+    let ready = provisioner
+        .provision(
+            &fixture.definition,
+            &fixture.private_state,
+            &fixture.project,
+            "controlled-cleanup",
+        )
+        .unwrap();
+    let control = RecordingControl::cancel_at_stage(TaskOperationStage::RepositoryWorktree {
+        repository_id: "api".into(),
+    });
+
+    let error = provisioner
+        .cleanup_with_control("controlled-cleanup", &control)
+        .unwrap_err();
+
+    assert_eq!(error.code, "project_task_operation_cancelled");
+    let interrupted = fixture.states.load("controlled-cleanup").unwrap();
+    assert_eq!(interrupted.phase, TaskWorkspacePhase::Cleaning);
+    assert!(!ready.repository_checkout_path("web").exists());
+    assert!(ready.repository_checkout_path("api").exists());
+    assert!(ready.repository_checkout_path("shared").exists());
+    assert!(ready.root.exists());
+
+    let resumed_control = RecordingControl::default();
+    let cleaned = provisioner
+        .cleanup_with_control("controlled-cleanup", &resumed_control)
+        .unwrap();
+    assert_eq!(cleaned.phase, TaskWorkspacePhase::Cleaned);
+    assert!(!cleaned.root.exists());
+    let progress = resumed_control.progress.lock().unwrap();
+    assert_eq!(progress.last().unwrap().stage, TaskOperationStage::Complete);
+    assert!(progress
+        .windows(2)
+        .all(|window| window[0].completed_steps <= window[1].completed_steps));
+    assert_eq!(
+        progress.last().unwrap().completed_steps,
+        progress.last().unwrap().total_steps
+    );
+}
+
+#[test]
+fn controlled_cleanup_fails_fast_when_another_operation_owns_the_task() {
+    let fixture = ProjectFixture::new(false);
+    let original = fixture.create_task("busy-cleanup");
+    let _operation_lock = fixture.states.lock_task_operations("busy-cleanup").unwrap();
+    let provisioner = TaskWorkspaceProvisioner::new(&fixture.states);
+    let control = RecordingControl::default();
+
+    let error = provisioner
+        .cleanup_with_control("busy-cleanup", &control)
+        .unwrap_err();
+
+    assert_eq!(error.code, "task_workspace_busy");
+    assert_eq!(fixture.states.load("busy-cleanup").unwrap(), original);
+    assert!(control.progress.lock().unwrap().is_empty());
+}
+
 #[derive(Default)]
 struct RecordingControl {
     cancelled: AtomicBool,
-    cancel_repository: Option<String>,
+    cancel_stage: Option<TaskOperationStage>,
     progress: Mutex<Vec<TaskOperationProgress>>,
 }
 
 impl RecordingControl {
-    fn cancel_at_repository(repository_id: &str) -> Self {
+    fn cancel_at_stage(stage: TaskOperationStage) -> Self {
         Self {
-            cancel_repository: Some(repository_id.to_string()),
+            cancel_stage: Some(stage),
             ..Self::default()
         }
     }
@@ -140,11 +206,7 @@ impl TaskOperationControl for RecordingControl {
 
     fn report_progress(&self, progress: &TaskOperationProgress) {
         self.progress.lock().unwrap().push(progress.clone());
-        if matches!(
-            &progress.stage,
-            TaskOperationStage::Repository { repository_id }
-                if self.cancel_repository.as_deref() == Some(repository_id.as_str())
-        ) {
+        if self.cancel_stage.as_ref() == Some(&progress.stage) {
             self.cancelled.store(true, Ordering::Release);
         }
     }
