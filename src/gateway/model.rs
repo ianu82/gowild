@@ -73,6 +73,10 @@ pub(crate) struct GatewayAuth {
     pub(crate) mode: AuthenticationMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) credential_ref: Option<String>,
+    /// Non-secret durable evidence that GoWild successfully stored a credential.
+    /// This lets startup resume setup without reading protected secret data.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) credential_configured: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) header_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -84,6 +88,7 @@ impl GatewayAuth {
         Self {
             mode: AuthenticationMode::BearerToken,
             credential_ref: Some(credential_ref.into()),
+            credential_configured: false,
             header_name: None,
             value_prefix: None,
         }
@@ -319,6 +324,12 @@ impl Gateway {
                     errors.push(ValidationError::new(
                         "auth.credential_ref",
                         "unauthenticated gateways cannot reference a credential",
+                    ));
+                }
+                if self.auth.credential_configured {
+                    errors.push(ValidationError::new(
+                        "auth.credential_configured",
+                        "unauthenticated gateways cannot have a stored credential",
                     ));
                 }
                 if self.auth.header_name.is_some() || self.auth.value_prefix.is_some() {

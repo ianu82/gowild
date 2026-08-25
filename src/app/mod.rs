@@ -68,10 +68,11 @@ use crate::events::AppEvent;
 pub use state::{AppState, Mode, ToastKind, ViewState};
 
 fn initial_gateway_credential_status(
-    authentication: crate::gateway::AuthenticationMode,
+    authentication: &crate::gateway::GatewayAuth,
 ) -> state::GatewayCredentialStatus {
-    match authentication {
+    match authentication.mode {
         crate::gateway::AuthenticationMode::None => state::GatewayCredentialStatus::Stored,
+        _ if authentication.credential_configured => state::GatewayCredentialStatus::Stored,
         _ => state::GatewayCredentialStatus::Unknown,
     }
 }
@@ -598,7 +599,7 @@ impl App {
                 // Reading a protected credential can present an operating-system prompt. Startup
                 // and attach must remain passive, so defer that read until the user explicitly
                 // tests or launches the gateway.
-                let status = initial_gateway_credential_status(gateway.auth.mode);
+                let status = initial_gateway_credential_status(&gateway.auth);
                 gateway_settings
                     .credential_status
                     .insert(gateway_id.clone(), status);
@@ -2869,20 +2870,21 @@ mod tests {
     fn startup_defers_authenticated_gateway_credential_access() {
         use crate::gateway::AuthenticationMode;
 
+        let mut authentication = crate::gateway::GatewayAuth::bearer("gateway:test");
         assert_eq!(
-            initial_gateway_credential_status(AuthenticationMode::BearerToken),
+            initial_gateway_credential_status(&authentication),
             state::GatewayCredentialStatus::Unknown
         );
+        authentication.credential_configured = true;
         assert_eq!(
-            initial_gateway_credential_status(AuthenticationMode::XApiKey),
-            state::GatewayCredentialStatus::Unknown
+            initial_gateway_credential_status(&authentication),
+            state::GatewayCredentialStatus::Stored
         );
+        authentication.mode = AuthenticationMode::None;
+        authentication.credential_ref = None;
+        authentication.credential_configured = false;
         assert_eq!(
-            initial_gateway_credential_status(AuthenticationMode::CustomHeader),
-            state::GatewayCredentialStatus::Unknown
-        );
-        assert_eq!(
-            initial_gateway_credential_status(AuthenticationMode::None),
+            initial_gateway_credential_status(&authentication),
             state::GatewayCredentialStatus::Stored
         );
     }
