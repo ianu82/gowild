@@ -84,6 +84,7 @@ mod plugin_command;
 mod plugin_paths;
 mod popup_size;
 mod product_announcements;
+mod project;
 mod protocol;
 mod pty;
 mod raw_input;
@@ -634,6 +635,7 @@ fn main() -> io::Result<()> {
         println!("       gowild channel <subcommand> ...");
         println!("       gowild workspace <subcommand> ...");
         println!("       gowild worktree <subcommand> ...");
+        println!("       gowild project <subcommand> ...");
         println!("       gowild tab <subcommand> ...");
         println!("       gowild notification <subcommand> ...");
         println!("       gowild agent <subcommand> ...");
